@@ -102,3 +102,10 @@ Sign-in with Google and Apple; installable mobile web app and Android/iOS shell;
 - The provider adjustment flag is a technical input requirement, **not proof** that the vendor calculated distributions and split-adjustments correctly; real samples, contracts, licensing and exchange calendars still require external review.
 - Three-fund, 60/40 and 80/20 are seeded as disabled fixed-allocation drafts. Customer weight inputs are not supported.
 - The platform stores spec-card attestations, but independent human sign-off and full author-method goldens are still required.
+
+## PR #25 engineering audit (11 October 2026)
+Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
+- **Customer-visible strategy without sign-off.** 9Sig is the only enabled, published strategy and it has no recorded specification sign-off (the seed publishes it directly) and no spec card. Live Stripe checkout now refuses until a sign-off is recorded (`src/lib/strategy-evidence.ts`); Admin > Launch lists the gap.
+- **Fixed from the audit:** worker starvation by permanently failing strategies, notification head-of-line blocking by one failing provider, negative cash/holdings via corrections or withdrawals, a corrected fill leaving the review unexecutable, fabricated returns from backdated flows, future-dated ledger entries, annualised short-history community statistic, atomic/rate-limited email verification, strict Discord webhook URL parsing, error text stored in worker records, scheduler/backup container privileges.
+- **Open hardening:** the app and backup connect to PostgreSQL as the superuser owner role; corporate actions are not modelled (large moves fail closed and need reconciliation); proration is Stripe's, not computed locally.
+- **Not verified anywhere yet:** real Stripe, email, Telegram, Discord, market-data, FX, Oracle host, off-site restore, UK legal review, independent security review.

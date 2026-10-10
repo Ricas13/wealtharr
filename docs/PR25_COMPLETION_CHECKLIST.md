@@ -1,4 +1,94 @@
-# PR #25 engineering completion evidence
+# PR #25 completion checklist
+
+Records evidence, not certification. "Complete" means there is code, a test that exercises it, and a
+recorded verification result. Anything that needs a real host, a real provider, licensed data or a
+person's independent approval is **Blocked** (not Complete) however many automated tests pass.
+
+Baseline: `488c2973f92534c940d0c0ed0ece2f0d96c7d7be` (preserved remote
+`staging/pr25-ci1042-20261010`, never modified). Work branch: `feat/wealtharr-product-completion`.
+Audited head at the start of the 11 October session: `1fc78f3` (CI run 1052 green).
+
+## Verification summary (local, disposable PostgreSQL 16)
+
+| Gate | Result |
+|---|---|
+| `npm ci` | passed |
+| `npm run db:migrate` twice | first applies, second reports every file already applied (no-op) |
+| `npm run db:seed` twice | both complete; seed is idempotent |
+| `npm run lint` | clean |
+| `npm run typecheck` | clean |
+| `npm test` (fresh database) | see "Final counts" at the end of this file |
+| `npm run build` | passed |
+| `npm run test:e2e` (local Chromium) | 114 passed, 6 skipped (existing project-specific skips), 4 failed: the visual pixel-hash tests (landing and demo, desktop and mobile). The hashes are pinned to CI's Linux Chromium; the local browser build renders differently. Baselines were **not** changed. CI is the authority for these. |
+| `npm audit --omit=dev --audit-level=high` | 0 vulnerabilities |
+| Docker | Docker CLI present, daemon not reachable on this host: `docker compose config` validated locally; image build and container start are verified by CI only |
+
+## A. Engineering acceptance (repository, local environment, CI)
+
+| Requirement | State | Implementation | Tests | Notes / limits |
+|---|---|---|---|---|
+| Full-diff audit of PR vs main | Complete | three independent read-only reviews (migrations, security, financial) of the whole branch diff; each finding verified by hand before action | n/a | findings and dispositions below |
+| Migrations 0026-0034 | Complete | reviewed: no high/medium issues. 0031 rewrites `actions` in one transaction and 0028 builds a non-concurrent index; both documented in `docs/ROLLOUT_AND_ROLLBACK.md` | `db:migrate` run twice | applied migrations are never edited |
+| Email verification | Complete (fixed) | `7e9e03e`: atomic token consume, origin check, rate limit | `tests/db/verify-email.test.ts` (single use, concurrent use, expiry, cross-origin, rate limit) | |
+| Discord webhook URL (SSRF/credential) | Complete (fixed) | `7e9e03e`: parsed URL, exact host, no credentials/port, strict path | `tests/discord-webhook.test.ts` | |
+| Error text in stored records | Complete (fixed) | `f4bf8d2`: only application error codes or the error class name are stored | `tests/safe-error-code.test.ts` | |
+| Route authorization and tenancy | Complete | every route guarded (user/admin/cron/webhook); object-level checks by `user_id` | `tests/db/route-access-sweep.test.ts`, `tests/db/tenancy-matrix.test.ts` (all strategy routes and action execute) | review found no exploitable path |
+| Scheduler/backup container privileges | Complete (fixed) | `bcdcccd`: scheduler unprivileged, read-only, caps dropped, no start-up package install; backup gets an explicit variable list, not the app env file | `tests/oracle-compose-secret-scope.test.ts`; CI renders both compose profiles and asserts | the wget-based scheduler loop has not been run on the real host (section B) |
+| Worker fairness | Complete (defect fixed) | `76fbb6a`, migration 0034: every attempt is stamped; failing strategies rotate to the back. Before the fix, 12 permanently failing strategies with a cap of 10 starved all 13 healthy ones (served 0 of 13) | `tests/db/cron-fairness.test.ts` (fails on the old code) | |
+| Worker scale 100 / 1,000 / 10,000 | Complete (simulated) | selection and rotation with 10,000 seeded active strategies; runs of 4,000 cover all 10,000 in three runs, each served once per pass | `tests/db/worker-scale.test.ts`; `tests/db/calculation-cost.test.ts` measured the real calculation at about 22 ms per instance (about 107 per second at concurrency 4, small ledgers, local database) which is roughly 11,000 instances inside the default 105 s phase | provider latency, long ledgers and production hardware are not measured |
+| Notification freshness | Complete | queued alerts recalculate before sending, obsolete ones cancel (earlier work) | `tests/db/notification-action-freshness.test.ts` | |
+| Notification provider isolation | Complete (defect fixed) | `aa70702`: per-channel circuit breaker (3 consecutive failures hold that channel's remaining batch for 15 minutes without using retries); missing endpoints cancel before any provider work. Before this a failing Discord queue could use the whole budget and starve email | `tests/db/notification-channel-isolation.test.ts`, existing delivery/backlog tests | breaker state is per batch, not shared between runs |
+| Ledger cannot go negative | Complete (defect fixed) | `c9f4054`: after any correction, cash event or contribution the account's whole ledger is re-folded in time order; cash or holdings below zero roll the transaction back | `tests/db/ledger-timeline-guards.test.ts` | |
+| Future-dated entries | Complete (fixed) | `c9f4054`: rejected beyond 60 seconds ahead | same file | |
+| Backdated flows vs stored valuations | Complete (defect fixed) | `c9f4054`: stored daily valuations from the flow date onward are removed so no fabricated return or drawdown appears | same file | history shows fewer points rather than invented ones |
+| Corrected fill reopens the review | Complete (defect fixed, reproduced first) | `6f90a72`: ledger length in the action fingerprint | `tests/db/corrected-fill-recovery.test.ts` | a zero-effect ledger entry now creates a new action |
+| Performance maths | Complete | TWR, money-weighted return, drawdown, same-cash-flow benchmark with hand-computed expected values | `tests/performance-golden.test.ts` | |
+| Community money-weighted return | Complete (fixed) | `0654ec7`: only histories of a year or more are annualised | `tests/performance-golden.test.ts`, `tests/db/aggregate-cashflows.test.ts` | |
+| Benchmarks fail closed | Complete | single provider, licensed, adjusted, total return, same currency, no holes, flows only on market days | `tests/comparison.test.ts`, `tests/benchmark-window.test.ts`, `tests/benchmark-evidence.test.ts` | no real licensed series exists yet (section C) |
+| Billing lifecycle | Complete (mocked Stripe) | free/paid, monthly/annual, trials, renewal, portal changes, past due, cancel, expiry, replay, out-of-order, outage recovery, ownership, store isolation | `tests/db/billing-lifecycle.test.ts` (27 tests), `tests/db/store-webhook.test.ts`, `tests/db/stripe-price-history.test.ts` | proration is computed by Stripe; the app mirrors Stripe's state and does not compute it |
+| Live payments need strategy sign-off | Complete | `c8d8ec0`: live Stripe checkout refused while any customer-visible strategy lacks a recorded sign-off; Admin Launch lists them | `tests/db/strategy-evidence.test.ts`, `tests/master-admin-checkout.test.ts` | the sign-off records who approved a card; it does not verify the card |
+| Master Admin configurability | Complete (earlier work) | operational settings, prices, instruments, strategy publication in the web interface; only bootstrap values in Docker | `tests/settings-registry.test.ts`, `tests/db/app-settings.test.ts` | |
+| Database role separation | Not started (hardening) | the app and backup connect as the owner role that is also the PostgreSQL superuser | none | recommended: separate migration role and a DML-only application role |
+| Corporate actions | Not modelled | large price moves are rejected by the plausibility gate and strategies return DATA_REQUIRED until reconciled | `tests/quote-plausibility.test.ts` | splits and mergers need the user to reconcile holdings |
+
+### Review findings and dispositions
+
+- Migration review: 2 low (lock behaviour of 0031 and 0028), documented.
+- Security review: no exploitable defect; 1 hardening item (database roles), 1 fixed (stored error text), 1 accepted (a user can be socially engineered into pressing Start on an attacker's Telegram link; no data is disclosed or changed).
+- Financial review: 7 items. Verified and fixed: negative balances via corrections or withdrawals (1, 5), stuck review after a corrected fill (2), fabricated returns from backdated flows (3), future-dated entries (4), short-history annualisation (7). Not reachable: nullable ledger account (6), because no code deletes a single account.
+
+## B. Private staging acceptance (needs the real Oracle host)
+
+All **Not started / Blocked**. No SSH access to the host exists in this environment, and the Docker daemon is not available locally.
+
+| Check | Operator steps |
+|---|---|
+| Bootstrap on the exact tested revision | follow `docs/PRIVATE_STAGING_PR25.md`; record the commit SHA deployed |
+| Fresh and upgrade migrations on the host database | take a backup, run `npm run db:migrate` twice; apply 0031 with the scheduler stopped (see rollout runbook) |
+| Health and persisted admin settings | `/api/health`, `/api/cron/health`; change a setting in Master Admin, restart, confirm it persisted |
+| Scheduler | confirm the BusyBox `wget` loop authenticates and the run reports in `worker_runs`; confirm it runs as UID 65534 |
+| Traefik, private database network, volumes | confirm no published database port; confirm the volume survives a restart |
+| Backup image and a scratch restore | enable the backup profile with its own credentials, then run `scripts/restore-drill.sh` against a copy |
+| Failure recovery and rollback | stop the database, observe degraded health and alerts, start it, confirm recovery; redeploy the previous image and confirm compatibility |
+
+## C. Commercial approval (external; not demonstrable by automated tests)
+
+All **Blocked**.
+
+| Gate | Evidence required |
+|---|---|
+| Licensed market, adjusted-history and FX data | a contract that permits commercial display and storage, plus real samples validated against the benchmark rules (VTI, SPY, QQQ in the account currency) |
+| Verified UK instruments | per exposure: ISIN, listing, currency, wrapper and broker eligibility, fractional trading, actual purchasability; imported as candidates and promoted to EXACT by a person |
+| Strategy methodology sign-off | a named reviewer checks each `docs/strategy-specs/` card against its primary source and signs it; independent expected values for golden tests. **The only customer-visible strategy (9Sig) currently has no recorded sign-off**, and no spec card for it exists; live payments are blocked by `c8d8ec0` until it does |
+| 3Sig / 6Sig full procedures | the strategy owner's reserve, adjustment and reset rules; not guessed |
+| Real Stripe test-mode lifecycle | checkout, failed payment, cancel, portal, webhook delivery against a real test account; all current billing tests use a mocked Stripe client |
+| Real email, Telegram, Discord delivery | live provider accounts and delivery receipts |
+| Off-site backup and point-in-time recovery | an encrypted repository and a timed restore drill |
+| UK legal and regulatory review | written advice on FCA perimeter, financial promotions, consumer terms, privacy and tax presentation; leverage disclosure wording |
+| Independent security review / penetration test | an external report |
+
+## Evidence log
+
 
 Baseline: `488c2973f92534c940d0c0ed0ece2f0d96c7d7be`; preserved remote
 `staging/pr25-ci1042-20261010`. Work branch: `feat/wealtharr-product-completion`.
