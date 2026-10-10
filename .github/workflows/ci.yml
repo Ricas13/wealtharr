@@ -64,7 +64,7 @@ jobs:
         run: |
           printf 'POSTGRES_PASSWORD=ci-db-pass\nAPP_DB_PASSWORD=ci-app-database-password-long-enough\nBACKUP_DB_PASSWORD=ci-backup-database-password-long-enough\nDATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@db:5432/strategyos\n' > .env.production
           docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --quiet
-          docker compose -f docker-compose.oracle.yml -f docker-compose.traefik.yml --env-file .env.production config --format json > /tmp/wealtharr-traefik-compose.json
+          docker compose --profile maintenance -f docker-compose.oracle.yml -f docker-compose.traefik.yml --env-file .env.production config --format json > /tmp/wealtharr-traefik-compose.json
           docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --format json > /tmp/wealtharr-backup-compose.json
           python3 - <<'PY'
           import json
