@@ -13,6 +13,8 @@ export type ActionFingerprintInput={
   stableHoldings:string;
   dataStatus:string;
   materialRevision?:string;
+  /** Number of ledger rows. Append-only, so it changes whenever anything (including a correction) is recorded. */
+  ledgerRevision?:string;
 };
 
 export function actionFingerprintMaterial(input:ActionFingerprintInput){
@@ -30,6 +32,7 @@ export function actionFingerprintMaterial(input:ActionFingerprintInput){
     input.contributionsSinceReview,
     input.stableHoldings,
     input.dataStatus,
-    input.materialRevision??""
+    input.materialRevision??"",
+    input.ledgerRevision??""
   ].join("|");
 }

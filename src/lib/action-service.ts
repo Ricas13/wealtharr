@@ -350,6 +350,9 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       .filter(([,quantity])=>!quantity.eq(0))
       .map(([instrumentId,quantity])=>accountId+":"+instrumentId+":"+quantity.toString());
   }).sort().join(",");
+  // Corrections restore the earlier cash and holdings exactly, so those alone cannot tell a corrected
+  // review from the one that was already executed. The append-only ledger length can.
+  const ledgerRevision=String((await sql.unsafe("SELECT count(*)::int AS n FROM ledger_events WHERE strategy_instance_id=$1",[strategyInstanceId]))[0]?.n??0);
   const material=actionFingerprintMaterial({
     strategyInstanceId,
     strategyVersionId:calculationVersionId,
@@ -364,6 +367,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     contributionsSinceReview:contributionsSinceReview.toString(),
     stableHoldings,
     dataStatus,
+    ledgerRevision,
     materialRevision:JSON.stringify({amount:proposal.amount?.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toString()??null,instruction:proposal.instruction,explanation:proposal.actionType==="NO_ACTION"?null:proposal.explanation})
   });
   const fingerprint=crypto.createHash("sha256").update(material).digest("hex");
