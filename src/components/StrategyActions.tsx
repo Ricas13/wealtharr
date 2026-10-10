@@ -78,10 +78,13 @@ export function ExecuteAction({ action }: { action: { id: string; actionType: st
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
+    const localTime=String(f.get("executedAt")||"");
+    const when=localTime?new Date(localTime):null;
+    if(when&&!Number.isFinite(when.getTime())){setBusy(false);setError("Choose a valid execution date and time.");return;}
     const response = await fetch("/api/actions/" + action.id + "/execute", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ price: f.get("price") || undefined, quantity: f.get("quantity") || undefined, fee: f.get("fee") || "0", partial:Boolean(f.get("partial")) })
+      body: JSON.stringify({ price: f.get("price") || undefined, quantity: f.get("quantity") || undefined, fee: f.get("fee") || "0", partial:Boolean(f.get("partial")),executedAt:when?.toISOString() })
     });
     const body = await response.json();
     setBusy(false);
@@ -94,6 +97,10 @@ export function ExecuteAction({ action }: { action: { id: string; actionType: st
       <input name="price" type="number" min="0" step="0.000001" placeholder="Execution price" aria-label="Actual execution price" required />
       <input name="quantity" type="number" min="0" step="0.00000001" placeholder="Actual quantity" aria-label="Actual quantity" required />
       <input name="fee" type="number" min="0" step="0.01" defaultValue="0" placeholder="Fee" aria-label="Trading fee"/>
+      <label className="trade-execution-when">Broker execution date &amp; time
+        <input name="executedAt" type="datetime-local" aria-label="Broker execution date and time"/>
+        <small>Optional. Leave blank for now, or enter the actual local time shown by your broker.</small>
+      </label>
       <label className="partial-fill"><input name="partial" type="checkbox"/><span>I only completed part of this trade</span></label>
     </>}
     <button className="button primary" disabled={busy}>{busy ? "Recording…" : needsPrice ? "Mark trade completed" : "Mark reviewed"}</button>
@@ -193,7 +200,8 @@ export function ReconcileForm({ id, expected, accounts=[] }: { id: string; expec
 
 export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?:AccountOption[] }) {
   const router = useRouter();
-  const pendingAccounts=accounts.filter((account)=>(account.ledgerEventCount??0)===0);
+  const [savedAccountIds,setSavedAccountIds]=useState<string[]>([]);
+  const pendingAccounts=accounts.filter((account)=>(account.ledgerEventCount??0)===0&&!savedAccountIds.includes(account.id));
   const accountSelectId=useId();
   const cashId=useId();
   const [accountId,setAccountId]=useState(pendingAccounts[0]?.id??accounts[0]?.id??"");
@@ -206,13 +214,15 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
     setHoldings((rows) => rows.map((row, i) => i === index ? { ...row, [field]: value } : row));
   }
 
-  const accountChoices=pendingAccounts.length?pendingAccounts:accounts;
+  const accountChoices=pendingAccounts;
   const effectiveAccountId=accountChoices.some((account)=>account.id===accountId)?accountId:(accountChoices[0]?.id??"");
   const selected=accountChoices.find((account)=>account.id===effectiveAccountId)??accountChoices[0];
 
   return <form className="stack opening-snapshot-form" onSubmit={async (e) => {
     e.preventDefault();
+    if(busy||!effectiveAccountId)return;
     setBusy(true);setMessage("");
+    try{
     const cleanHoldings = holdings.filter((h) => h.ticker.trim() && h.exchange.trim() && h.quantity.trim());
     const response = await fetch("/api/strategies/" + id + "/opening-snapshot", {
       method: "POST",
@@ -224,6 +234,10 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
       setMessage(body.error ?? "Could not save snapshot.");
       return;
     }
+    // A refresh is asynchronous. Retire the saved account immediately so a
+    // second submission cannot reuse it while server props are still stale.
+    setSavedAccountIds((ids)=>[...ids,effectiveAccountId]);
+    setAccountId(pendingAccounts.find((account)=>account.id!==effectiveAccountId)?.id??"");
     setCash("0");
     setHoldings([{ticker:"",exchange:"LSE",quantity:""}]);
     setMessage(body.recalculationPending
@@ -232,6 +246,11 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
         ? "Opening snapshot complete. Your strategy can now calculate from today."
         : "Saved for "+(selected?.name??"this account")+". Next: "+(body.pendingAccountNames?.[0]??"the remaining account")+".");
     router.refresh();
+    }catch{
+      setMessage("Connection interrupted. Refresh to check whether the snapshot was saved before trying again.");
+    }finally{
+      setBusy(false);
+    }
   }}>
     {accountChoices.length>1&&<div className="field">
       <label htmlFor={accountSelectId}>Account to capture</label>
@@ -256,7 +275,7 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
     <div className="inline">
       <button type="button" className="button" onClick={() => setHoldings((rows) => [...rows, { ticker: "", exchange: "LSE", quantity: "" }])}>Add holding</button>
       {holdings.length > 1 && <button type="button" className="button" onClick={() => setHoldings((rows) => rows.slice(0, -1))}>Remove last</button>}
-      <button className="button primary" disabled={busy}>{busy?"Saving…":"Save "+(accounts.length>1?"this account":"opening snapshot")}</button>
+      <button className="button primary" disabled={busy||!effectiveAccountId}>{busy?"Saving…":"Save "+(accounts.length>1?"this account":"opening snapshot")}</button>
     </div>
     <div className="help">This records what you hold now. It does not invent historical trades, cost basis or contributions.</div>
     {accounts.length>1&&pendingAccounts.length>1&&<div className="help">{pendingAccounts.length} linked accounts still need a starting position.</div>}

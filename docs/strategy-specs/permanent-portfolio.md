@@ -1,30 +1,11 @@
-# Permanent Portfolio
+# Harry Browne Permanent Portfolio
 
-Status: **DRAFT, NOT SIGNED OFF.** Written without access to the primary source (the build sandbox cannot reach the web). Every item marked `VERIFY` must be checked against the cited source by a person, then the status changed to SIGNED OFF with name and date, before a version of this strategy can be published (see CLAUDE.md).
+**Status: allocation externally corroborated 2026-10-09; original book and rebalance bands NOT reviewed.**
 
-## Engine
-FIXED_ALLOCATION (research catalogue key `permanent-portfolio`).
+https://portfoliocharts.com/portfolios/permanent-portfolio/ attributes to Harry Browne four equal 25% sleeves: US large-cap stocks, long Treasury bonds, **Treasury bills** and gold. It explicitly notes bills are Browne's choice; short-term bonds are a follower variation. The code's `CASH_BILLS` must be an actually eligible bill/cash exposure rather than an intermediate-term fund.
 
-## Target allocation (as currently seeded)
-- BROAD_EQUITY 25%
-- LONG_TREASURY 25%
-- CASH_BILLS 25%
-- GOLD 25%
+The code's annual 0% threshold is a **Wealtharr variant convention**. Do not imply Browne prescribed it. The often-described 15%–35% band policy requires direct original-author source validation, boundary testing and a separately versioned release. The investor never adjusts the method.
 
-## Primary sources to verify against
-- Harry Browne, Fail-Safe Investing / Why the Permanent Portfolio works. VERIFY the book wording (stocks, long bonds, gold, cash) and his stated rebalance rule (he is commonly cited as rebalancing only when an asset drifts outside 15%-35%; VERIFY, do not assume).
-- Portfolio Charts permanent-portfolio page as a secondary reference.
+Initial £10,000: £2,500 per sleeve. UK/other wrapper fidelity, independent golden tests, authored rebalance policy, market data and reviewer sign-off are outstanding. Research alone does not enable customer trading.
 
-## Rebalance rule
-VERIFY: seeded annual review, 0% threshold. A band rule (e.g. 15%/35%) would be a distinct, versioned variant: VERIFY before adding.
-
-## Open questions
-- VERIFY each weight and the exposure definition against the source (no tickers; exposures only).
-- VERIFY whether the source states a rebalance schedule or only "periodically"; the product must not claim a canonical schedule the source does not give.
-- Instrument mapping per jurisdiction (UK first) is separate work and stays UNVERIFIED until the instrument import exists.
-
-## Golden tests required before publication
-Independently computed (spreadsheet or hand) expected trades for at least: on-target, drifted equity-heavy, drifted bond-heavy, a new cash deposit, and a withdrawal. Record the workings next to the test.
-
-## Sign-off
-Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______
+Reviewer: PENDING; independent approval: NO.

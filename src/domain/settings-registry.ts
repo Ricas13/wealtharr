@@ -23,7 +23,7 @@ export type SettingDefinition = {
 };
 
 export const SETTING_GROUPS = [
-  "General", "Billing (Stripe)", "Email", "Market data", "Sign-in providers", "Mobile apps", "Mobile app purchases", "Monitoring", "Security", "Launch sign-offs", "Background worker"
+  "General", "Billing (Stripe)", "Email", "Messaging (Telegram)", "Market data", "Sign-in providers", "Mobile apps", "Mobile app purchases", "Monitoring", "Security", "Launch sign-offs", "Background worker"
 ] as const;
 
 const bool = (key: string, label: string, group: string, help: string): SettingDefinition => ({ key, label, group, kind: "boolean", help });
@@ -44,11 +44,15 @@ export const SETTINGS: readonly SettingDefinition[] = [
   { key: "EMAIL_HTTP_TOKEN", label: "Email service token", group: "Email", kind: "secret", help: "Bearer token for the email service." },
   { key: "EMAIL_FROM", label: "From address", group: "Email", kind: "text", help: "For example support@yourdomain.com. Must be an address your email service may send from." },
 
+  { key: "TELEGRAM_BOT_TOKEN", label: "Telegram bot token", group: "Messaging (Telegram)", kind: "secret", pattern: /^\d{5,15}:[A-Za-z0-9_-]{20,150}$/, patternMessage: "Paste a BotFather token, e.g. 123456789:long-token.", help: "Token issued by BotFather. Saved encrypted and never sent to the browser." },
+  { key: "TELEGRAM_BOT_USERNAME", label: "Telegram bot username", group: "Messaging (Telegram)", kind: "text", pattern: /^[A-Za-z][A-Za-z0-9_]{4,31}$/, patternMessage: "Use the bot username without @ (5–32 letters, digits or underscores).", help: "Bot username without @, used to connect customers safely." },
+  { key: "TELEGRAM_WEBHOOK_SECRET", label: "Telegram webhook verification secret", group: "Messaging (Telegram)", kind: "secret", pattern: /^[A-Za-z0-9_-]{32,128}$/, patternMessage: "Use 32–128 letters, digits, underscores or hyphens.", help: "Generate 32+ characters of letters, digits, underscore or dash. Used to authenticate webhook requests." },
+
   { key: "MARKET_DATA_MODE", label: "Market data mode", group: "Market data", kind: "select", options: ["PROVIDER", "MANUAL"], help: "PROVIDER fetches prices from your data service. MANUAL means prices are entered by people." },
   { key: "MARKET_DATA_PROVIDER", label: "Market data provider", group: "Market data", kind: "select", options: ["http", "mock"], help: "http uses the service below. mock only works outside production." },
   { key: "MARKET_DATA_HTTP_BASE_URL", label: "Market data service address", group: "Market data", kind: "url", help: "Base https address of a service licensed for your commercial use." },
   { key: "MARKET_DATA_HTTP_TOKEN", label: "Market data token", group: "Market data", kind: "secret", help: "Bearer token for the market data service." },
-  bool("MARKET_DATA_HISTORY_ADJUSTED_LICENSED", "Store adjusted daily history", "Market data", "Turn on only when your market data service returns split- and dividend-adjusted daily closes from its historical endpoint and its licence allows storing them. Needed for momentum research strategies; off by default."),
+  bool("MARKET_DATA_HISTORY_ADJUSTED_LICENSED", "Store adjusted daily history", "Market data", "Turn on only when commercial rights permit storing adjusted history and the provider sends corporateActionsAdjusted=true for each daily CLOSE observation. This is a gate, not evidence of licensing; independently verify split/dividend treatment before offering momentum strategies."),
   { key: "MARKET_MAX_QUOTE_MOVE", label: "Largest believable price move", group: "Market data", kind: "number", min: 0.05, max: 5, help: "0.5 means a quote more than 50% away from the previous one is rejected as a likely data error." },
 
   { key: "AUTH_GOOGLE_ID", label: "Google client ID", group: "Sign-in providers", kind: "text", help: "From Google Cloud Console. Redirect URI: <public address>/api/auth/callback/google" },
@@ -74,7 +78,6 @@ export const SETTINGS: readonly SettingDefinition[] = [
   { key: "OPS_ALERT_EXTRA_EMAIL", label: "Also send alerts to", group: "Monitoring", kind: "text", pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, patternMessage: "Enter one email address.", help: "Optional extra recipient, for example a shared on-call mailbox. Administrators always receive alerts." },
 
   bool("ADMIN_MFA_REQUIRED", "Require two-step sign-in for admins", "Security", "Turn on once every admin has enabled two-step sign-in under Settings. Admins without it are kept out of admin tools."),
-  { key: "CRON_SECRET", label: "Background job secret", group: "Security", kind: "secret", help: "Bearer token your scheduler sends to /api/cron/actions. At least 32 characters." },
 
   bool("BACKUPS_RESTORE_VERIFIED", "A backup restore has been tested", "Launch sign-offs", "Confirm only after running the restore drill and keeping its report."),
   bool("UK_REGULATORY_SIGNOFF_VERIFIED", "Legal and regulatory review done", "Launch sign-offs", "Confirm only with documented advice for where you operate."),

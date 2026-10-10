@@ -10,23 +10,12 @@ function money(v: Decimal) {
 }
 
 /**
- * Weights an investor may set themselves (three-fund, 60/40, 80/20). When config.userWeights is true the
- * instance setting `weight_<EXPOSURE>` replaces the configured weight for that exposure. The result must
- * still total 100%, otherwise null is returned and the engine asks for data instead of guessing.
+ * Published allocations are immutable. Personal account settings never override a famous
+ * strategy's mathematical percentages. Historical custom-weight versions fail closed.
  */
 export function effectiveAllocations(config: Record<string, unknown>, settings: Record<string, unknown>): Allocation[] | null {
-  const allocations = (config.allocations ?? []) as Allocation[];
-  if (config.userWeights !== true) return allocations;
-  let total = new Decimal(0);
-  const result = allocations.map((allocation) => {
-    const chosen = Object.hasOwn(settings, "weight_" + allocation.exposure) ? settings["weight_" + allocation.exposure] : allocation.weight;
-    let weight: Decimal;
-    try { weight = new Decimal(String(chosen)); } catch { weight = new Decimal(NaN); }
-    total = total.plus(weight);
-    return { ...allocation, weight: weight.toString() };
-  });
-  if (result.some((row) => !new Decimal(String(row.weight)).isFinite() || new Decimal(String(row.weight)).lte(0) || new Decimal(String(row.weight)).gt(1))) return null;
-  return total.minus(1).abs().gt("0.00000001") ? null : result;
+  if(config.userWeights===true||Object.keys(settings).some(key=>key.startsWith("weight_")))return null;
+  return (config.allocations??[]) as Allocation[];
 }
 
 export const fixedAllocationEngine: StrategyEngine = {
@@ -46,7 +35,8 @@ export const fixedAllocationEngine: StrategyEngine = {
     if (total.minus(1).abs().gt("0.00000001")) throw new Error("FIXED_ALLOCATION_WEIGHTS_MUST_SUM_TO_ONE");
     const threshold = new Decimal(String(config.rebalanceThreshold ?? "0.05"));
     if (!threshold.isFinite() || threshold.lt(0) || threshold.gt(1)) throw new Error("INVALID_FIXED_ALLOCATION_THRESHOLD");
-    if (config.userWeights !== undefined && typeof config.userWeights !== "boolean") throw new Error("INVALID_FIXED_ALLOCATION_USER_WEIGHTS");
+    if(config.userWeights===true)throw new Error("CUSTOM_WEIGHTS_NOT_SUPPORTED");
+    if(config.userWeights!==undefined&&config.userWeights!==false)throw new Error("INVALID_FIXED_ALLOCATION_USER_WEIGHTS");
     const frequency = String(config.reviewFrequency ?? "QUARTERLY");
     if (!Object.hasOwn(REVIEW_FREQUENCY_MONTHS,frequency)) throw new Error("INVALID_FIXED_ALLOCATION_REVIEW_FREQUENCY");
   },
@@ -79,7 +69,7 @@ export const fixedAllocationEngine: StrategyEngine = {
       return {
         actionType: "DATA_REQUIRED",
         title: "Check your target weights",
-        instruction: "Your chosen weights must each be above 0% and total exactly 100%. Update them in the strategy settings.",
+        instruction: "This saved version contains unsupported custom allocation rules. Reconcile your holdings and migrate to a code-reviewed published strategy release.",
         explanation: [],
         nextState: ctx.state,
         confidence: "LOW",

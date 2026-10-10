@@ -55,6 +55,20 @@ describe("regional instrument resolver",()=>{
     expect(result).toBeNull();
   });
 
+  it("ignores corrupt leverage records without throwing or hiding a valid mapping",()=>{
+    const request={economicExposure:base.economicExposure,leverage:"3",direction:"LONG",
+      country:"GB",wrapper:"ISA",preferredCurrency:"GBP",asOf:"2026-10-01"};
+    const malformed=["not-a-number","Infinity","NaN","0","-3"];
+    for(const leverage of malformed){
+      const invalid={id:"bad",tradingLineId:"bad-line",...base,leverage};
+      const valid={id:"valid",tradingLineId:"valid-line",...base};
+      expect(resolveMapping([invalid,valid],request)?.tradingLineId).toBe("valid-line");
+      expect(resolveMapping([invalid],request)).toBeNull();
+    }
+    expect(resolveMapping([{id:"valid",tradingLineId:"valid-line",...base}],
+      {...request,leverage:"NaN"})).toBeNull();
+  });
+
   it("refuses economically different leverage",()=>{
     const result=resolveMapping(
       [{id:"x",tradingLineId:"a",...base,leverage:"2.000000"}],

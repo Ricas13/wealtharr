@@ -18,7 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # Mirror of the official Postgres image. Avoid Docker Hub unauthenticated rate limits
+        # on ephemeral GitHub runners (toomanyrequests before tests even start).
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: strategyos
           POSTGRES_PASSWORD: strategyos
@@ -50,11 +52,26 @@ jobs:
           npm run db:migrate
           npm run db:migrate
           npm run db:seed
+      - name: Verify least-privilege database roles (real PostgreSQL)
+        env:
+          APP_DB_PASSWORD: ci-app-database-password-long-enough
+          BACKUP_DB_PASSWORD: ci-backup-database-password-long-enough
+        run: |
+          npm run db:provision-roles
+          npm run db:provision-roles
+          npm run db:verify-roles
+          # Exercise actual pg_dump under the backup-only credentials, not the owner.
+          docker run --rm --network host --env "PGPASSWORD=$BACKUP_DB_PASSWORD" \
+            public.ecr.aws/docker/library/postgres:16-alpine \
+            pg_dump -h 127.0.0.1 -U wealtharr_backup -d strategyos_test \
+            --format=custom --no-owner --no-acl > /tmp/wealtharr-readonly-backup.pgcustom
+          test -s /tmp/wealtharr-readonly-backup.pgcustom
       - name: Validate Oracle Compose and offsite backup image
         run: |
-          printf 'POSTGRES_PASSWORD=ci-db-pass\nDATABASE_URL=postgresql://strategyos:ci-db-pass@db:5432/strategyos\n' > .env.production
+          printf 'POSTGRES_PASSWORD=ci-db-pass\nAPP_DB_PASSWORD=ci-app-database-password-long-enough\nBACKUP_DB_PASSWORD=ci-backup-database-password-long-enough\nWEALTHARR_STAGING_ALLOWLIST=203.0.113.7/32\nDATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@db:5432/strategyos\n' > .env.production
           docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --quiet
-          docker compose -f docker-compose.oracle.yml -f docker-compose.traefik.yml --env-file .env.production config --format json > /tmp/wealtharr-traefik-compose.json
+          docker compose --profile maintenance -f docker-compose.oracle.yml -f docker-compose.traefik.yml --env-file .env.production config --format json > /tmp/wealtharr-traefik-compose.json
+          docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --format json > /tmp/wealtharr-backup-compose.json
           python3 - <<'PY'
           import json
           with open('/tmp/wealtharr-traefik-compose.json') as file:
@@ -66,13 +83,50 @@ jobs:
           assert config['networks']['media_net']['external'] is True
           assert config['services']['db'].get('ports') in (None, []), 'Database must remain private'
           assert app['labels']['traefik.http.routers.wealtharr.rule'] == 'Host(`wealtharr.vpn4u.cc`)'
+          assert app['labels']['traefik.http.routers.wealtharr.middlewares'] == 'wealtharr-staging-private'
+          assert app['labels']['traefik.http.middlewares.wealtharr-staging-private.ipallowlist.sourcerange'] == '203.0.113.7/32'
+          scheduler = config['services']['scheduler']
+          assert set(scheduler.get('environment', {})) == {'CRON_SECRET'}
+          assert not scheduler.get('env_file')
+          maintenance = config['services']['maintenance']
+          assert maintenance.get('profiles') == ['maintenance']
+          assert maintenance['environment']['DATABASE_URL'].startswith('postgresql://strategyos:')
+          assert set(maintenance['environment']) == {'DATABASE_URL', 'APP_DB_PASSWORD', 'BACKUP_DB_PASSWORD'}
+          assert all(app['environment'][name] == '' for name in ('POSTGRES_PASSWORD','APP_DB_PASSWORD','BACKUP_DB_PASSWORD'))
+          assert app['environment']['DATABASE_URL'].startswith('postgresql://wealtharr_app:')
+          assert scheduler.get('user') == '65534:65534' and scheduler.get('read_only') is True, 'Scheduler must be unprivileged and read-only'
+          with open('/tmp/wealtharr-backup-compose.json') as file: backup_config = json.load(file)
+          backup = backup_config['services']['backup']
+          assert not backup.get('env_file'), 'Backup must not receive the application env file'
+          assert 'AUTH_SECRET' not in backup.get('environment', {}) and 'APP_ENCRYPTION_KEY' not in backup.get('environment', {}), 'Backup must not receive application secrets'
+          assert backup['environment']['PGUSER'] == 'wealtharr_backup'
+          assert backup['environment']['PGPASSWORD'] == 'ci-backup-database-password-long-enough'
           PY
           docker build --quiet -f docker/backup.Dockerfile .
           rm -f .env.production
+      - run: sh -n scripts/verify-private-staging.sh
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Build production application image and verify runtime boundary
+        run: |
+          docker build --tag wealtharr-ci:${{ github.sha }} .
+          test "$(docker inspect --format '{{.Config.User}}' wealtharr-ci:${{ github.sha }})" = node
+          docker run --rm --entrypoint node wealtharr-ci:${{ github.sha }} -e "for (const p of ['next','tsx','postgres']) require.resolve(p); for (const p of ['vitest','eslint','drizzle-kit']) { try { require.resolve(p); process.exit(1); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; } }"
+      - name: Smoke-test production runtime and migration tooling
+        run: |
+          docker run --rm --network host --env DATABASE_URL wealtharr-ci:${{ github.sha }} npm run db:migrate
+          docker run --detach --name wealtharr-runtime-smoke --network host \
+            --env DATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@127.0.0.1:5432/strategyos_test --env AUTH_SECRET --env AUTH_TRUST_HOST \
+            --env APP_ENCRYPTION_KEY --env CRON_SECRET --env NEXT_PUBLIC_APP_URL \
+            --env EMAIL_PROVIDER --env MARKET_DATA_PROVIDER wealtharr-ci:${{ github.sha }}
+          trap 'docker logs wealtharr-runtime-smoke; docker rm -f wealtharr-runtime-smoke' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health; then exit 0; fi
+            sleep 2
+          done
+          exit 1
       - name: Install browser for responsive smoke tests
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

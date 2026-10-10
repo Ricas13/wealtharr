@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { assertExecutionCurrencyMatch, planPracticalTrade, validateExecution } from "../src/domain/execution";
 
 describe("trade execution validation", () => {
+  it("preserves a hand-calculated fractional fill exactly at ledger precision", () => {
+    // 0.123456 × 10.25 = 1.265424; fee 0.00000001 leaves 0.73457599 from 2.
+    const result=validateExecution({side:"BUY",proposedAmount:"1.265424",price:"10.25",quantity:"0.123456",fee:"0.00000001",availableCash:"2",heldQuantity:"0"});
+    expect(result.grossNotional.toString()).toBe("1.265424");
+    expect(result.cashAmount.minus(result.fee).toString()).toBe("-1.26542401");
+  });
+
+  it.each([
+    {price:"1.000000001",quantity:"1",fee:"0"},
+    {price:"1",quantity:"1.0000000000001",fee:"0"},
+    {price:"1",quantity:"1",fee:"0.000000001"},
+    {price:"10.25",quantity:"0.123456789",fee:"0"}
+  ])("refuses silently rounded broker values: %j", (fill) => {
+    expect(()=>validateExecution({side:"BUY",proposedAmount:"1",availableCash:"100",heldQuantity:"0",...fill})).toThrow("EXECUTION_PRECISION_UNSUPPORTED");
+  });
+
+  it("refuses amounts outside the database range before writing", () => {
+    expect(()=>validateExecution({side:"BUY",proposedAmount:"10000000000000000",price:"100",quantity:"100000000000000",fee:"0",availableCash:"10000000000000000",heldQuantity:"0"})).toThrow("EXECUTION_AMOUNT_TOO_LARGE");
+  });
   it("records actual buy notional and fee", () => {
     const result = validateExecution({
       side: "BUY",

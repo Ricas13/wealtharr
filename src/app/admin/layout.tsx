@@ -19,6 +19,7 @@ export default async function AdminLayout({children}:{children:React.ReactNode})
       <nav className="nav-group" aria-label="Admin">
         <div className="nav-label">Control plane</div>
         <Link className="nav-link" href="/admin">System</Link>
+        <Link className="nav-link" href="/admin/configuration">Master setup</Link>
         <Link className="nav-link" href="/admin/settings">Settings</Link>
         <Link className="nav-link" href="/admin/launch">Launch readiness</Link>
         <Link className="nav-link" href="/admin/seo">SEO &amp; brand</Link>

@@ -18,14 +18,18 @@ Reference strategy records are in `src/domain/strategy/research-catalog.ts`. Sou
 - [x] Implement research-only PAA 13-month SMA breadth/defensive allocation calculator and unit tests (not enabled)
 - [ ] Independently validate PAA against author golden cases and exact monthly close conventions
 - [ ] Verify full VAA variants against independent golden cases, wire trusted monthly series and execution/rebalance lifecycle
-- [ ] Integrate licensed historical prices into EngineContext, handle corporate actions and calendars, and independently backtest momentum signal engines with no look-ahead
+- [x] Require each stored historical bar to be explicitly reported by the licensed provider as corporate-action-adjusted; reject ordinary CLOSE bars, malformed dates and future-dated observations
+- [x] Wire trusted historical series into EngineContext with fail-closed provenance and coverage checks
+- [ ] Verify actual licensed-provider dividend/split methodology and trading calendars, and independently backtest momentum signal engines with no look-ahead
 - [x] Confirm author-published basic 3Sig/6Sig quarterly growth targets and leverage levels
 - [ ] Verify full source-specific 3Sig/6Sig trade adjustment, reserve and reset procedures; do not guess
-- [x] Add constrained visual admin builder for validated fixed-allocation draft releases (not arbitrary strategy code)
-- [ ] Add advanced custom strategy editor with secure authoring, configuration diffs, permissions, immutable publication and restricted operator sandbox
+- [x] Remove customer-defined weights and custom strategies; only source-checked, immutable built-in variants are supported
+- [x] Restrict administrator publication to code-reviewed canonical strategy configurations; admin UI manages availability and verified instrument assignments, not arbitrary new financial algorithms
+- [ ] Provide audited source citations, immutable release evidence and signed reviewer approval for each named strategy variant before enabling it commercially
 - [ ] Run independent golden-case regression tests against primary source examples
 - [x] Fail-closed admin publication gate prevents research-only momentum engines from becoming customer-visible
-- [ ] Add per-strategy verified release attestations, source-specific golden tests and customer acceptance before broadening the publishable-engine allowlist
+- [x] Add per-version release attestations and immutable evidence through migrations 0025/0029
+- [ ] Complete independent source-specific golden verification and customer acceptance before broadening the publishable-engine allowlist
 - [ ] Publish strategy-specific disclosures including leverage and volatility decay
 - [x] Fail closed on equally ranked conflicting regional trading-line mappings
 - [ ] Verify economic exposure, currency, wrapper eligibility, fractional trading and *actual purchasability* by region and broker; never automatically substitute a similar ticker
@@ -53,10 +57,14 @@ Run `npm run launch:preflight` with genuine production configuration before enab
 
 **Operating rule:** Green CI proves software checks passed, not market-data accuracy, regional product eligibility, investment methodology authenticity, legal approval or production readiness. No automatic broker trades are authorised by these research definitions.
 
-## User-selected manual-data-first launch variant (October 2026)
+## Market-data provider first, manual reconciliation as a fallback (October 2026)
+
+The product must normally track licensed current/historical prices itself. Manual broker fills and user price overrides are for reconciliation and contingency, **not** a replacement for price tracking, benchmarks or automated scheduled reviews. Earlier experiments with a manual-only deployment should not be treated as the preferred customer experience.
+
+### Limited manual-only contingency (not a production-ready feature)
 
 - [x] Oracle Docker self-host profile with private Postgres and basic scheduler.
-- [x] Add explicit `MARKET_DATA_MODE=MANUAL` to commercial configuration preflight; external quote licensing is **not** mandatory for genuinely user-supplied values.
+- [x] Commercial configuration preflight requires the configured HTTP provider and verified licensing; manual mode does not satisfy the paid-launch gate.
 - [ ] Make *all* relevant user journeys work without a quote provider: secure timestamped price input, validation, stale-price/review controls, and provenance in charts, calculations and notifications.
 - [ ] Add end-to-end manual-data tests for each strategy, including missing prices and account discrepancies.
 - [ ] Implement off-host encrypted backups and test recovery, admin worker controls/observability, secret management and provider connectivity tests for Oracle Docker.

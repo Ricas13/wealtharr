@@ -9,10 +9,9 @@ import { finishPendingAccountDeletions } from "@/lib/account-deletion";
 import { runBounded } from "@/lib/work-pool";
 import { ensureSettings } from "@/lib/settings";
 import { runOpsCheck } from "@/lib/ops-monitor";
-
-function authorized(request: Request) {
-  return Boolean(process.env.CRON_SECRET) && request.headers.get("authorization") === "Bearer " + process.env.CRON_SECRET;
-}
+import { reconcileStripeSubscriptions } from "@/lib/billing-reconciliation";
+import { cronAuthorized } from "@/lib/cron-auth";
+import { safeErrorCode } from "@/lib/safe-error-code";
 
 function positiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
@@ -47,8 +46,8 @@ async function aggregatesDue() {
 }
 
 export async function GET(request: Request) {
+  if (!cronAuthorized(request)) return new Response("Unauthorized", { status: 401 });
   await ensureSettings();
-  if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
 
   const startedAt = Date.now();
   const budgetMs = positiveInt("CRON_TIME_BUDGET_MS", 150_000);
@@ -63,6 +62,8 @@ export async function GET(request: Request) {
   try {
     // Finish account deletions that stalled (for example Stripe was unreachable when requested).
     const accountDeletions = await finishPendingAccountDeletions().catch(() => ({ completed: 0, stalled: -1 }));
+
+    const billing=await reconcileStripeSubscriptions({deadline:phaseEnds(0.1)});
 
     const marketData = await refreshMarketData({ deadline: phaseEnds(0.3), concurrency: 5 });
     // Research-only history for momentum strategies; a failure here must never block the real run.
@@ -83,17 +84,20 @@ export async function GET(request: Request) {
       }
     });
 
-    // Stalest first: calculateAction touches the instance's updated_at, so a run cut short by the
-    // time budget or the cap resumes with exactly the strategies it did not reach, instead of
-    // starving the same tail every hour.
+    // Least recently attempted first (never-attempted strategies lead). Every attempt is stamped,
+    // successful or not, so a run cut short by the time budget or the cap resumes with exactly the
+    // strategies it did not reach, and persistently failing ones cannot starve healthy ones.
     const instances = await sql.unsafe(
-      "SELECT i.id FROM strategy_instances i JOIN users u ON u.id=i.user_id WHERE i.status='ACTIVE' AND u.deleted_at IS NULL ORDER BY i.updated_at ASC,i.id LIMIT $1",
+      "SELECT i.id FROM strategy_instances i JOIN users u ON u.id=i.user_id WHERE i.status='ACTIVE' AND u.deleted_at IS NULL ORDER BY i.last_calculation_attempt_at ASC NULLS FIRST,i.updated_at ASC,i.id LIMIT $1",
       [maxInstances]
     );
     let calculated = 0;
     let calculationFailures = 0;
     const calculationPool = await runBounded(instances, { concurrency, shouldStop: () => Date.now() >= phaseEnds(0.7) }, async (row) => {
       try {
+        // Stamp the attempt first: a strategy that fails repeatedly must still move to the back of the
+        // queue, otherwise failing strategies could occupy every slot and starve the healthy ones.
+        await sql.unsafe("UPDATE strategy_instances SET last_calculation_attempt_at=now() WHERE id=$1", [row.id]);
         await calculateAction(String(row.id));
         calculated += 1;
       } catch {
@@ -119,11 +123,11 @@ export async function GET(request: Request) {
 
     const marketDataRequired = (process.env.MARKET_DATA_MODE ?? "PROVIDER").toUpperCase() !== "MANUAL";
     const marketDegraded = marketDataRequired && (!marketData.configured || marketData.failed > 0 || marketData.skipped > 0);
-    const deferred = { entitlements: entitlementPool.deferred, calculations: calculationDeferred, deliveriesBacklog: !delivery.exhausted };
-    const backlog = deferred.entitlements > 0 || deferred.calculations > 0 || deferred.deliveriesBacklog;
-    const ok = calculationFailures === 0 && entitlementFailures === 0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog;
+    const deferred = { entitlements: entitlementPool.deferred, calculations: calculationDeferred, deliveriesBacklog: !delivery.exhausted, deliveriesHeldBack: delivery.heldBack ?? 0 };
+    const backlog = deferred.entitlements > 0 || deferred.calculations > 0 || deferred.deliveriesBacklog || deferred.deliveriesHeldBack > 0 || billing.deferred>0 || billing.hasMore;
+    const ok = calculationFailures === 0 && entitlementFailures === 0 && billing.failed===0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog;
     const summary = {
-      ok, status: ok ? "healthy" : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData,
+      ok, status: ok ? "healthy" : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData, billing,
       entitlementPaused, entitlementFailures, calculated, calculationFailures, deferred,
       deliveriesCreated, delivered: delivery.sent, aggregates
     };
@@ -132,7 +136,7 @@ export async function GET(request: Request) {
     await runOpsCheck().catch(() => undefined);
     return Response.json(summary, { status: ok ? 200 : 503, headers });
   } catch (error) {
-    await finishLease(lease, "FAILED", { error: error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN" });
+    await finishLease(lease, "FAILED", { error: safeErrorCode(error) });
     throw error;
   }
 }

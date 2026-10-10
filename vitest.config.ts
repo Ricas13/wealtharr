@@ -10,6 +10,13 @@ export default defineConfig({
     }
   },
   test: {
-    exclude: ["tests/e2e/**", "node_modules/**", ".next/**"]
+    exclude: ["tests/e2e/**", "node_modules/**", ".next/**"],
+    projects: [
+      { extends: true, test: { name: "unit", include: ["tests/*.test.ts"], exclude: ["tests/restore-drill-script.test.ts"] } },
+      // These suites mutate singleton settings, global market mappings and workers
+      // in one disposable database. File-level overlap is not isolated. Concurrent
+      // requests *within* lifecycle tests remain concurrent and fully asserted.
+      { extends: true, test: { name: "database", include: ["tests/db/*.test.ts", "tests/restore-drill-script.test.ts"], fileParallelism: false } }
+    ]
   }
 });

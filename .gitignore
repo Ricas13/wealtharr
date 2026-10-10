@@ -3,6 +3,9 @@ node_modules
 .env
 .env.local
 .env.*.local
+.env.production
+test-results/
+playwright-report/
 .vercel
 coverage
 *.log

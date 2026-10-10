@@ -10,7 +10,7 @@ import { authFailure } from "@/lib/api-auth";
 const decimalString = z.string().regex(/^\d+(?:\.\d{1,12})?$/);
 const schema = z.object({
   accountId: z.string().uuid().optional(),
-  cash: decimalString.default("0"),
+  cash: z.string().regex(/^\d{1,16}(?:\.\d{1,8})?$/).default("0"),
   holdings: z.array(z.object({
     ticker: z.string().min(1).max(40),
     exchange: z.string().min(1).max(80),
@@ -61,6 +61,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         );
       }
 
+      const includedInstruments=new Set<string>();
       for (const holding of holdings) {
         const lines = await tx.unsafe(
           "SELECT tl.instrument_id,tl.currency,tl.id FROM trading_lines tl WHERE upper(tl.ticker)=upper($1) AND upper(tl.exchange)=upper($2) AND upper(tl.currency)=upper($3) AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) ORDER BY tl.effective_from DESC,tl.id LIMIT 2",
@@ -68,6 +69,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         );
         if (!lines[0]) throw new Error("TRADING_LINE_NOT_FOUND:" + holding.ticker + ":" + holding.exchange);
         if (lines.length > 1) throw new Error("AMBIGUOUS_TRADING_LINE:" + holding.ticker + ":" + holding.exchange);
+        const instrumentId=String(lines[0].instrument_id);
+        if(includedInstruments.has(instrumentId))throw new Error("DUPLICATE_OPENING_HOLDING");
+        includedInstruments.add(instrumentId);
         await tx.unsafe(
           "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,provenance,confidence,metadata) VALUES ($1,$2,now(),'OPENING_POSITION',$3,0,$4,$5,'USER_CONFIRMED','VERIFIED',$6::jsonb)",
           [id, locked[0].account_id, lines[0].currency, lines[0].instrument_id, holding.quantityDecimal.toString(), JSON.stringify({ openingSnapshot: true, tradingLineId: String(lines[0].id), ticker: holding.ticker, exchange: holding.exchange, accountName:String(locked[0].account_name) })]
@@ -121,6 +125,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (code === "STRATEGY_NOT_FOUND") return Response.json({ error: "That account is not linked to this strategy." }, { status: 404 });
     if (code === "OPENING_SNAPSHOT_NOT_ALLOWED") return Response.json({ error: "Opening snapshots are only for resumed portfolios or newly linked existing accounts." }, { status: 409 });
     if (code === "OPENING_SNAPSHOT_EXISTS") return Response.json({ error: "This account already has activity, so its opening position cannot be replaced." }, { status: 409 });
+    if (code === "DUPLICATE_OPENING_HOLDING") return Response.json({error:"Enter each security once with its total quantity. Duplicate holdings have not been saved."},{status:400});
     if (code.startsWith("TRADING_LINE_NOT_FOUND:")) {
       const [, ticker, exchange] = code.split(":");
       return Response.json({ error: "No active configured trading line in this account’s currency was found for " + ticker + " on " + exchange + "." }, { status: 400 });

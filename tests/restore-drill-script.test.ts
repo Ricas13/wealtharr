@@ -18,6 +18,15 @@ describe("restore drill script",()=>{
   expect(source).toContain("--exit-on-error");
   expect(source).not.toMatch(/DROP DATABASE[^\n]*\$PGDATABASE/);
  });
+ it("stops when the scratch-database existence check cannot reach PostgreSQL",()=>{
+  const result=spawnSync("sh",["-c","psql() { return 71; }; . scripts/restore-drill.sh"],{
+   encoding:"utf8",env:{...process.env,PGHOST:"unreachable",PGUSER:"test",PGPASSWORD:"test",PGDATABASE:"live",DRILL_SCRATCH_DB:"scratch",DRILL_DUMP_FILE:"/dev/null"}
+  });
+  // The exact failed query exit code must propagate, before checking the dump,
+  // creating a directory/database or attempting a restore.
+  expect(result.status).toBe(71);
+  expect(result.stderr).not.toContain("Backup file is empty");
+ });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("restore drill against a real server",()=>{

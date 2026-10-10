@@ -9,6 +9,8 @@ export type PriceObservation = {
   provider: string;
   granularity?: "TRADE"|"MINUTE_BAR"|"DAILY_BAR";
   priceKind?: "LAST"|"OPEN"|"HIGH"|"LOW"|"CLOSE";
+  /** Explicit provider assertion: split/distribution-adjusted bar, not merely a daily close. */
+  corporateActionsAdjusted?: boolean;
 };
 
 export interface MarketDataProvider {
@@ -32,7 +34,8 @@ const quoteSchema = z.object({
   currency: z.string().length(3),
   observedAt: z.string().datetime({ offset: true }),
   granularity: z.enum(["TRADE","MINUTE_BAR","DAILY_BAR"]).optional(),
-  priceKind: z.enum(["LAST","OPEN","HIGH","LOW","CLOSE"]).optional()
+  priceKind: z.enum(["LAST","OPEN","HIGH","LOW","CLOSE"]).optional(),
+  corporateActionsAdjusted: z.boolean().optional()
 });
 
 function validatedObservation(raw: unknown, provider: string): PriceObservation {
@@ -45,7 +48,8 @@ function validatedObservation(raw: unknown, provider: string): PriceObservation 
     observedAt: new Date(parsed.observedAt),
     provider,
     granularity: parsed.granularity,
-    priceKind: parsed.priceKind
+    priceKind: parsed.priceKind,
+    corporateActionsAdjusted: parsed.corporateActionsAdjusted
   };
 }
 
@@ -91,6 +95,7 @@ class HttpMarketDataProvider implements MarketDataProvider {
         authorization: "Bearer " + this.token
       },
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(10_000)
     });
     if (response.status === 404) return null;

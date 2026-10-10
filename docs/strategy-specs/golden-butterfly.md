@@ -1,30 +1,18 @@
-# Golden Butterfly
+# Golden Butterfly — US reference and international source variants
 
-Status: **DRAFT, NOT SIGNED OFF.** Written without access to the primary source (the build sandbox cannot reach the web). Every item marked `VERIFY` must be checked against the cited source by a person, then the status changed to SIGNED OFF with name and date, before a version of this strategy can be published (see CLAUDE.md).
+**Research status: original creator's US asset classes checked 2026-10-09; NOT publication approved.**
 
-## Engine
-FIXED_ALLOCATION (research catalogue key `golden-butterfly`).
+Original-author portfolio https://portfoliocharts.com/portfolios/golden-butterfly-portfolio/?home=usa by Tyler:
+- 20% US large-cap blend
+- 20% US small-cap value
+- 20% US long-term Treasury bonds
+- 20% US short-term Treasury bonds
+- 20% gold
 
-## Target allocation (as currently seeded)
-- US_LARGE_CAP 20%
-- US_SMALL_CAP_VALUE 20%
-- LONG_TREASURY 20%
-- SHORT_TREASURY 20%
-- GOLD 20%
+**Critical regional-method difference**: Tyler's **Canadian** version https://portfoliocharts.com/portfolios/golden-butterfly-portfolio/?home=can instead uses 40% Canadian large-cap blend, 20% Canadian intermediate-term bonds, 20% Canadian Treasury bills and 20% global gold. This is **four** sleeves and different allocations/durations. Ticker substitution alone cannot reproduce the Canadian source variant. A distinct source-reviewed, code-locked regional variant and independent tests are required; otherwise Wealtharr must fail closed with an unsupported-market message.
 
-## Primary sources to verify against
-- Tyler (Portfolio Charts) Golden Butterfly page, portfoliocharts.com. VERIFY the page, its author attribution, and any stated rebalance guidance.
+US reference £10,000: five £2,000 sleeves. Later £3,000 large cap / £1,000 small value / other sleeves £2,000: sell £1,000 large cap and buy £1,000 small value. Code's annual review is a Wealtharr reference convention, not yet verified from the author.
 
-## Rebalance rule
-VERIFY: seeded annual review, 0% threshold. VERIFY whether the source gives a schedule or bands.
+**Release blockers**: method-version, exact rebalance cadence, UK/home-market translations, broker/wrapper instrument rights and independently tested golden cases; external reviewer attestation. Do not enable this research profile.
 
-## Open questions
-- VERIFY each weight and the exposure definition against the source (no tickers; exposures only).
-- VERIFY whether the source states a rebalance schedule or only "periodically"; the product must not claim a canonical schedule the source does not give.
-- Instrument mapping per jurisdiction (UK first) is separate work and stays UNVERIFIED until the instrument import exists.
-
-## Golden tests required before publication
-Independently computed (spreadsheet or hand) expected trades for at least: on-target, drifted equity-heavy, drifted bond-heavy, a new cash deposit, and a withdrawal. Record the workings next to the test.
-
-## Sign-off
-Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______
+Reviewer: PENDING; independent approval: NO.

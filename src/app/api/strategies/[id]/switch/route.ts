@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/session";
 import { assertSameOrigin } from "@/lib/security";
 import { switchStrategy } from "@/lib/strategy-switch-service";
 import { authFailure } from "@/lib/api-auth";
+import { StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 
 const schema=z.object({
   targetStrategyKey:z.string().min(1).max(80),
@@ -20,6 +21,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     return Response.json({ok:true,...result});
   }catch(error){const denied=authFailure(error);if(denied)return denied;
     if(error instanceof z.ZodError)return Response.json({error:"Check the strategy-switch details."},{status:400});
+    if(error instanceof StrategyMarketUnavailableError)return Response.json({error:error.message,code:error.code,supportedMarkets:error.assessment.supportedMarkets},{status:422});
     const code=error instanceof Error?error.message:"FAILED";
     const messages:Record<string,string>={
       STRATEGY_INSTANCE_NOT_FOUND:"Strategy not found.",

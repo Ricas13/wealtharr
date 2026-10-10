@@ -15,6 +15,10 @@ services:
       traefik.http.routers.wealtharr.tls: "true"
       traefik.http.routers.wealtharr.tls.certresolver: "le"
       traefik.http.routers.wealtharr.service: "wealtharr"
+      # Fail closed: private staging cannot be routed without explicit reviewer CIDRs.
+      # Traefik sees the immediate peer IP. Confirm the effective source if behind a proxy.
+      traefik.http.routers.wealtharr.middlewares: "wealtharr-staging-private"
+      traefik.http.middlewares.wealtharr-staging-private.ipallowlist.sourcerange: ${WEALTHARR_STAGING_ALLOWLIST:?Set exact trusted reviewer/VPN CIDRs}
       traefik.http.services.wealtharr.loadbalancer.server.port: "3000"
 networks:
   media_net:

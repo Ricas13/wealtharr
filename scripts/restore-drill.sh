@@ -23,7 +23,11 @@ if [ "$scratch" = "$PGDATABASE" ]; then
 fi
 case "$scratch" in *[!A-Za-z0-9_]*) echo "Refusing: scratch database name must be letters, digits and underscores." >&2; exit 2 ;; esac
 # Never replace an existing database: only a database this script created itself may be dropped.
-if [ "$(psql -d postgres -qAt -c "SELECT 1 FROM pg_database WHERE datname='$scratch'")" = "1" ]; then
+# Keep this command outside the conditional: POSIX shells ignore `set -e` in
+# an if condition, including a failed command substitution. A connection/client
+# failure must stop the drill before it assumes the scratch name is unused.
+existing=$(psql -d postgres -qAt -c "SELECT 1 FROM pg_database WHERE datname='$scratch'")
+if [ "$existing" = "1" ]; then
   echo "Refusing: database $scratch already exists." >&2
   exit 2
 fi

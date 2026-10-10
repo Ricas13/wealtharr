@@ -6,8 +6,11 @@ import { effectiveAllocations } from "@/domain/strategy/fixed-allocation";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
 import { serializeExecutionConstraints } from "@/domain/execution";
 import { normalizeContributionPlan } from "@/domain/contribution-plan";
+import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
+import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 
 export type CreateStrategyInput = {
+  requestKey?: string;
   strategyKey: string;
   name: string;
   wrapper: string;
@@ -68,9 +71,27 @@ export async function createStrategy(userId: string, country: string, rawInput: 
   const currency = rawInput.currency.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) throw new Error("INVALID_CURRENCY");
   const input = { ...rawInput, currency };
+  if (input.requestKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.requestKey))
+    throw new Error("INVALID_REQUEST_KEY");
+  const { requestKey, ...requestInput } = input;
+  const requestPayload = JSON.stringify({ country, timezone: timezone ?? null, input: requestInput });
   return sql.begin(async (tx) => {
     const locked = await tx.unsafe("SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[userId]);
     if (!locked[0]) throw new Error("UNAUTHENTICATED");
+
+    // The user lock serializes concurrent retries before any account or ledger write.
+    // Replay precedes current plan limits: a successful request must still be recoverable
+    // after its newly created strategy fills the last available plan slot.
+    if (requestKey) {
+      const previous = await tx.unsafe(
+        "SELECT strategy_instance_id,request_payload=$3::jsonb AS matches FROM strategy_creation_requests WHERE user_id=$1 AND request_key=$2",
+        [userId,requestKey,requestPayload]
+      );
+      if (previous[0]) {
+        if (!previous[0].matches) throw new Error("STRATEGY_REQUEST_CONFLICT");
+        return String(previous[0].strategy_instance_id);
+      }
+    }
 
     let planRows = await tx.unsafe(
       "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') LIMIT 1",
@@ -103,6 +124,15 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     const wrappers=Array.isArray(definition.supported_wrappers)?definition.supported_wrappers.map(String):[];
     if(regions.length&&!regions.includes(country))throw new Error("STRATEGY_NOT_SUPPORTED_IN_REGION");
     if(wrappers.length&&!wrappers.includes(input.wrapper))throw new Error("STRATEGY_NOT_SUPPORTED_FOR_WRAPPER");
+
+    // A named strategy can only be enabled when every leg has an exact, unambiguous,
+    // country/wrapper/currency/broker-eligible instrument. Never guess an ETF substitute.
+    const marketChoice={country,wrapper:input.wrapper,currency:input.currency,broker:input.broker??null};
+    const market=assessStrategyMarket(String(definition.engine_key),
+      (definition.config??{}) as Record<string,unknown>,
+      verifiedCandidates(await tx.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)),
+      marketChoice,new Date().toISOString().slice(0,10));
+    if(!market.available)throw new StrategyMarketUnavailableError(market,marketChoice);
 
     const inputSchema=parseInputSchema(
       Array.isArray(definition.input_schema)&&definition.input_schema.length?definition.input_schema:definition.required_inputs
@@ -137,6 +167,10 @@ export async function createStrategy(userId: string, country: string, rawInput: 
 
     const startingCash = new Decimal(input.startingCash ?? "0");
     if (!startingCash.isFinite() || startingCash.lt(0)) throw new Error("INVALID_STARTING_CASH");
+    if (startingCash.decimalPlaces()>8 || startingCash.gte("10000000000000000")) throw new Error("INVALID_STARTING_CASH");
+    // A resumed account receives its actual cash in the opening snapshot. An
+    // advance contribution would block that snapshot or count the cash twice.
+    if (input.onboardingMode==="RESUME" && startingCash.gt(0)) throw new Error("RESUME_CASH_REQUIRES_SNAPSHOT");
     if (startingCash.gt(0)) {
       await tx.unsafe(
         "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,provenance,confidence,metadata) VALUES ($1,$2,now(),'CONTRIBUTION',$3,$4,'USER_ENTERED','VERIFIED',$5::jsonb)",
@@ -146,6 +180,10 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     await tx.unsafe(
       "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'strategy.created','strategy_instance',$2,$3::jsonb)",
       [userId,id,JSON.stringify({strategyKey:input.strategyKey,onboardingMode:input.onboardingMode,plan:snapshot.planSlug,versionId:String(definition.version_id)})]
+    );
+    if (requestKey) await tx.unsafe(
+      "INSERT INTO strategy_creation_requests (user_id,request_key,request_payload,strategy_instance_id) VALUES ($1,$2,$3::jsonb,$4)",
+      [userId,requestKey,requestPayload,id]
     );
     return id;
   });
@@ -172,7 +210,7 @@ export async function migrateStrategyVersion(
     if(String(instance.strategy_version_id)===targetVersionId)return {changed:false,status:String(instance.status)};
 
     const targets=await tx.unsafe(
-      "SELECT id,strategy_definition_id,engine_key,input_schema,version FROM strategy_versions WHERE id=$1 AND lifecycle_status='PUBLISHED'"+
+      "SELECT id,strategy_definition_id,engine_key,input_schema,config,version FROM strategy_versions WHERE id=$1 AND lifecycle_status='PUBLISHED'"+
       " AND effective_from<=current_date AND (effective_to IS NULL OR effective_to>=current_date) LIMIT 1",
       [targetVersionId]
     );
@@ -180,10 +218,37 @@ export async function migrateStrategyVersion(
     if(!target||String(target.strategy_definition_id)!==String(instance.strategy_definition_id))throw new Error("INVALID_TARGET_VERSION");
     if(String(target.engine_key)!==String(instance.current_engine))throw new Error("ENGINE_MIGRATION_NOT_SUPPORTED");
 
+    // The proposed version can introduce new exposures or change leverage.
+    // Check ALL linked accounts with the new immutable code-reviewed rules before
+    // superseding actions or committing the version change.
+    const linked=await tx.unsafe(
+      "SELECT a.country,a.wrapper,a.currency,a.broker_name FROM strategy_accounts sa "+
+      "JOIN accounts a ON a.id=sa.account_id WHERE sa.strategy_instance_id=$1",
+      [instanceId]
+    );
+    if(!linked.length)throw new Error("STRATEGY_ACCOUNT_MISSING");
+    const mappings=verifiedCandidates(await tx.unsafe(VERIFIED_MARKET_MAPPINGS_SQL));
+    for(const account of linked){
+      const choice={
+        country:String(account.country),wrapper:String(account.wrapper),
+        currency:String(account.currency).toUpperCase(),
+        broker:account.broker_name?String(account.broker_name):null
+      };
+      const market=assessStrategyMarket(String(target.engine_key),
+        (target.config??{}) as Record<string,unknown>,mappings,choice,
+        new Date().toISOString().slice(0,10));
+      if(!market.available)throw new StrategyMarketUnavailableError(market,choice);
+    }
+
     const merged={...((instance.settings??{}) as Record<string,unknown>),...(suppliedSettings??{})};
     const settings=validateInstanceSettings(parseInputSchema(target.input_schema),merged);
     const before=(instance.state??{}) as Record<string,unknown>;
-    const after={...before,forceReview:true,versionMigratedAt:new Date().toISOString()};
+    const after:Record<string,unknown>={...before,forceReview:true,versionMigratedAt:new Date().toISOString()};
+    // A target frozen under the old algorithm is not valid after changing
+    // the method. Preserve the *committed* historical target only.
+    delete after.reviewTargetValue;
+    delete after.reviewContributionsSnapshot;
+    delete after.lastCalculatedAt;
 
     await tx.unsafe(
       "UPDATE actions SET status='SUPERSEDED',cancelled_at=COALESCE(cancelled_at,now()),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",

@@ -19,7 +19,7 @@ describe.skipIf(!url)("price history ingest", () => {
     historicalPrice: async (_symbol, at) => {
       calls.push(at.toISOString());
       const day = at.toISOString().slice(0, 10);
-      return { price: "101", currency: "GBP", observedAt: at, provider: "fake", granularity: "DAILY_BAR", priceKind: "CLOSE", ...(overrides[day] ?? {}) } as never;
+      return { price: "101", currency: "GBP", observedAt: at, provider: "fake", granularity: "DAILY_BAR", priceKind: "CLOSE", corporateActionsAdjusted: true, ...(overrides[day] ?? {}) } as never;
     }
   });
   const count = async () => Number((await sql!.unsafe("SELECT count(*)::int AS n FROM price_history WHERE trading_line_id=$1", [lineId]))[0].n);
@@ -55,12 +55,27 @@ describe.skipIf(!url)("price history ingest", () => {
     const result = await ingestPriceHistory({ provider: provider() });
     expect(result).toMatchObject({ status: "RAN", stored: 40, rejected: 0 });
     expect(await count()).toBe(40);
-    const rows = await sql!.unsafe("SELECT licensed,provider,extract(isodow FROM trading_day)::int AS dow FROM price_history WHERE trading_line_id=$1", [lineId]);
-    expect(rows.every((r) => r.licensed === true && r.provider === "fake" && r.dow < 6)).toBe(true);
+    const rows = await sql!.unsafe("SELECT licensed,adjustment_verified,provider,extract(isodow FROM trading_day)::int AS dow FROM price_history WHERE trading_line_id=$1", [lineId]);
+    expect(rows.every((r) => r.licensed === true && r.adjustment_verified === true && r.provider === "fake" && r.dow < 6)).toBe(true);
     const newest = await sql!.unsafe("SELECT to_char(max(trading_day),'YYYY-MM-DD') AS d FROM price_history WHERE trading_line_id=$1", [lineId]);
     const expected = new Date();
     do expected.setUTCDate(expected.getUTCDate() - 1); while ([0, 6].includes(expected.getUTCDay()));
     expect(String(newest[0].d)).toBe(expected.toISOString().slice(0, 10));
+  });
+
+  it("rejects unadjusted closes despite operator licensing flag",async()=>{
+    const before=await count();
+    process.env.MARKET_DATA_HISTORY_ADJUSTED_LICENSED="true";
+    const unadjustedProvider={
+      ...provider(),historicalPrice:async (_symbol:string,at:Date)=>({
+        price:"101",currency:"GBP",observedAt:at,provider:"fake",
+        granularity:"DAILY_BAR" as const,priceKind:"CLOSE" as const,
+        corporateActionsAdjusted:false
+      })
+    };
+    const result=await ingestPriceHistory({provider:unadjustedProvider});
+    expect(result.rejected).toBeGreaterThan(0);
+    expect(await count()).toBe(before);
   });
 
   it("rejects non-close answers instead of storing them, and a rerun continues the backfill", async () => {

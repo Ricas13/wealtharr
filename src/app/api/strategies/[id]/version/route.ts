@@ -4,6 +4,7 @@ import { migrateStrategyVersion } from "@/lib/strategy-service";
 import { previewStrategyVersionScenario, recalculateAfterMutation } from "@/lib/action-service";
 import { assertSameOrigin } from "@/lib/security";
 import { authFailure } from "@/lib/api-auth";
+import { StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 
 const schema=z.object({targetVersionId:z.string().uuid(),settings:z.record(z.string(),z.unknown()).optional()});
 
@@ -16,6 +17,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const result=await previewStrategyVersionScenario(user.id,id,input.targetVersionId,input.settings);
     return Response.json({ok:true,preview:true,result});
   }catch(error){const denied=authFailure(error);if(denied)return denied;
+    if(error instanceof StrategyMarketUnavailableError)return Response.json({error:error.message,code:error.code,missingExposures:error.assessment.missingExposures,supportedMarkets:error.assessment.supportedMarkets},{status:422});
     if(error instanceof z.ZodError)return Response.json({error:"Invalid version preview."},{status:400});
     const code=error instanceof Error?error.message:"FAILED";
     const messages:Record<string,string>={
@@ -38,6 +40,7 @@ export async function PATCH(request:Request,context:{params:Promise<{id:string}>
     const recalc=result.changed&&result.status==="ACTIVE"?await recalculateAfterMutation(id,user.id,"strategy-version-update"):{actionId:null,recalculationPending:false,errorCode:null};
     return Response.json({ok:true,changed:result.changed,actionId:recalc.actionId,recalculationPending:recalc.recalculationPending});
   }catch(error){const denied=authFailure(error);if(denied)return denied;
+    if(error instanceof StrategyMarketUnavailableError)return Response.json({error:error.message,code:error.code,missingExposures:error.assessment.missingExposures,supportedMarkets:error.assessment.supportedMarkets},{status:422});
     if(error instanceof z.ZodError)return Response.json({error:"Invalid version update."},{status:400});
     const code=error instanceof Error?error.message:"FAILED";
     const messages:Record<string,string>={

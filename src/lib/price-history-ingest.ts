@@ -10,7 +10,9 @@ const MAX_DAYS_PER_LINE_PER_RUN = 40;
 /**
  * Fills daily adjusted closes for the trading lines of momentum research strategies. Off unless the
  * operator has confirmed, in Admin > Settings, that the data service returns adjusted closes and that
- * the licence allows storing them (MARKET_DATA_HISTORY_ADJUSTED_LICENSED). Newest missing days are
+ * the licence allows storing them (MARKET_DATA_HISTORY_ADJUSTED_LICENSED). Each returned daily
+ * price must also explicitly declare corporateActionsAdjusted=true; plain closes are rejected.
+ * Newest missing days are
  * fetched first so the series becomes fresh before the older backfill completes; each run is capped
  * so a long backfill spreads over several hourly runs.
  */
@@ -34,7 +36,7 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
     async (line) => {
       const days = await sql.unsafe(
         "SELECT to_char(d::date,'YYYY-MM-DD') AS day FROM generate_series(current_date-$1::int, current_date-1, interval '1 day') d " +
-        "WHERE extract(isodow FROM d) < 6 AND NOT EXISTS (SELECT 1 FROM price_history h WHERE h.trading_line_id=$2 AND h.trading_day=d::date) " +
+        "WHERE extract(isodow FROM d) < 6 AND NOT EXISTS (SELECT 1 FROM price_history h WHERE h.trading_line_id=$2 AND h.trading_day=d::date AND h.licensed=true AND h.adjustment_verified=true) " +
         "ORDER BY d DESC LIMIT $3",
         [LOOKBACK_DAYS, line.id, MAX_DAYS_PER_LINE_PER_RUN]
       );
@@ -45,7 +47,9 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
           const observation = await provider.historicalPrice(String(line.provider_symbol), new Date(day + "T21:00:00.000Z"));
           if (!acceptHistoryObservation(observation, day, String(line.currency))) { rejected += 1; continue; }
           await sql.unsafe(
-            "INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed) VALUES ($1,$2,$3,$4,$5,true) ON CONFLICT (trading_line_id,trading_day,provider) DO NOTHING",
+            "INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed,adjustment_verified) VALUES ($1,$2,$3,$4,$5,true,true) "+ 
+            "ON CONFLICT (trading_line_id,trading_day,provider) DO UPDATE SET "+ 
+            "adjusted_close=EXCLUDED.adjusted_close,currency=EXCLUDED.currency,licensed=true,adjustment_verified=true,ingested_at=now()",
             [line.id, day, observation!.price, observation!.currency.toUpperCase(), observation!.provider]
           );
           stored += 1;

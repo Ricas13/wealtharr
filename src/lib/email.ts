@@ -20,6 +20,7 @@ class HttpEmailProvider implements EmailProvider {
       headers: { "content-type": "application/json", authorization: "Bearer " + token },
       body: JSON.stringify({ from: process.env.EMAIL_FROM, ...message }),
       cache:"no-store",
+      redirect:"error",
       signal:AbortSignal.timeout(10_000)
     });
     return response.ok;

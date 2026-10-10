@@ -2,7 +2,7 @@ import {test,expect} from "@playwright/test";
 import bcrypt from "bcryptjs";
 import postgres from "postgres";
 
-test("backdated funding → broker fill → immutable ledger → quarterly review and replay safety",async({page},info)=>{
+test("backdated funding → broker fill → immutable ledger → pending review and replay safety",async({page},info)=>{
   const url=process.env.DATABASE_URL;
   if(!url)throw new Error("DATABASE_URL_REQUIRED");
   const sql=postgres(url,{max:1,prepare:false});
@@ -97,8 +97,9 @@ test("backdated funding → broker fill → immutable ledger → quarterly revie
     expect(new Date(events[0].occurred_at).toISOString()).toBe("2026-09-02T13:00:00.000Z");
 
     const state=await sql.unsafe("SELECT state FROM strategy_states WHERE strategy_instance_id=$1",[strategyId]);
-    expect(state[0]?.state.lastReviewAt).toBe("2026-09-02T13:00:00.000Z");
-    expect(state[0]?.state.forceReview).toBe(false);
+    // One imported fill cannot certify the whole allocation or close its review.
+    expect(state[0]?.state.lastReviewAt).toBeUndefined();
+    expect(state[0]?.state.forceReview).toBe(true);
 
     const impossibleSale=await page.request.post("/api/strategies/"+strategyId+"/trades",{
       headers:requestHeaders,data:{...input,side:"SELL",quantity:"100",requestKey:crypto.randomUUID()}

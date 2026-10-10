@@ -82,6 +82,33 @@ describe.skipIf(!url)("strategy version lifecycle",()=>{
     expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(409);
   });
 
+  it("invalidates earlier review evidence after editing a draft, then requires re-attestation",async()=>{
+    const id=await draft("1.05","2031-01-15");
+    const edit=await patch({action:"UPDATE_DRAFT",versionId:id,releaseNotes:"Reviewed text changed"});
+    expect(edit.status).toBe(200);
+    const attestations=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
+    expect(attestations).toHaveLength(0);
+    const rejected=await patch({action:"PUBLISH",versionId:id});
+    expect(rejected.status).toBe(409);
+    expect(rejected.json.error).toContain("sign-off");
+    await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/test-card.md",goldenTests:"tests/value-target.test.ts"});
+    expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(200);
+  });
+
+  it("database-level draft edits invalidate attestations even when the API is bypassed",async()=>{
+    const id=await draft("1.06","2031-01-16");
+    const before=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
+    expect(before).toHaveLength(1);
+    await sql!.unsafe("UPDATE strategy_versions SET release_notes='Research methodology clarified' WHERE id=$1",[id]);
+    const after=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
+    expect(after).toHaveLength(0);
+    expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(409);
+    expect((await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/test-card.md",goldenTests:"tests/value-target.test.ts"})).status).toBe(200);
+    expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(200);
+    const publishedApproval=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
+    expect(publishedApproval).toHaveLength(1);
+  });
+
   it("will not edit a published version through the API",async()=>{
     const id=await draft("1.1","2031-02-01");
     await patch({action:"PUBLISH",versionId:id});
@@ -120,11 +147,18 @@ describe.skipIf(!url)("strategy version lifecycle",()=>{
         patch({action:"PUBLISH",versionId:id})
       ]);
       const stored=await row(id);
-      expect(publish.status,JSON.stringify(publish)).toBe(200);
-      // Either the edit won (and was published with it) or it lost (409); never an edit after publish.
-      if(edit.status===200)expect(stored.config).toMatchObject({targetRate:"0.77"});
-      else{
+      // The editor winning invalidates prior approval, so the concurrent publisher
+      // must fail; if publication wins, the editor must refuse to modify published rules.
+      if(edit.status===200){
+        expect(publish.status).toBe(409);
+        expect(stored.lifecycle_status).toBe("DRAFT");
+        expect(stored.config).toMatchObject({targetRate:"0.77"});
+        const oldApproval=await sql!.unsafe("SELECT 1 FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
+        expect(oldApproval).toHaveLength(0);
+      }else{
         expect(edit.status).toBe(409);
+        expect(publish.status).toBe(200);
+        expect(stored.lifecycle_status).toBe("PUBLISHED");
         expect(stored.config).toMatchObject({targetRate:"0.09"});
       }
     }

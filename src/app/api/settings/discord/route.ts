@@ -6,7 +6,9 @@ import { sql } from "@/lib/db";
 import { assertSameOrigin } from "@/lib/security";
 import { authFailure } from "@/lib/api-auth";
 
-const schema=z.object({webhook:z.string().url().refine((value)=>value.startsWith("https://discord.com/api/webhooks/")||value.startsWith("https://discordapp.com/api/webhooks/"))});
+import { isDiscordWebhookUrl } from "@/domain/discord-webhook";
+
+const schema=z.object({webhook:z.string().max(500).refine(isDiscordWebhookUrl)});
 
 export async function POST(request:Request){
   try{

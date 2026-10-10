@@ -253,4 +253,130 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(after).toMatchObject({source:"APPLE",status:"ACTIVE",slug:"pro",stripe_subscription_id:null});
     await sql!.unsafe("UPDATE subscriptions SET source='STRIPE',store_original_transaction_id=NULL WHERE user_id=$1",[userId]);
   });
+
+  async function prepareRecovery(){
+    await sql!.unsafe(
+      "UPDATE subscriptions SET source='STRIPE',status='ACTIVE',stripe_subscription_id=$2,billing_checked_at=NULL,billing_check_error=NULL,"+
+      "plan_id=(SELECT id FROM plans WHERE slug='investor'),current_period_end=now()-interval '1 day' WHERE user_id=$1",
+      [userId,subA]
+    );
+    stripeState.subscriptions.set(subA,subscription(subA,userId));
+    return (await import("@/lib/billing-reconciliation")).reconcileStripeSubscriptions;
+  }
+
+  it("recovers a missed renewal without inventing an expiry or cancelling a subscription",async()=>{
+    const reconcile=await prepareRecovery();
+    const renewed=now()+60*DAY;
+    stripeState.subscriptions.set(subA,subscription(subA,userId,{periodEnd:renewed}));
+    const cancelled=[...stripeState.cancelled];
+    expect(await reconcile()).toMatchObject({checked:1,failed:0,deferred:0});
+    expect(await row()).toMatchObject({status:"ACTIVE",slug:"investor"});
+    expect(Math.floor(new Date((await row()).current_period_end).getTime()/1000)).toBe(renewed);
+    expect(stripeState.cancelled).toEqual(cancelled);
+    expect(await reconcile()).toMatchObject({checked:0});
+  });
+
+  it("recovers a missed cancellation and enforces the free strategy limit",async()=>{
+    const reconcile=await prepareRecovery();
+    await sql!.unsafe("UPDATE strategy_instances SET status='ACTIVE' WHERE user_id=$1",[userId]);
+    stripeState.subscriptions.set(subA,subscription(subA,userId,{status:"canceled"}));
+    expect(await reconcile()).toMatchObject({checked:1,failed:0});
+    expect(await row()).toMatchObject({status:"FREE",slug:"free",stripe_subscription_id:null});
+    expect((await activeStrategies()).filter(s=>s.status==="ACTIVE")).toHaveLength(1);
+  });
+
+  it("preserves access during a provider outage, records a redacted failure and recovers later",async()=>{
+    const reconcile=await prepareRecovery();
+    stripeState.retrieveFailure=new Error("upstream transport error with private data");
+    try{
+      expect(await reconcile()).toMatchObject({checked:0,failed:1});
+      expect(await row()).toMatchObject({status:"ACTIVE",slug:"investor"});
+      const error=(await sql!.unsafe("SELECT billing_check_error FROM subscriptions WHERE user_id=$1",[userId]))[0];
+      expect(error.billing_check_error).toBe("BILLING_RECONCILIATION_FAILED");
+    }finally{stripeState.retrieveFailure=null;}
+    await sql!.unsafe("UPDATE subscriptions SET billing_checked_at=now()-interval '2 hours' WHERE user_id=$1",[userId]);
+    expect(await reconcile()).toMatchObject({checked:1,failed:0});
+    expect((await sql!.unsafe("SELECT billing_check_error FROM subscriptions WHERE user_id=$1",[userId]))[0].billing_check_error).toBeNull();
+  });
+
+  it("defers recovery after its deadline and never applies a mismatched customer",async()=>{
+    const reconcile=await prepareRecovery();
+    expect(await reconcile({deadline:Date.now()-1})).toMatchObject({checked:0,failed:0,deferred:1});
+    stripeState.subscriptions.set(subA,subscription(subA,userId,{customer:"cus_unowned_recovery"}));
+    expect(await reconcile()).toMatchObject({checked:0,failed:1});
+    expect(await row()).toMatchObject({status:"ACTIVE",slug:"investor",stripe_subscription_id:subA});
+  });
+
+  it("excludes app-store accounts even if they retain a historic website ID",async()=>{
+    const reconcile=await prepareRecovery();
+    await sql!.unsafe("UPDATE subscriptions SET source='APPLE',store_original_transaction_id='recovery-store' WHERE user_id=$1",[userId]);
+    stripeState.subscriptions.set(subA,subscription(subA,userId,{status:"canceled"}));
+    expect(await reconcile()).toMatchObject({checked:0,failed:0});
+    // A late signed Stripe event must also leave that store entitlement intact.
+    expect((await deliver("customer.subscription.deleted",subscription(subA,userId,{status:"canceled"}))).status).toBe(200);
+    expect(await row()).toMatchObject({status:"ACTIVE",slug:"investor"});
+  });
+
+  it("caps recovery work and picks up the remaining accounts on the next run",async()=>{
+    const added:string[]=[];
+    try{
+      for(let i=0;i<2;i++){
+        const id=String((await sql!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,'x') RETURNING id",["billing-queue-"+run+"-"+i+"@example.test"]))[0].id);
+        added.push(id);
+        const stripeId="sub_recovery_queue_"+run+"_"+i;
+        const customer="cus_recovery_queue_"+run+"_"+i;
+        await sql!.unsafe("INSERT INTO subscriptions (user_id,plan_id,status,stripe_customer_id,stripe_subscription_id) SELECT $1,id,'ACTIVE',$2,$3 FROM plans WHERE slug='investor'",[id,customer,stripeId]);
+        stripeState.subscriptions.set(stripeId,subscription(stripeId,id,{customer,status:"canceled"}));
+      }
+      const {reconcileStripeSubscriptions}=await import("@/lib/billing-reconciliation");
+      expect(await reconcileStripeSubscriptions({limit:1})).toMatchObject({checked:1,hasMore:true});
+      expect(await reconcileStripeSubscriptions({limit:1})).toMatchObject({checked:1,hasMore:false});
+      const ended=await sql!.unsafe("SELECT status FROM subscriptions WHERE user_id=ANY($1::uuid[])",[added]);
+      expect(ended.map(s=>s.status)).toEqual(["FREE","FREE"]);
+    }finally{
+      if(added.length)await sql!.unsafe("DELETE FROM users WHERE id=ANY($1::uuid[])",[added]);
+    }
+  });
+
+  describe("trials and out-of-order delivery for a second customer",()=>{
+    let trialUser="";
+    const customer="cus_lc_trial_"+run;
+    const trialSub="sub_lc_trial_"+run;
+    const trialRow=async()=>(await sql!.unsafe("SELECT s.status,s.stripe_subscription_id,s.current_period_end,p.slug FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1",[trialUser]))[0]!;
+    beforeAll(async()=>{
+      trialUser=String((await sql!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,'x') RETURNING id",["lifecycle-trial-"+run+"@example.test"]))[0].id);
+      await sql!.unsafe("INSERT INTO subscriptions (user_id,plan_id,status,cadence,stripe_customer_id) SELECT $1,id,'FREE','FREE',$2 FROM plans WHERE slug='free'",[trialUser,customer]);
+    });
+    afterAll(async()=>{if(sql&&trialUser)await sql.unsafe("DELETE FROM users WHERE id=$1",[trialUser]);});
+
+    it("grants the paid plan during a free trial and keeps it when the trial converts to a paid period",async()=>{
+      const trialEnd=now()+14*DAY;
+      expect((await deliver("customer.subscription.created",subscription(trialSub,trialUser,{status:"trialing",customer,periodEnd:trialEnd}))).status).toBe(200);
+      expect(await trialRow()).toMatchObject({status:"TRIALING",slug:"investor",stripe_subscription_id:trialSub});
+      const {loadEntitlements}=await import("@/lib/entitlement-service");
+      expect((await loadEntitlements(trialUser)).planSlug).toBe("investor");
+      const paidUntil=now()+44*DAY;
+      expect((await deliver("customer.subscription.updated",subscription(trialSub,trialUser,{status:"active",customer,periodEnd:paidUntil}))).status).toBe(200);
+      const converted=await trialRow();
+      expect(converted).toMatchObject({status:"ACTIVE",slug:"investor"});
+      expect(Math.floor(new Date(converted.current_period_end).getTime()/1000)).toBe(paidUntil);
+    });
+
+    it("keeps the newest state when an older event is delivered after a newer one",async()=>{
+      const newest=now()+120*DAY;
+      const current=subscription(trialSub,trialUser,{status:"active",customer,periodEnd:newest});
+      // A delayed event carrying an old period arrives last; Stripe's current state is what counts.
+      const delayed=subscription(trialSub,trialUser,{status:"active",customer,periodEnd:now()+5*DAY});
+      expect((await deliver("customer.subscription.updated",delayed,{stripeNow:current})).status).toBe(200);
+      expect(Math.floor(new Date((await trialRow()).current_period_end).getTime()/1000)).toBe(newest);
+    });
+
+    it("does not let an event for this customer touch another customer's subscription",async()=>{
+      const before=await row();
+      await deliver("customer.subscription.updated",subscription(trialSub,trialUser,{status:"canceled",customer}),{eventId:"evt_lc_"+run+"_iso"});
+      const other=await row();
+      expect(other).toMatchObject({stripe_subscription_id:before.stripe_subscription_id,slug:before.slug,status:before.status});
+      expect((await trialRow()).slug).toBe("free");
+    });
+  });
 });

@@ -15,7 +15,11 @@ const expected:Record<string,Record<string,string | string[]>>={
   },
   "desktop-chromium":{
     landing:"8bb40d5ebfa3721ce6721f3ea33f71f12103038643f5b5d425439ffeb17cf0b7",
-    demo:"e33b2064ae861de5277a378e9d390367f9ecc1aba0b326c50b2f99791b57d3a8"
+    // 2026-10-09: the second settled raster was inspected from the GitHub trace PNG
+    // (1280x1442). Header, value cards, next-action panel, chart, legends and
+    // footer cards are intact; differences are rendering-only, not missing UI.
+    demo:["e33b2064ae861de5277a378e9d390367f9ecc1aba0b326c50b2f99791b57d3a8",
+      "c407471ad87c3e1c996a9cd55e3343b4898cc90a3546c7e23a90e5c99c3e411d"]
   }
 };
 

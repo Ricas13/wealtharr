@@ -4,13 +4,17 @@ import { requirePageUser } from "@/lib/session";
 import { listAvailableStrategies, listUserStrategies } from "@/lib/strategy-service";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { CreateStrategyForm } from "@/components/CreateStrategyForm";
+import { sql } from "@/lib/db";
+import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
+import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 
 export default async function NewStrategyPage(){
   const user=await requirePageUser();
-  const [rows,existing,entitlements]=await Promise.all([
+  const [rows,existing,entitlements,marketMappings]=await Promise.all([
     listAvailableStrategies(),
     listUserStrategies(user.id),
-    loadEntitlements(user.id)
+    loadEntitlements(user.id),
+    sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)
   ]);
   const activeCount=existing.filter((strategy:any)=>strategy.status==="ACTIVE").length;
   const atLimit=entitlements.maxActiveStrategies!==null&&activeCount>=entitlements.maxActiveStrategies;
@@ -20,7 +24,10 @@ export default async function NewStrategyPage(){
   const strategies=allowedRows.map((r:any)=>({
     key:String(r.key),name:String(r.name),family:String(r.family),description:String(r.description),
     version:String(r.version),inputSchema:Array.isArray(r.input_schema)?r.input_schema:[],
-    supportedWrappers:Array.isArray(r.supported_wrappers)?r.supported_wrappers.map(String):[]
+    supportedWrappers:Array.isArray(r.supported_wrappers)?r.supported_wrappers.map(String):[],
+    supportedMarkets:assessStrategyMarket(String(r.engine_key),(r.config??{}) as Record<string,unknown>,
+      verifiedCandidates(marketMappings),{country:user.country,wrapper:user.country==="GB"?"ISA":"TAXABLE",currency:user.baseCurrency},
+      new Date().toISOString().slice(0,10)).supportedMarkets
   }));
 
   return <>

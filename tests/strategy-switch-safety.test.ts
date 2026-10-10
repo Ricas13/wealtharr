@@ -15,6 +15,13 @@ describe("strategy switch safety",()=>{
     expect(service).toContain("SWITCH_NEGATIVE_CASH_UNSUPPORTED");
   });
 
+  it("checks destination exposures and leverage before closing the old investment journey",()=>{
+    const prior=service.indexOf("switchPositionDiscrepancies(positions");
+    const close=service.indexOf("UPDATE strategy_instances SET status='CLOSED'");
+    expect(prior).toBeGreaterThan(0);
+    expect(close).toBeGreaterThan(prior);
+    expect(service).toContain("STRATEGY_SWITCH_REQUIRES_RECONCILIATION");
+  });
   it("preserves the old journey instead of rewriting its history",()=>{
     expect(service).toContain("UPDATE strategy_instances SET status='CLOSED'");
     expect(service).toContain("switchedFromStrategyInstanceId");

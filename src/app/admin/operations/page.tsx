@@ -2,16 +2,18 @@ import { sql } from "@/lib/db";
 import { RetryDeliveries } from "@/components/RetryDeliveries";
 import { IntegrationTests } from "@/components/IntegrationTests";
 import { checkCommercialLaunch } from "@/domain/commercial-launch";
+import { ensureSettings } from "@/lib/settings";
 export const dynamic="force-dynamic";
 const explanations:Record<string,string>={
  stripe_live:"Enter the Stripe key in Admin › Settings › Billing. It is stored encrypted and never shown again.",
  stripe_webhook:"Register /api/stripe/webhook with Stripe and enter the signing secret in Admin › Settings › Billing. Webhook events below show actual processing results.",
  email:"Enter the email service details in Admin › Settings › Email; use a supported transactional provider.",
  market_data_mode:"Connect a quote provider offering live prices, historical intraday observations, currencies and adjusted data.",
- worker_auth:"Generate the job secret in Admin › Settings › Security and run the private scheduler. Review last execution and failures below.",
+ worker_auth:"Set the same CRON_SECRET in the app and scheduler through private Docker Compose configuration. Review execution and failures below.",
  backup_operator_attestation:"Configure encrypted offsite backups and demonstrate a restore before attesting success."
 };
 export default async function OperationsPage(){
+ await ensureSettings(true);
  const checks=checkCommercialLaunch(process.env);
  const [jobs,delivery,webhooks]=await Promise.all([
   sql.unsafe("SELECT DISTINCT ON (worker_key) worker_key,status,started_at,finished_at FROM worker_runs ORDER BY worker_key,started_at DESC LIMIT 50"),
@@ -34,5 +36,5 @@ export default async function OperationsPage(){
  <div style={{marginTop:18}}><IntegrationTests/></div>
  <div style={{marginTop:18}}><RetryDeliveries/></div>
  <section className="card" style={{marginTop:18}}><h3>Latest worker executions</h3>{jobs.length?jobs.map((job:any)=><div className="why-row" key={job.worker_key}><span>{job.worker_key}<small> · {new Date(job.started_at).toLocaleString("en-GB")}</small></span><strong>{job.status}</strong></div>):<p className="help">No runs recorded. Verify the scheduler service is running.</p>}</section>
- <section className="card" style={{marginTop:18}}><h3>Security boundary</h3><p className="help">The dashboard is intentionally read-only for live secrets. Connection tests and secret updates require a dedicated encrypted secret-management adapter, audit records, CSRF protection and server-side provider validation. Do not turn an arbitrary URL or token field into unrestricted server-side network access.</p></section></>;
+ <section className="card" style={{marginTop:18}}><h3>Provider credentials</h3><p className="help">Configure Stripe, email and market-data credentials in Master Admin → Settings. Sensitive values are encrypted at rest, never read back into the browser, and changes are audited. Provider tests use fixed operations rather than arbitrary URLs. Docker credentials and the scheduler secret remain deployment settings.</p><a className="button" href="/admin/settings">Edit integrations and secrets</a></section></>;
 }

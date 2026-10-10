@@ -82,3 +82,11 @@ export function xirr(cashFlows: CashFlow[], guess = 0.1) {
   if (!solves(result)) throw new Error("XIRR did not converge");
   return new Decimal(result);
 }
+
+/** Annualising a short history turns a few percent into an enormous, meaningless yearly figure. */
+export const MIN_ANNUALISED_SPAN_DAYS = 365;
+export function isAnnualisableSpan(flows: CashFlow[]) {
+  const times = flows.map((flow) => flow.at.getTime());
+  if (times.length < 2) return false;
+  return (Math.max(...times) - Math.min(...times)) / 86_400_000 >= MIN_ANNUALISED_SPAN_DAYS;
+}

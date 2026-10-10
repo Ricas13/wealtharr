@@ -135,3 +135,27 @@ export function nextReviewDueAt(input: {
     input.timeZone
   );
 }
+
+/**
+ * A fixed calendar-quarter policy, NOT 3 months after the customer's signup.
+ * Roll each Mar/Jun/Sep/Dec month end according to the code-locked market
+ * calendar; choose the first review cutoff strictly later than last review.
+ * "Market holidays" must be source-verified before the strategy is published.
+ */
+export function nextCalendarQuarterDueAt(input:{
+  lastReviewAt:Date;timeZone:string;cutoffLocal?:string;holidays?:string[];
+  convention?:"PREVIOUS"|"NEXT";
+}):Date{
+  const last=localDateInZone(input.lastReviewAt,input.timeZone);
+  const {year,month}=parseDate(last);
+  for(let n=0;n<12;n++){
+    const m=Math.ceil(month/3)*3+n*3;
+    const y=year+Math.floor((m-1)/12);
+    const q=((m-1)%12)+1;
+    const nominal=[String(y),String(q).padStart(2,"0"),String(daysInMonth(y,q)).padStart(2,"0")].join("-");
+    const date=rollBusinessDay(nominal,input.holidays??[],input.convention??"PREVIOUS");
+    const instant=zonedLocalDateTimeToUtc(date,input.cutoffLocal??"16:00",input.timeZone);
+    if(instant.getTime()>input.lastReviewAt.getTime())return instant;
+  }
+  throw new Error("CALENDAR_QUARTER_DATE_UNAVAILABLE");
+}

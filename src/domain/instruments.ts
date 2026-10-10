@@ -33,10 +33,17 @@ export type ResolveRequest = {
 // make every mapping silently "unsupported".
 const normCurrency = (value: string | null | undefined) => (value == null ? null : String(value).toUpperCase());
 
+function samePositiveLeverage(left:string,right:string):boolean {
+  try {
+    const a=new Decimal(left),b=new Decimal(right);
+    return a.isFinite()&&b.isFinite()&&a.gt(0)&&b.gt(0)&&a.eq(b);
+  } catch { return false; }
+}
+
 export function resolveMapping(candidates: MappingCandidate[], request: ResolveRequest) {
   const eligible = candidates.filter((c) =>
     c.economicExposure === request.economicExposure &&
-    new Decimal(c.leverage).eq(new Decimal(request.leverage)) &&
+    samePositiveLeverage(c.leverage, request.leverage) &&
     c.direction === request.direction &&
     c.country === request.country &&
     c.wrapper === request.wrapper &&
