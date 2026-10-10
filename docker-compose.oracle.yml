@@ -26,8 +26,24 @@ services:
     environment:
       # Supply a URL-encoded password in the private env file, avoiding malformed DSNs.
       DATABASE_URL: ${DATABASE_URL:?Configure the protected PostgreSQL URL with db hostname}
+      # Bootstrap DB secrets must not reach the online app through env_file.
+      POSTGRES_PASSWORD: ""
+      APP_DB_PASSWORD: ""
+      BACKUP_DB_PASSWORD: ""
     ports:
       - "127.0.0.1:3000:3000"
+    networks: [internal]
+  maintenance:
+    # Opt-in one-shot migrations/seed/role provisioning; never a long-running service.
+    profiles: [maintenance]
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://strategyos:${POSTGRES_PASSWORD:?Required}@db:5432/strategyos
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Required}
+      BACKUP_DB_PASSWORD: ${BACKUP_DB_PASSWORD:?Required}
     networks: [internal]
   scheduler:
     # BusyBox wget ships with Alpine, so nothing is downloaded when the container starts. It runs as an
@@ -68,9 +84,9 @@ services:
       B2_ACCOUNT_ID: ${B2_ACCOUNT_ID:-}
       B2_ACCOUNT_KEY: ${B2_ACCOUNT_KEY:-}
       PGHOST: db
-      PGUSER: strategyos
+      PGUSER: wealtharr_backup
       PGDATABASE: strategyos
-      PGPASSWORD: ${POSTGRES_PASSWORD:?Required}
+      PGPASSWORD: ${BACKUP_DB_PASSWORD:?Required}
       HEARTBEAT_URL: http://app:3000/api/cron/heartbeat
     volumes:
       - backup_status:/backup-status

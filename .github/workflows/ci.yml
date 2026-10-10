@@ -52,9 +52,17 @@ jobs:
           npm run db:migrate
           npm run db:migrate
           npm run db:seed
+      - name: Verify least-privilege database roles (real PostgreSQL)
+        env:
+          APP_DB_PASSWORD: ci-app-database-password-long-enough
+          BACKUP_DB_PASSWORD: ci-backup-database-password-long-enough
+        run: |
+          npm run db:provision-roles
+          npm run db:provision-roles
+          npm run db:verify-roles
       - name: Validate Oracle Compose and offsite backup image
         run: |
-          printf 'POSTGRES_PASSWORD=ci-db-pass\nDATABASE_URL=postgresql://strategyos:ci-db-pass@db:5432/strategyos\n' > .env.production
+          printf 'POSTGRES_PASSWORD=ci-db-pass\nAPP_DB_PASSWORD=ci-app-database-password-long-enough\nBACKUP_DB_PASSWORD=ci-backup-database-password-long-enough\nDATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@db:5432/strategyos\n' > .env.production
           docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --quiet
           docker compose -f docker-compose.oracle.yml -f docker-compose.traefik.yml --env-file .env.production config --format json > /tmp/wealtharr-traefik-compose.json
           docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --format json > /tmp/wealtharr-backup-compose.json
@@ -72,11 +80,19 @@ jobs:
           scheduler = config['services']['scheduler']
           assert set(scheduler.get('environment', {})) == {'CRON_SECRET'}
           assert not scheduler.get('env_file')
+          maintenance = config['services']['maintenance']
+          assert maintenance.get('profiles') == ['maintenance']
+          assert maintenance['environment']['DATABASE_URL'].startswith('postgresql://strategyos:')
+          assert set(maintenance['environment']) == {'DATABASE_URL', 'APP_DB_PASSWORD', 'BACKUP_DB_PASSWORD'}
+          assert all(app['environment'][name] == '' for name in ('POSTGRES_PASSWORD','APP_DB_PASSWORD','BACKUP_DB_PASSWORD'))
+          assert app['environment']['DATABASE_URL'].startswith('postgresql://wealtharr_app:')
           assert scheduler.get('user') == '65534:65534' and scheduler.get('read_only') is True, 'Scheduler must be unprivileged and read-only'
           with open('/tmp/wealtharr-backup-compose.json') as file: backup_config = json.load(file)
           backup = backup_config['services']['backup']
           assert not backup.get('env_file'), 'Backup must not receive the application env file'
           assert 'AUTH_SECRET' not in backup.get('environment', {}) and 'APP_ENCRYPTION_KEY' not in backup.get('environment', {}), 'Backup must not receive application secrets'
+          assert backup['environment']['PGUSER'] == 'wealtharr_backup'
+          assert backup['environment']['PGPASSWORD'] == 'ci-backup-database-password-long-enough'
           PY
           docker build --quiet -f docker/backup.Dockerfile .
           rm -f .env.production

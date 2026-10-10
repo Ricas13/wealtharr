@@ -30,6 +30,19 @@ describe("Oracle Compose scheduler boundary",()=>{
     for(const secret of ["AUTH_SECRET","APP_ENCRYPTION_KEY","STRIPE","EMAIL","MARKET_DATA"])expect(backup).not.toContain(secret);
     expect(backup).toContain("RESTIC_REPOSITORY");
     expect(backup).toContain("PGPASSWORD");
+    expect(backup).toContain("PGUSER: wealtharr_backup");
+    expect(backup).not.toContain("PGUSER: strategyos");
+  });
+  it("isolates elevated maintenance and scrubs database passwords from the app",()=>{
+    const config=readFileSync("docker-compose.oracle.yml","utf8");
+    const app=config.split("\\n  app:\\n")[1]?.split("\\n  maintenance:\\n")[0]??"";
+    const maintenance=config.split("\\n  maintenance:\\n")[1]?.split("\\n  scheduler:\\n")[0]??"";
+    for(const variable of ["POSTGRES_PASSWORD","APP_DB_PASSWORD","BACKUP_DB_PASSWORD"])
+      expect(app).toContain(variable+': ""');
+    expect(maintenance).toContain("profiles: [maintenance]");
+    expect(maintenance).toContain("APP_DB_PASSWORD:");
+    expect(maintenance).toContain("BACKUP_DB_PASSWORD:");
+    expect(maintenance).not.toContain("ports:");
   });
   it("keeps the database private and the application as the only service with the application env file",()=>{
     const config=readFileSync("docker-compose.oracle.yml","utf8");
