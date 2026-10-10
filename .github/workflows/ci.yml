@@ -68,6 +68,9 @@ jobs:
           assert config['networks']['media_net']['external'] is True
           assert config['services']['db'].get('ports') in (None, []), 'Database must remain private'
           assert app['labels']['traefik.http.routers.wealtharr.rule'] == 'Host(`wealtharr.vpn4u.cc`)'
+          scheduler = config['services']['scheduler']
+          assert set(scheduler.get('environment', {})) == {'CRON_SECRET'}
+          assert not scheduler.get('env_file')
           PY
           docker build --quiet -f docker/backup.Dockerfile .
           rm -f .env.production

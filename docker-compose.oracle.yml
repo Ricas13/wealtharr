@@ -35,7 +35,8 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    env_file: [.env.production]
+    environment:
+      CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET}
     command: ["/bin/sh","-ec","apk add --no-cache curl >/dev/null; while :; do curl --fail --silent --show-error --max-time 180 -H \"Authorization: Bearer $$CRON_SECRET\" http://app:3000/api/cron/actions || echo 'Cron cycle failed'; curl --silent --max-time 60 -H \"Authorization: Bearer $$CRON_SECRET\" http://app:3000/api/cron/health >/dev/null || true; sleep 3600; done"]
     networks: [internal]
   backup:

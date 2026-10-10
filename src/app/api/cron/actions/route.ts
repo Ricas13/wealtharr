@@ -10,10 +10,7 @@ import { runBounded } from "@/lib/work-pool";
 import { ensureSettings } from "@/lib/settings";
 import { runOpsCheck } from "@/lib/ops-monitor";
 import { reconcileStripeSubscriptions } from "@/lib/billing-reconciliation";
-
-function authorized(request: Request) {
-  return Boolean(process.env.CRON_SECRET) && request.headers.get("authorization") === "Bearer " + process.env.CRON_SECRET;
-}
+import { cronAuthorized } from "@/lib/cron-auth";
 
 function positiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
@@ -48,7 +45,7 @@ async function aggregatesDue() {
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
+  if (!cronAuthorized(request)) return new Response("Unauthorized", { status: 401 });
   await ensureSettings();
 
   const startedAt = Date.now();

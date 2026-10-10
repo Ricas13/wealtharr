@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 // too, which is the only way to notice that the hourly job itself has stopped. A 503 answer when a
 // critical problem exists lets a plain uptime monitor alert on it as well.
 async function handle(request: Request) {
-  await ensureSettings();
   if (!cronAuthorized(request)) return new Response("Unauthorized", { status: 401 });
+  await ensureSettings();
   try {
     const result = await runOpsCheck();
     const critical = result.alerts.some((a) => a.severity === "critical");
