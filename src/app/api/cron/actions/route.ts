@@ -48,8 +48,8 @@ async function aggregatesDue() {
 }
 
 export async function GET(request: Request) {
-  await ensureSettings();
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
+  await ensureSettings();
 
   const startedAt = Date.now();
   const budgetMs = positiveInt("CRON_TIME_BUDGET_MS", 150_000);

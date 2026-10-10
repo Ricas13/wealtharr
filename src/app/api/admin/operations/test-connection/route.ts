@@ -71,7 +71,19 @@ export async function POST(request:Request){
     ok=Boolean(quote&&quote.price&&quote.provider&&quote.currency&&quote.observedAt instanceof Date&&Number.isFinite(quote.observedAt.getTime())&&quote.observedAt.getTime()<=Date.now());
     message=ok?"Received a market observation. This does not prove historical coverage or data licensing.":"No usable quote returned.";
    }
-  }catch(error){message=error instanceof Error?error.message.slice(0,100):"Connection test failed";}
+  }catch(error){
+    // Provider errors may contain credentials or private URLs; only expose approved codes.
+    const code=error instanceof Error?error.message:"";
+    const safeMessages=new Map([
+      ["STRIPE_NOT_CONFIGURED","Stripe is not configured."],
+      ["TELEGRAM_NOT_CONFIGURED","Telegram is not configured."],
+      ["TELEGRAM_BOT_USERNAME_MISMATCH","Telegram bot username mismatch."],
+      ["EMAIL_NOT_CONFIGURED","Email is not configured."],
+      ["INVALID_HISTORY_TEST_DATE","Choose a valid past date."],
+      ["MARKET_DATA_NOT_CONFIGURED","Market data is not configured."]
+    ]);
+    message=safeMessages.get(code)??"Provider test failed. Check the integration settings and availability.";
+  }
   await sql.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,metadata) VALUES ($1,'integration.connection-test','integration',$2::jsonb)",[
    admin.id,JSON.stringify({service:p.service,ok,code:ok?"CONNECTED":"TEST_FAILED"})
   ]);

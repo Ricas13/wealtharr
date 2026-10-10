@@ -4,6 +4,7 @@ import { beforeEach,describe,expect,it,vi } from "vitest";
 // faked, so it is deterministic and cannot touch other tenants' data in a shared test database.
 const h=vi.hoisted(()=>({
   leaseHeld:false,
+  settingsBootstraps:0,
   instances:[] as string[],
   totalActive:0,
   owners:[] as string[],
@@ -40,6 +41,7 @@ vi.mock("@/lib/db",()=>{
   }};
   return {sql:{unsafe:async(query:string,params?:unknown[])=>route(query,params),begin:async(fn:(t:typeof tx)=>unknown)=>fn(tx)}};
 });
+vi.mock("@/lib/settings",()=>({ensureSettings:async()=>{h.settingsBootstraps+=1;}}));
 vi.mock("@/lib/action-service",()=>({calculateAction:async(id:string)=>{
   if(h.calcDelayMs)await new Promise((resolve)=>setTimeout(resolve,h.calcDelayMs));
   if(id==="boom")throw new Error("calc failed");
@@ -70,7 +72,7 @@ describe("hourly worker orchestration",()=>{
     process.env.CRON_SECRET="cron-secret";
     process.env.MARKET_DATA_MODE="MANUAL";
     delete process.env.CRON_TIME_BUDGET_MS;delete process.env.CRON_MAX_INSTANCES;delete process.env.CRON_CONCURRENCY;
-    Object.assign(h,{leaseHeld:false,instances:[],totalActive:0,owners:[],aggregatesRecent:false,calculated:[],calcDelayMs:0,queries:[],finishedLease:null,
+    Object.assign(h,{leaseHeld:false,settingsBootstraps:0,instances:[],totalActive:0,owners:[],aggregatesRecent:false,calculated:[],calcDelayMs:0,queries:[],finishedLease:null,
       market:{provider:"mock",configured:true,refreshed:0,failed:0,skipped:0},deletions:{completed:0,stalled:0},pendingDeliveries:0,
       backlog:{sent:0,claimed:0,exhausted:true},aggregatesRan:0,
       billing:{configured:true,checked:0,failed:0,deferred:0,hasMore:false}});
@@ -79,8 +81,8 @@ describe("hourly worker orchestration",()=>{
   it("refuses calls without the bearer secret and does no work",async()=>{
     expect((await call()).status).toBe(401);
     expect((await call("Bearer nope")).status).toBe(401);
-    // Reading the saved settings (the bearer secret can live there) is not "work".
-    expect(h.queries.filter((q)=>!String(q).includes("app_settings"))).toHaveLength(0);
+    expect(h.settingsBootstraps).toBe(0);
+    expect(h.queries).toHaveLength(0);
   });
 
   it("skips a run that would overlap one already in progress",async()=>{
@@ -88,6 +90,7 @@ describe("hourly worker orchestration",()=>{
     const result=await call(ok);
     expect(result).toMatchObject({status:202,json:{ok:true,status:"skipped",reason:"ALREADY_RUNNING"}});
     expect(h.calculated).toEqual([]);
+    expect(h.settingsBootstraps).toBe(1);
   });
 
   it("calculates every active strategy and reports healthy",async()=>{
