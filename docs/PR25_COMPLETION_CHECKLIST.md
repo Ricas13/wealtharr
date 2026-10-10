@@ -265,3 +265,12 @@ These remain commercial gates. Private staging must fail closed without them.
 ## Additional October 10 engineering work
 
 Cron auth occurs before settings IO; admin connection errors are redacted and regression-tested. Operator retry supports Telegram and transient action-validation failures. Provider requests reject redirects, and market worker errors use generic codes. These changes require exact-head CI and do not resolve external staging or commercial gates.
+
+## Final counts (11 October 2026 session)
+
+- Unit and database suite on a freshly migrated and seeded database: **141 files, 1,063 tests: 1,063 passed, 0 failed, 0 skipped**, repeated five times in a row with identical results.
+- One of my new fairness tests was intermittently wrong (it compared the order in which concurrent attempts finished rather than which strategies were served). It failed about one run in six before being rewritten to compare sets; the same mistake was found and fixed in the 10,000-strategy test earlier. This was a test defect, not a product defect.
+- Browser suite (local Chromium): 114 passed, 6 skipped, 4 failed (the four visual pixel-hash tests, which are pinned to CI's Chromium build; baselines unchanged).
+- Exact-head CI: [run 38089466544](https://github.com/Ricas13/wealtharr/actions/runs/38089466544) passed on `b08744494a863f0aa2a4d340212d47ef9b543186` (all code and migrations). Later commits in this PR change only tests and documentation until the next entry here.
+- Production dependency audit: 0 vulnerabilities. Development tooling audit: unchanged upstream findings, excluded from the runtime image.
+

@@ -73,17 +73,20 @@ describe.skipIf(!url)("hourly worker fairness", () => {
   });
 
   it("serves every strategy once before any is served twice", async () => {
-    // 25 strategies, 10 per run: three consecutive runs cover each exactly once before any repeats.
+    // 25 strategies, 10 per run: runs serve 10 new, 10 new, then the last 5 new before wrapping to the oldest.
     await sql!.unsafe("UPDATE strategy_instances SET last_calculation_attempt_at=NULL WHERE id = ANY($1::uuid[])", [[...state.mine]]);
-    const seen: string[] = [];
+    const everSeen = new Set<string>();
+    const newPerRun: number[] = [];
     for (let runNo = 0; runNo < 3; runNo += 1) {
       state.attempted.length = 0;
       await sql!.unsafe("UPDATE worker_runs SET status='SUCCESS',finished_at=now() WHERE worker_key='cron-actions' AND status='RUNNING'");
       await cycle();
-      seen.push(...state.attempted);
+      // Attempts are recorded in completion order (two run at once), so compare sets, not positions.
+      expect(new Set(state.attempted).size).toBe(10);
+      newPerRun.push(state.attempted.filter((id) => !everSeen.has(id)).length);
+      for (const id of state.attempted) everSeen.add(id);
     }
-    // 30 slots over 25 strategies: the first 25 attempts are all different, only then does it wrap.
-    expect(seen).toHaveLength(30);
-    expect(new Set(seen.slice(0, 25)).size).toBe(25);
+    expect(newPerRun).toEqual([10, 10, 5]);
+    expect(everSeen.size).toBe(25);
   });
 });
