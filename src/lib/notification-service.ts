@@ -75,15 +75,19 @@ export async function processDeliveryBacklog(options:{budgetMs:number;batch?:num
   const batch=options.batch??100;
   let sent=0;
   let claimed=0;
+  let heldBack=0;
   while(Date.now()<deadline){
     const result=await processDeliveryBatch(batch,deadline);
     sent+=result.sent;
     claimed+=result.claimed;
-    if(result.deferred)return {sent,claimed,exhausted:false};
-    if(result.claimed<batch)return {sent,claimed,exhausted:true};
+    heldBack+=result.heldBack;
+    if(result.deferred)return {sent,claimed,exhausted:false,heldBack};
+    if(result.claimed<batch)return {sent,claimed,exhausted:true,heldBack};
   }
-  return {sent,claimed,exhausted:false};
+  return {sent,claimed,exhausted:false,heldBack};
 }
+
+const CHANNEL_BREAKER_FAILURES=3;
 
 async function processDeliveryBatch(limit:number,deadline:number){
   const deliveries=await sql.unsafe(
@@ -102,15 +106,22 @@ async function processDeliveryBatch(limit:number,deadline:number){
     [limit]
   );
   let sent=0;
+  let heldBack=0;
   const claimed=deliveries.length;
   const entitlementCache=new Map<string,Set<string>>();
+  // Per-channel circuit breaker. Deliveries are sent one after another, so a provider that is down or
+  // timing out (10 s each) would otherwise use the whole time budget on its own queue and starve every
+  // other channel behind it. After a few consecutive failures the rest of that channel's batch is put
+  // back untouched (no attempt consumed) and retried later, while other channels carry on.
+  const consecutiveFailures=new Map<string,number>();
+  const tripped=new Set<string>();
   const releaseUnattempted=async(index:number)=>{
     await sql.unsafe(
       "UPDATE notification_deliveries SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),next_attempt_at=now(),updated_at=now() "+
       "WHERE id=ANY($1::uuid[]) AND status='SENDING'",
       [deliveries.slice(index).map(row=>String(row.id))]
     );
-    return {sent,claimed,deferred:deliveries.length-index};
+    return {sent,claimed,deferred:deliveries.length-index,heldBack};
   };
   for(let index=0;index<deliveries.length;index++){
     if(Date.now()>=deadline){
@@ -154,6 +165,25 @@ async function processDeliveryBatch(limit:number,deadline:number){
       continue;
     }
 
+    let destination="";
+    if(d.channel==="TELEGRAM"||d.channel==="DISCORD"){
+      const endpoints=await sql.unsafe("SELECT encrypted_destination FROM notification_endpoints WHERE user_id=$1 AND channel=$2 AND enabled=true LIMIT 1",[d.user_id,d.channel]);
+      if(!endpoints[0]){
+        // The destination was removed or disabled after this was queued: nothing to retry, and no
+        // provider call is needed to know that.
+        await sql.unsafe("UPDATE notification_deliveries SET status='CANCELLED',last_error_code='NO_ENDPOINT',updated_at=now() WHERE id=$1 AND status='SENDING'",[d.id]);
+        continue;
+      }
+      destination=String(endpoints[0].encrypted_destination);
+    }
+    if(tripped.has(String(d.channel))){
+      await sql.unsafe(
+        "UPDATE notification_deliveries SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),next_attempt_at=now()+interval '15 minutes',updated_at=now() WHERE id=$1 AND status='SENDING'",
+        [d.id]
+      );
+      heldBack+=1;
+      continue;
+    }
     let ok=false;
     let retryAfterSeconds:number|null=null;
     let failureCode="DELIVERY_FAILED";
@@ -175,30 +205,16 @@ async function processDeliveryBatch(limit:number,deadline:number){
       if(d.channel==="EMAIL"){
         ok=await getEmailProvider().send({to:String(d.email),subject:String(d.title),text:String(d.body)});
       }else if(d.channel==="TELEGRAM"){
-        const endpoints=await sql.unsafe("SELECT encrypted_destination FROM notification_endpoints WHERE user_id=$1 AND channel='TELEGRAM' AND enabled=true LIMIT 1",[d.user_id]);
-        if(!endpoints[0]){
-          await sql.unsafe("UPDATE notification_deliveries SET status='CANCELLED',last_error_code='NO_ENDPOINT',updated_at=now() WHERE id=$1 AND status='SENDING'",[d.id]);
-          continue;
-        }
         const result=await telegramCall("sendMessage",{
-          chat_id:decryptSecret(String(endpoints[0].encrypted_destination)),
+          chat_id:decryptSecret(destination),
           text:String(d.title)+"\n"+String(d.body)
         });
         ok=result.ok;
         retryAfterSeconds=result.retryAfterSeconds??null;
       }else if(d.channel==="DISCORD"){
-        const endpoints=await sql.unsafe("SELECT encrypted_destination FROM notification_endpoints WHERE user_id=$1 AND channel='DISCORD' AND enabled=true LIMIT 1",[d.user_id]);
-        if(!endpoints[0]){
-          // The webhook was removed or disabled after this was queued: nothing to retry.
-          await sql.unsafe(
-            "UPDATE notification_deliveries SET status='CANCELLED',last_error_code='NO_ENDPOINT',updated_at=now() WHERE id=$1 AND status='SENDING'",
-            [d.id]
-          );
-          continue;
-        }
         {
           // allowed_mentions stops message text from ever pinging @everyone/@here or roles.
-          const response=await fetch(decryptSecret(String(endpoints[0].encrypted_destination)),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:"**"+String(d.title)+"**\n"+String(d.body),allowed_mentions:{parse:[]}}),signal:AbortSignal.timeout(10_000),cache:"no-store",redirect:"error"});
+          const response=await fetch(decryptSecret(destination),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:"**"+String(d.title)+"**\n"+String(d.body),allowed_mentions:{parse:[]}}),signal:AbortSignal.timeout(10_000),cache:"no-store",redirect:"error"});
           ok=response.ok;
           if(response.status===429){
             const raw=response.headers.get("retry-after");
@@ -214,7 +230,11 @@ async function processDeliveryBatch(limit:number,deadline:number){
     }catch{ok=false;}
     if(ok){
       await sql.unsafe("UPDATE notification_deliveries SET status='SENT',sent_at=now(),updated_at=now(),last_error_code=NULL WHERE id=$1 AND status='SENDING'",[d.id]);sent+=1;
+      consecutiveFailures.set(String(d.channel),0);
     }else{
+      const failures=(consecutiveFailures.get(String(d.channel))??0)+1;
+      consecutiveFailures.set(String(d.channel),failures);
+      if(failures>=CHANNEL_BREAKER_FAILURES)tripped.add(String(d.channel));
       if(Number(d.attempt_count)>=DELIVERY_MAX_ATTEMPTS){
         await sql.unsafe(
           "UPDATE notification_deliveries SET status='DEAD_LETTER',last_error_code='MAX_ATTEMPTS_REACHED',updated_at=now() "+
@@ -230,5 +250,5 @@ async function processDeliveryBatch(limit:number,deadline:number){
       }
     }
   }
-  return {sent,claimed,deferred:0};
+  return {sent,claimed,deferred:0,heldBack};
 }

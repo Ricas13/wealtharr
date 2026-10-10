@@ -85,7 +85,7 @@ describe.skipIf(!url)("notification worker backlog",()=>{
 
   it("stops at the budget instead of running on, and says it is not finished",async()=>{
     const result=await processDeliveryBacklog({budgetMs:0,batch:100});
-    expect(result).toEqual({sent:0,claimed:0,exhausted:false});
+    expect(result).toEqual({sent:0,claimed:0,exhausted:false,heldBack:0});
   });
 
   it("stops inside a slow batch and releases unattempted claims without using up retries",async()=>{
@@ -98,7 +98,7 @@ describe.skipIf(!url)("notification worker backlog",()=>{
     try{
       // Fewer rows than the batch size: deferred claims must still report a
       // backlog, rather than incorrectly declaring this short batch exhausted.
-      expect(await processDeliveryBacklog({budgetMs:100,batch:50})).toEqual({sent:1,claimed:3,exhausted:false});
+      expect(await processDeliveryBacklog({budgetMs:100,batch:50})).toEqual({sent:1,claimed:3,exhausted:false,heldBack:0});
     }finally{now.mockRestore();provider.mockRestore();}
     const rows=await sql!.unsafe("SELECT d.status,d.attempt_count FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id WHERE n.user_id=$1 ORDER BY d.status",[pro]);
     expect(rows).toEqual([
