@@ -337,4 +337,46 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
       if(added.length)await sql!.unsafe("DELETE FROM users WHERE id=ANY($1::uuid[])",[added]);
     }
   });
+
+  describe("trials and out-of-order delivery for a second customer",()=>{
+    let trialUser="";
+    const customer="cus_lc_trial_"+run;
+    const trialSub="sub_lc_trial_"+run;
+    const trialRow=async()=>(await sql!.unsafe("SELECT s.status,s.stripe_subscription_id,s.current_period_end,p.slug FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1",[trialUser]))[0]!;
+    beforeAll(async()=>{
+      trialUser=String((await sql!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,'x') RETURNING id",["lifecycle-trial-"+run+"@example.test"]))[0].id);
+      await sql!.unsafe("INSERT INTO subscriptions (user_id,plan_id,status,cadence,stripe_customer_id) SELECT $1,id,'FREE','FREE',$2 FROM plans WHERE slug='free'",[trialUser,customer]);
+    });
+    afterAll(async()=>{if(sql&&trialUser)await sql.unsafe("DELETE FROM users WHERE id=$1",[trialUser]);});
+
+    it("grants the paid plan during a free trial and keeps it when the trial converts to a paid period",async()=>{
+      const trialEnd=now()+14*DAY;
+      expect((await deliver("customer.subscription.created",subscription(trialSub,trialUser,{status:"trialing",customer,periodEnd:trialEnd}))).status).toBe(200);
+      expect(await trialRow()).toMatchObject({status:"TRIALING",slug:"investor",stripe_subscription_id:trialSub});
+      const {loadEntitlements}=await import("@/lib/entitlement-service");
+      expect((await loadEntitlements(trialUser)).planSlug).toBe("investor");
+      const paidUntil=now()+44*DAY;
+      expect((await deliver("customer.subscription.updated",subscription(trialSub,trialUser,{status:"active",customer,periodEnd:paidUntil}))).status).toBe(200);
+      const converted=await trialRow();
+      expect(converted).toMatchObject({status:"ACTIVE",slug:"investor"});
+      expect(Math.floor(new Date(converted.current_period_end).getTime()/1000)).toBe(paidUntil);
+    });
+
+    it("keeps the newest state when an older event is delivered after a newer one",async()=>{
+      const newest=now()+120*DAY;
+      const current=subscription(trialSub,trialUser,{status:"active",customer,periodEnd:newest});
+      // A delayed event carrying an old period arrives last; Stripe's current state is what counts.
+      const delayed=subscription(trialSub,trialUser,{status:"active",customer,periodEnd:now()+5*DAY});
+      expect((await deliver("customer.subscription.updated",delayed,{stripeNow:current})).status).toBe(200);
+      expect(Math.floor(new Date((await trialRow()).current_period_end).getTime()/1000)).toBe(newest);
+    });
+
+    it("does not let an event for this customer touch another customer's subscription",async()=>{
+      const before=await row();
+      await deliver("customer.subscription.updated",subscription(trialSub,trialUser,{status:"canceled",customer}),{eventId:"evt_lc_"+run+"_iso"});
+      const other=await row();
+      expect(other).toMatchObject({stripe_subscription_id:before.stripe_subscription_id,slug:before.slug,status:before.status});
+      expect((await trialRow()).slug).toBe("free");
+    });
+  });
 });
