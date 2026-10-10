@@ -85,3 +85,16 @@ describe("same-cash-flow benchmark with irregular deposits (hand-computed in uni
     expect(simulateSameCashFlows({ index, anchorDate: "2026-01-02", anchorValue: "1000", flows: [{ date: "2026-02-10", amount: "500" }] })).toEqual([]);
   });
 });
+
+import { isAnnualisableSpan } from "../src/domain/performance";
+describe("annualisation needs a year of history", () => {
+  const at = (iso: string) => new Date(iso + "T00:00:00Z");
+  it("excludes short histories, where 3% in 10 days would annualise to about 40%", () => {
+    expect(isAnnualisableSpan([{ at: at("2026-01-01"), amount: -1000 }, { at: at("2026-01-11"), amount: 1030 }])).toBe(false);
+    expect(xirr([{ at: at("2026-01-01"), amount: -1000 }, { at: at("2026-01-11"), amount: 1030 }]).toNumber()).toBeGreaterThan(0.35);
+  });
+  it("accepts a history of a year or more", () => {
+    expect(isAnnualisableSpan([{ at: at("2025-01-01"), amount: -1000 }, { at: at("2026-01-01"), amount: 1100 }])).toBe(true);
+    expect(isAnnualisableSpan([{ at: at("2025-01-02"), amount: -1000 }, { at: at("2026-01-01"), amount: 1100 }])).toBe(false);
+  });
+});
