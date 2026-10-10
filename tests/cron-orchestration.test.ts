@@ -28,7 +28,7 @@ vi.mock("@/lib/db",()=>{
     if(query.includes("anonymous-aggregates"))return h.aggregatesRecent?[{}]:[];
     if(query.includes("SELECT DISTINCT i.user_id"))return h.owners.map((id)=>({user_id:id}));
     if(query.includes("count(*)::int AS n"))return [{n:h.totalActive}];
-    if(query.includes("ORDER BY i.updated_at ASC")){
+    if(query.includes("ORDER BY i.last_calculation_attempt_at ASC")){
       const limit=Number(params[0]);
       return h.instances.slice(0,limit).map((id)=>({id}));
     }
@@ -102,15 +102,15 @@ describe("hourly worker orchestration",()=>{
     expect(h.finishedLease?.status).toBe("SUCCESS");
   });
 
-  it("picks the stalest strategies first when capped, and reports the rest as deferred",async()=>{
-    // The query is ordered stalest-first; the fake returns them in that order.
+  it("picks the least recently attempted strategies first when capped, and reports the rest as deferred",async()=>{
+    // The query is ordered least-recently-attempted first; the fake returns them in that order.
     h.instances=["stalest","stale","fresh","fresher","freshest"];h.totalActive=5;
     process.env.CRON_MAX_INSTANCES="2";process.env.CRON_CONCURRENCY="1";
     const result=await call(ok);
     expect(h.calculated).toEqual(["stalest","stale"]);
     expect(result.status).toBe(503);
     expect(result.json).toMatchObject({ok:false,status:"degraded",calculated:2,deferred:{calculations:3}});
-    expect(h.queries.find((q)=>q.includes("ORDER BY i.updated_at ASC"))).toContain("LIMIT $1");
+    expect(h.queries.find((q)=>q.includes("ORDER BY i.last_calculation_attempt_at ASC"))).toContain("LIMIT $1");
   });
 
   it("stops starting work when the time budget runs out instead of overrunning",async()=>{

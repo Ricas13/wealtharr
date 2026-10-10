@@ -83,17 +83,20 @@ export async function GET(request: Request) {
       }
     });
 
-    // Stalest first: calculateAction touches the instance's updated_at, so a run cut short by the
-    // time budget or the cap resumes with exactly the strategies it did not reach, instead of
-    // starving the same tail every hour.
+    // Least recently attempted first (never-attempted strategies lead). Every attempt is stamped,
+    // successful or not, so a run cut short by the time budget or the cap resumes with exactly the
+    // strategies it did not reach, and persistently failing ones cannot starve healthy ones.
     const instances = await sql.unsafe(
-      "SELECT i.id FROM strategy_instances i JOIN users u ON u.id=i.user_id WHERE i.status='ACTIVE' AND u.deleted_at IS NULL ORDER BY i.updated_at ASC,i.id LIMIT $1",
+      "SELECT i.id FROM strategy_instances i JOIN users u ON u.id=i.user_id WHERE i.status='ACTIVE' AND u.deleted_at IS NULL ORDER BY i.last_calculation_attempt_at ASC NULLS FIRST,i.updated_at ASC,i.id LIMIT $1",
       [maxInstances]
     );
     let calculated = 0;
     let calculationFailures = 0;
     const calculationPool = await runBounded(instances, { concurrency, shouldStop: () => Date.now() >= phaseEnds(0.7) }, async (row) => {
       try {
+        // Stamp the attempt first: a strategy that fails repeatedly must still move to the back of the
+        // queue, otherwise failing strategies could occupy every slot and starve the healthy ones.
+        await sql.unsafe("UPDATE strategy_instances SET last_calculation_attempt_at=now() WHERE id=$1", [row.id]);
         await calculateAction(String(row.id));
         calculated += 1;
       } catch {
