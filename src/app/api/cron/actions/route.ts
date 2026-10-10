@@ -11,6 +11,7 @@ import { ensureSettings } from "@/lib/settings";
 import { runOpsCheck } from "@/lib/ops-monitor";
 import { reconcileStripeSubscriptions } from "@/lib/billing-reconciliation";
 import { cronAuthorized } from "@/lib/cron-auth";
+import { safeErrorCode } from "@/lib/safe-error-code";
 
 function positiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
@@ -135,7 +136,7 @@ export async function GET(request: Request) {
     await runOpsCheck().catch(() => undefined);
     return Response.json(summary, { status: ok ? 200 : 503, headers });
   } catch (error) {
-    await finishLease(lease, "FAILED", { error: error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN" });
+    await finishLease(lease, "FAILED", { error: safeErrorCode(error) });
     throw error;
   }
 }
