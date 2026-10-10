@@ -57,6 +57,7 @@ jobs:
           printf 'POSTGRES_PASSWORD=ci-db-pass\nDATABASE_URL=postgresql://strategyos:ci-db-pass@db:5432/strategyos\n' > .env.production
           docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --quiet
           docker compose -f docker-compose.oracle.yml -f docker-compose.traefik.yml --env-file .env.production config --format json > /tmp/wealtharr-traefik-compose.json
+          docker compose --profile backups -f docker-compose.oracle.yml --env-file .env.production config --format json > /tmp/wealtharr-backup-compose.json
           python3 - <<'PY'
           import json
           with open('/tmp/wealtharr-traefik-compose.json') as file:
@@ -72,9 +73,10 @@ jobs:
           assert set(scheduler.get('environment', {})) == {'CRON_SECRET'}
           assert not scheduler.get('env_file')
           assert scheduler.get('user') == '65534:65534' and scheduler.get('read_only') is True, 'Scheduler must be unprivileged and read-only'
-          backup = config['services']['backup']
+          with open('/tmp/wealtharr-backup-compose.json') as file: backup_config = json.load(file)
+          backup = backup_config['services']['backup']
           assert not backup.get('env_file'), 'Backup must not receive the application env file'
-          assert 'AUTH_SECRET' not in backup.get('environment', {}) and 'APP_ENCRYPTION_KEY' not in backup.get('environment', {})
+          assert 'AUTH_SECRET' not in backup.get('environment', {}) and 'APP_ENCRYPTION_KEY' not in backup.get('environment', {}), 'Backup must not receive application secrets'
           PY
           docker build --quiet -f docker/backup.Dockerfile .
           rm -f .env.production
