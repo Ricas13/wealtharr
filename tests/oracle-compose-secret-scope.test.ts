@@ -35,8 +35,8 @@ describe("Oracle Compose scheduler boundary",()=>{
   });
   it("isolates elevated maintenance and scrubs database passwords from the app",()=>{
     const config=readFileSync("docker-compose.oracle.yml","utf8");
-    const app=config.split("\\n  app:\\n")[1]?.split("\\n  maintenance:\\n")[0]??"";
-    const maintenance=config.split("\\n  maintenance:\\n")[1]?.split("\\n  scheduler:\\n")[0]??"";
+    const app=config.split("\n  app:\n")[1]?.split("\n  maintenance:\n")[0]??"";
+    const maintenance=config.split("\n  maintenance:\n")[1]?.split("\n  scheduler:\n")[0]??"";
     for(const variable of ["POSTGRES_PASSWORD","APP_DB_PASSWORD","BACKUP_DB_PASSWORD"])
       expect(app).toContain(variable+': ""');
     expect(maintenance).toContain("profiles: [maintenance]");
