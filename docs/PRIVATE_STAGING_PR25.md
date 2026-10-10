@@ -6,6 +6,17 @@ Keep the preserved `staging/pr25-ci1042-20261010` checkpoint at
 head: set `RELEASE_SHA` to the exact commit whose full CI and engineering review
 have passed. The completion checklist records remaining blockers.
 
+## Private-access requirement
+
+The Traefik overlay now **requires** `WEALTHARR_STAGING_ALLOWLIST` containing
+one or more trusted reviewer/VPN source CIDRs. Replace the placeholder in the
+fresh environment example with real CIDRs, such as a VPN egress address in
+`X.X.X.X/32` form. Never set `0.0.0.0/0` or `::/0`. Behind another CDN
+or forwarding proxy, the peer IP seen by Traefik may not be the reviewer's;
+verify the observed source and enforce access at the appropriate trusted edge.
+Test from an approved network AND a disallowed external network before signing
+off. A public domain and TLS certificate alone do not make staging private.
+
 ## Clone and bootstrap (Oracle host)
 
 The existing Traefik installation must have `websecure`, certificate resolver
@@ -31,6 +42,7 @@ DB_PASSWORD=$(openssl rand -hex 32)
 APP_DB_PASSWORD=$(openssl rand -hex 32)
 BACKUP_DB_PASSWORD=$(openssl rand -hex 32)
 cat > .env.production <<EOF
+WEALTHARR_STAGING_ALLOWLIST=<YOUR_TRUSTED_PUBLIC_IP_OR_VPN_CIDR>
 POSTGRES_PASSWORD=$DB_PASSWORD
 APP_DB_PASSWORD=$APP_DB_PASSWORD
 BACKUP_DB_PASSWORD=$BACKUP_DB_PASSWORD
@@ -99,6 +111,23 @@ read-only `wealtharr_backup`. The privileged database login is restricted
 to the one-shot maintenance job and database itself. Compose scrubs the
 bootstrap passwords from the running application environment. Hexadecimal
 passwords avoid URL escaping problems.
+
+## Automated smoke checks
+
+After deployment and a successful exact-head CI run, run this from the checkout
+on Oracle:
+
+```sh
+export EXPECTED_RELEASE_SHA='<paste-the-exact-green-CI-commit>'
+sh scripts/verify-private-staging.sh
+```
+
+This checks the checked-out SHA, Compose validity, running containers, restricted
+database credentials, off-mode launch/indexing flags, health endpoints, database
+role permissions and absence of a published PostgreSQL port. It is read-only
+except a no-op zero-row permissions probe. It does NOT prove external allowlist
+enforcement, off-site backup recovery, actual provider delivery, UI persistence
+or regulatory approval. Record its output and complete those remaining checks.
 
 ## Configuration and acceptance
 
