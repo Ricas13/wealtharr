@@ -202,7 +202,7 @@ export async function PATCH(request:Request){
       }
 
       if(p.action==="ATTEST"){
-        if(String(current.lifecycle_status)!=="DRAFT")throw new LifecycleConflict("Only a draft version can be attested.",409);
+        if(!["DRAFT","PUBLISHED"].includes(String(current.lifecycle_status)))throw new LifecycleConflict("Only a draft or published version can be attested.",409);
         await tx.unsafe(
           "INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (strategy_version_id) DO UPDATE SET spec_card=EXCLUDED.spec_card,golden_tests=EXCLUDED.golden_tests,notes=EXCLUDED.notes,attested_by=EXCLUDED.attested_by,attested_at=now()",
           [p.versionId,p.specCard,p.goldenTests,p.notes,admin.id]

@@ -17,4 +17,13 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   expect(source).toContain("stripe.prices.retrieve");
   expect(source).toContain("stripePrice.unit_amount!==Number(price.amount_minor)");
  });
+ it("refuses a LIVE Stripe key while any customer-visible strategy lacks a recorded sign-off",()=>{
+  const live=source.indexOf("sk_live_");
+  const check=source.indexOf("unattestedCustomerStrategies()");
+  expect(source).toContain('/^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY');
+  expect(check).toBeGreaterThan(-1);
+  // The evidence check must precede any Stripe call.
+  expect(check).toBeLessThan(source.indexOf("stripe.prices.retrieve"));
+  expect(live).toBe(-1);
+ });
 });

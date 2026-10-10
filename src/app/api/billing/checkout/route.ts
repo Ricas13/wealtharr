@@ -7,6 +7,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { hasLiveStripeSubscription, isTerminalLocalStatus } from "@/domain/subscription-status";
 import { authFailure } from "@/lib/api-auth";
 import { paidCheckoutBlockers } from "@/domain/commercial-launch";
+import { unattestedCustomerStrategies } from "@/lib/strategy-evidence";
 import { purchasesAllowedFor } from "@/domain/native-app";
 import { isSinglePeriodPrice } from "@/domain/billing-price";
 
@@ -38,6 +39,15 @@ export async function POST(request: Request) {
     if (blockers.length) {
       console.error("Checkout refused: launch checks failing: " + blockers.map((b) => b.key).join(", "));
       return Response.json({ error: "Billing is not available yet." }, { status: 503 });
+    }
+
+    // Live payments also need a recorded specification sign-off for every strategy customers can start.
+    if (/^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "")) {
+      const unattested = await unattestedCustomerStrategies();
+      if (unattested.length) {
+        console.error("Checkout refused: strategies without a recorded sign-off: " + unattested.map((u) => u.key + "@" + u.version).join(", "));
+        return Response.json({ error: "Billing is not available yet." }, { status: 503 });
+      }
     }
 
     if (!process.env.STRIPE_SECRET_KEY || !process.env.NEXT_PUBLIC_APP_URL) {
