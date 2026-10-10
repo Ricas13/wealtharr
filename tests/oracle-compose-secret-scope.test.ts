@@ -11,4 +11,31 @@ describe("Oracle Compose scheduler boundary",()=>{
     expect(scheduler).not.toContain("DATABASE_URL:");
     expect(scheduler).not.toContain("STRIPE_SECRET_KEY:");
   });
+
+  it("runs the scheduler unprivileged, read-only, and without installing packages at start-up",()=>{
+    const config=readFileSync("docker-compose.oracle.yml","utf8");
+    const scheduler=config.split("\n  scheduler:\n")[1]?.split("\n  backup:\n")[0]??"";
+    expect(scheduler).toContain('user: "65534:65534"');
+    expect(scheduler).toContain("read_only: true");
+    expect(scheduler).toContain("cap_drop: [ALL]");
+    expect(scheduler).toContain("no-new-privileges:true");
+    expect(scheduler).not.toMatch(/apk add/);
+    expect(scheduler).not.toMatch(/\bcurl\b/);
+  });
+  it("gives the backup container an explicit variable list rather than the whole application env file",()=>{
+    const config=readFileSync("docker-compose.oracle.yml","utf8");
+    const backup=(config.split("\n  backup:\n")[1]?.split("\nvolumes:\n")[0]??"").split("\n").filter((line)=>!line.trim().startsWith("#")).join("\n");
+    expect(backup).toBeTruthy();
+    expect(backup).not.toContain("env_file:");
+    for(const secret of ["AUTH_SECRET","APP_ENCRYPTION_KEY","STRIPE","EMAIL","MARKET_DATA"])expect(backup).not.toContain(secret);
+    expect(backup).toContain("RESTIC_REPOSITORY");
+    expect(backup).toContain("PGPASSWORD");
+  });
+  it("keeps the database private and the application as the only service with the application env file",()=>{
+    const config=readFileSync("docker-compose.oracle.yml","utf8");
+    expect(config.match(/env_file:/g)?.length).toBe(1);
+    const db=config.split("\n  db:\n")[1]?.split("\n  app:\n")[0]??"";
+    expect(db).toBeTruthy();
+    expect(db).not.toContain("ports:");
+  });
 });

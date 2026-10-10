@@ -71,6 +71,10 @@ jobs:
           scheduler = config['services']['scheduler']
           assert set(scheduler.get('environment', {})) == {'CRON_SECRET'}
           assert not scheduler.get('env_file')
+          assert scheduler.get('user') == '65534:65534' and scheduler.get('read_only') is True, 'Scheduler must be unprivileged and read-only'
+          backup = config['services']['backup']
+          assert not backup.get('env_file'), 'Backup must not receive the application env file'
+          assert 'AUTH_SECRET' not in backup.get('environment', {}) and 'APP_ENCRYPTION_KEY' not in backup.get('environment', {})
           PY
           docker build --quiet -f docker/backup.Dockerfile .
           rm -f .env.production
