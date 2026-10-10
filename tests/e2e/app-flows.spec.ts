@@ -233,3 +233,49 @@ test("Pro customer can resume an existing strategy across multiple accounts",asy
   await expect(page.getByText(/2 accounts/)).toBeVisible();
 });
 
+
+test("expired price evidence hides the order and blocks stale confirmation until refreshed",async({page},testInfo)=>{
+  const user=await createVerifiedUser(testInfo,"action-freshness");
+  const sql=postgres(process.env.DATABASE_URL!,{max:1,prepare:false});
+  const headers={origin:process.env.NEXT_PUBLIC_APP_URL??"http://127.0.0.1:3000"};
+  try{
+    await login(page,user);
+    await page.getByRole("link",{name:"Start my first strategy"}).click();
+    await page.getByRole("button",{name:/Continue/}).click();
+    await page.getByRole("button",{name:/Continue/}).click();
+    await page.getByLabel("What should we call it?").fill("Freshness guard");
+    await page.getByLabel("How much are you starting with?").fill("5000");
+    await page.getByRole("button",{name:/Start my strategy/}).click();
+    await page.waitForURL(/\/app\/strategies\/[0-9a-f-]+$/);
+    const strategyUrl=page.url();
+    const id=strategyUrl.split("/").pop()!;
+    const instrument=(await sql.unsafe("SELECT id FROM instruments WHERE name=$1",["E2E mock 9Sig exact instrument — not tradable"]))[0];
+    expect(instrument).toBeTruthy();
+    const quote=()=>page.request.post("/api/strategies/"+id+"/overrides",{headers,data:{
+      fieldKey:"market_price:"+instrument.id,manualValue:"101.123456",reason:"Verified test quote evidence",
+      observedAt:new Date().toISOString(),confirmed:true
+    }});
+    const saved=await quote();
+    expect(saved.status(),await saved.text()).toBe(200);
+    const actionId=(await saved.json()).actionId;
+    await page.reload();
+    await expect(page.getByRole("button",{name:"Mark trade completed"})).toBeVisible();
+    await sql.unsafe("UPDATE overrides SET expires_at=now()-interval '1 second' WHERE strategy_instance_id=$1 AND active=true",[id]);
+    await page.reload();
+    await expect(page.getByRole("heading",{name:"Refresh this review"})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Mark trade completed"})).toHaveCount(0);
+    const stale=await page.request.post("/api/actions/"+actionId+"/execute",{headers,data:{price:"101.123456",quantity:"30",fee:"0"}});
+    expect(stale.status()).toBe(400);
+    expect((await stale.json()).error).toContain("no longer matches current");
+    expect(await sql.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND event_type='BUY'",[id])).toHaveLength(0);
+    await page.goto("/app");
+    await expect(page.getByRole("heading",{name:"Refresh this review"})).toBeVisible();
+    const refreshed=await quote();
+    expect(refreshed.status(),await refreshed.text()).toBe(200);
+    await page.goto(strategyUrl);
+    await expect(page.getByRole("button",{name:"Mark trade completed"})).toBeVisible();
+  }finally{
+    await sql.unsafe("DELETE FROM users WHERE email=$1",[user.email]);
+    await sql.end();
+  }
+});

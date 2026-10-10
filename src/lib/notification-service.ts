@@ -5,6 +5,29 @@ import { getEmailProvider } from "@/lib/email";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { DELIVERY_MAX_ATTEMPTS,retryDelaySeconds } from "@/domain/delivery-retry";
 import { telegramCall } from "@/lib/telegram";
+import { calculateAction } from "@/lib/action-service";
+
+async function refreshActionNotification(notificationId:string,userId:string){
+  const owner=await sql.unsafe(
+    "SELECT i.id,i.status FROM notifications n JOIN actions a ON a.id=n.action_id "+
+    "JOIN strategy_instances i ON i.id=a.strategy_instance_id WHERE n.id=$1 AND n.user_id=$2 AND i.user_id=$2",
+    [notificationId,userId]
+  );
+  if(!owner[0]||owner[0].status!=="ACTIVE")return null;
+  // Re-run the existing market, mapping, reconciliation and ledger gates just
+  // before delivery. A queued indicative order must not outlive its inputs.
+  await calculateAction(String(owner[0].id));
+  const current=await sql.unsafe(
+    "SELECT n.title,n.body FROM notifications n JOIN actions a ON a.id=n.action_id "+
+    "JOIN strategy_instances i ON i.id=a.strategy_instance_id JOIN users u ON u.id=n.user_id "+
+    "WHERE n.id=$1 AND i.status='ACTIVE' AND u.deleted_at IS NULL "+
+    "AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
+    "AND NOT EXISTS (SELECT 1 FROM ledger_events l WHERE l.strategy_instance_id=i.id AND l.created_at>a.calculated_at) "+
+    "AND n.id=(SELECT newer.id FROM notifications newer WHERE newer.action_id=a.id ORDER BY newer.created_at DESC,newer.id DESC LIMIT 1)",
+    [notificationId]
+  );
+  return current[0]??null;
+}
 
 export async function createDeliveriesForNotification(notificationId: string) {
   const rows=await sql.unsafe("SELECT n.id,n.user_id,n.action_id FROM notifications n WHERE n.id=$1 LIMIT 1",[notificationId]);
@@ -81,16 +104,19 @@ async function processDeliveryBatch(limit:number,deadline:number){
   let sent=0;
   const claimed=deliveries.length;
   const entitlementCache=new Map<string,Set<string>>();
+  const releaseUnattempted=async(index:number)=>{
+    await sql.unsafe(
+      "UPDATE notification_deliveries SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),next_attempt_at=now(),updated_at=now() "+
+      "WHERE id=ANY($1::uuid[]) AND status='SENDING'",
+      [deliveries.slice(index).map(row=>String(row.id))]
+    );
+    return {sent,claimed,deferred:deliveries.length-index};
+  };
   for(let index=0;index<deliveries.length;index++){
     if(Date.now()>=deadline){
       // No provider call was made for these claims. Return them immediately
       // instead of holding them for ten minutes or consuming their retry budget.
-      await sql.unsafe(
-        "UPDATE notification_deliveries SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),next_attempt_at=now(),updated_at=now() "+
-        "WHERE id=ANY($1::uuid[]) AND status='SENDING'",
-        [deliveries.slice(index).map(row=>String(row.id))]
-      );
-      return {sent,claimed,deferred:deliveries.length-index};
+      return releaseUnattempted(index);
     }
     const d=deliveries[index];
     if(d.user_deleted_at){
@@ -130,7 +156,22 @@ async function processDeliveryBatch(limit:number,deadline:number){
 
     let ok=false;
     let retryAfterSeconds:number|null=null;
+    let failureCode="DELIVERY_FAILED";
     try{
+      if(d.action_id){
+        failureCode="ACTION_REVALIDATION_FAILED";
+        const current=await refreshActionNotification(String(d.notification_id),userId);
+        if(!current){
+          await sql.unsafe("UPDATE notification_deliveries SET status='CANCELLED',last_error_code='ACTION_NO_LONGER_CURRENT',updated_at=now() WHERE id=$1 AND status='SENDING'",[d.id]);
+          continue;
+        }
+        // Recalculation can revise the notification in place. Never send the
+        // title/amount captured when the batch was initially claimed.
+        d.title=current.title;
+        d.body=current.body;
+      }
+      if(Date.now()>=deadline)return releaseUnattempted(index);
+      failureCode="DELIVERY_FAILED";
       if(d.channel==="EMAIL"){
         ok=await getEmailProvider().send({to:String(d.email),subject:String(d.title),text:String(d.body)});
       }else if(d.channel==="TELEGRAM"){
@@ -183,8 +224,8 @@ async function processDeliveryBatch(limit:number,deadline:number){
         const delay=retryDelaySeconds(Number(d.attempt_count),String(d.id),retryAfterSeconds);
         await sql.unsafe(
           "UPDATE notification_deliveries SET status='PENDING',next_attempt_at=now()+($2::int*interval '1 second'),"+
-          "last_error_code='DELIVERY_FAILED',updated_at=now() WHERE id=$1 AND status='SENDING'",
-          [d.id,delay]
+          "last_error_code=$3,updated_at=now() WHERE id=$1 AND status='SENDING'",
+          [d.id,delay,failureCode]
         );
       }
     }

@@ -17,7 +17,7 @@ This checklist records evidence, not certification. Unchecked work remains open.
 | Billing lifecycle and paid launch gates | Checkout, Stripe webhook, entitlements | Ownership, retries, ordering, expiry and price history DB tests | Shared canonical-state recovery added for missed updates on linked Stripe subscriptions; real Stripe test pending |
 | Market data and notification recovery | Market/history worker, notification service, Telegram | Freshness, corporate actions, dedupe/retry, provider safety | Audit pending; actual providers pending |
 | Security and reliability | Authentication/session, API routes, worker, migrations | Tenancy matrix, route sweep, MFA, SSRF, audit, bounded jobs | Audit pending |
-| Migration and seed integrity | All migrations and `scripts/seed.ts` | Disposable DB: migrate twice, seed; repeat seed preservation | Passed locally through 0031, including seed preservation tests |
+| Migration and seed integrity | All migrations and `scripts/seed.ts` | Disposable DB: migrate twice, seed; repeat seed preservation | Passed locally through 0033; earlier fresh-seed preservation tests passed |
 | Full local verification | `package.json` | npm ci, lint, typecheck, test, build, browser, production audit | Pending |
 | Production Docker image and Oracle configuration | Dockerfile, Compose files, CI | Application image build, backup image, Compose validation | Passed CI #1045 at ab66e94, including actual runtime startup and container migrations; latest work requires another CI run |
 | Staging runbook and recovery | Master Admin and rollout runbooks | Exact tested revision, bootstrap, migrations, health, backup/rollback | Pending; no host access established |
@@ -134,6 +134,36 @@ Existing timestamps are preserved. The stale-action concurrency regression was
 observed failing before migration (the outdated action executed), then passing
 after migration: a deposit transaction begun before calculation but inserted
 afterwards now invalidates that action. Migration reapplication also passed.
+
+### Action and alert freshness
+
+Local verification: lint, TypeScript, all 125 files/1,013 unit and database
+tests, and production build passed. The historical-fill and expired-price
+browser journeys passed in both mobile and desktop Chromium (four tests,
+retries disabled). Full exact-head Linux CI remains required.
+
+Dashboards now validate saved instructions against a read-only reconstruction of
+current financial inputs. A mismatch or failed validation replaces the order
+with a refresh prompt and removes confirmation controls. The execution service
+performs the same fingerprint comparison while holding the strategy lock, in
+addition to checking for newer ledger rows. Already-completed broker fills must
+use historical import/reconciliation when an instruction is no longer current.
+
+Queued action alerts recalculate before sending, then reload the notification.
+Changed deposits update the message amount; expired quotes, disabled mappings
+and inactive strategies suppress obsolete messages. Recalculation failures retry
+with a redacted error code; time exhausted during recalculation releases the
+untouched claim without consuming an attempt. Database tests cover these paths
+and recovery. This reuses existing freshness/mapping rules rather than inventing
+a new quote lifetime or claiming live-provider certification. Validation adds
+database work at dashboard reads, confirmations and deliveries; operational
+capacity and end-to-end provider testing remain acceptance work.
+
+CI #1048 at b6a0a8a passed 1,006 unit/database tests, build and production runtime
+checks, but failed both projects' historical-trade browser assertions because
+they still expected the now-fixed premature review completion. Those assertions
+now require an open review. A new browser journey also checks expired manual
+price evidence, hidden confirmation controls, API rejection, and refreshed recovery.
 
 ## External gates (no completion evidence yet)
 

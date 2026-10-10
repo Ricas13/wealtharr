@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, ArrowRight, BarChart3, CalendarClock, Chevron
 import { requirePageUser } from "@/lib/session";
 import { getStrategyForUser, listAvailableStrategies, listStrategyAccounts } from "@/lib/strategy-service";
 import { sql } from "@/lib/db";
+import {isStoredActionCurrent,STALE_ACTION_DISPLAY} from "@/lib/action-service";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { simulateSameCashFlows } from "@/domain/comparison";
 import { PerformanceChart } from "@/components/PerformanceChart";
@@ -98,7 +99,9 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
     }));
 
   const actionRows=await sql.unsafe("SELECT a.id,a.action_type,a.status,a.title,a.instruction,a.amount,a.currency,a.explanation,a.confidence,a.due_at,a.created_at,acc.name AS account_name,acc.wrapper AS account_wrapper FROM actions a LEFT JOIN accounts acc ON acc.id=a.account_id WHERE a.strategy_instance_id=$1 AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') ORDER BY a.created_at DESC LIMIT 1",[id]);
-  const action=actionRows[0];
+  const storedAction=actionRows[0];
+  const action=storedAction&&!(await isStoredActionCurrent(id,String(storedAction.id)))
+    ?{...storedAction,...STALE_ACTION_DISPLAY}:storedAction;
   const priceOptions=await sql.unsafe(
     "SELECT DISTINCT ON (i.id) i.id,tl.ticker,tl.exchange,tl.currency "+
     "FROM strategy_accounts sa JOIN accounts a ON a.id=sa.account_id "+

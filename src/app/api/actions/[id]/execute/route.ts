@@ -30,6 +30,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       EXECUTION_PRECISION_UNSUPPORTED:"These fill values exceed ledger precision (12 quantity, 10 price and 8 cash/fee decimal places). Check your broker confirmation; the fill has not been rounded or saved.",
       EXECUTION_AMOUNT_TOO_LARGE:"These fill values exceed the supported ledger amount. Check your broker confirmation.",
       ACTION_STALE_LEDGER_MUTATION:"Your portfolio changed after this instruction was calculated. Refresh and recalculate before recording a trade or completing the review.",
+      ACTION_STALE_INPUTS:"This instruction no longer matches current prices or strategy settings. Recalculate first. If you already traded, record the actual broker fill using historical transaction import or reconciliation.",
       REBALANCE_TRADES_REQUIRED:"Record the individual rebalance trades before completing this action.",
       EXECUTION_NOTIONAL_MISMATCH:"The actual fill differs too much from the calculated action. Recalculate before confirming it.",
       INSUFFICIENT_CASH:"This execution would use more cash than the strategy ledger currently has.",

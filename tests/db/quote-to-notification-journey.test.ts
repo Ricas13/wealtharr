@@ -107,13 +107,11 @@ describe.skipIf(!url)("quote -> action -> notification",()=>{
   });
   it("rejects a future-dated broker execution without writing to the ledger, then preserves a valid fill timestamp",async()=>{
     const {executeAction}=await import("@/lib/action-service");
-    const instance=(await sql!.unsafe("SELECT strategy_version_id FROM strategy_instances WHERE id=$1",[instanceId]))[0];
-    const action=await sql!.unsafe(
-      "INSERT INTO actions (strategy_instance_id,account_id,strategy_version_id,fingerprint,action_type,status,title,instruction,amount,currency,trading_line_id,explanation,next_state,confidence) "+
-      "VALUES ($1,$2,$3,$4,'BUY','CALCULATED','Test buy','Record broker fill',100,'GBP',$5,'[]'::jsonb,'{}'::jsonb,'HIGH') RETURNING id",
-      [instanceId,accountId,instance.strategy_version_id,"broker-fill-test-"+run,lineId]
-    );
-    const id=String(action[0].id);
+    // Pin an in-progress review target of 6,100 against 60 units at 100:
+    // the genuine current instruction is a 100 buy, not a hand-inserted action.
+    await sql!.unsafe("UPDATE strategy_states SET state=state || '{\"reviewTargetValue\":\"6100\",\"forceReview\":true}'::jsonb WHERE strategy_instance_id=$1",[instanceId]);
+    const {calculateAction}=await import("@/lib/action-service");
+    const id=(await calculateAction(instanceId)).actionId;
     const future=new Date(Date.now()+3600_000).toISOString();
     await expect(executeAction(userId,id,{price:"100",quantity:"1",fee:"0",executedAt:future}))
       .rejects.toThrow("INVALID_EXECUTION_TIMESTAMP");

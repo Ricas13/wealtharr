@@ -581,6 +581,26 @@ export async function previewExecutionConstraintsScenario(
   };
 }
 
+export const STALE_ACTION_DISPLAY={
+  action_type:"DATA_REQUIRED",title:"Refresh this review",
+  instruction:"Your holdings, prices or strategy settings have changed. Recalculate to see the current instruction.",
+  amount:null,confidence:"LOW",explanation:[]
+};
+
+/** Read-only validation for dashboard instructions. Never show an old order as current. */
+export async function isStoredActionCurrent(strategyInstanceId:string,actionId:string){
+  try{
+    const rows=await sql.unsafe(
+      "SELECT a.fingerprint FROM actions a WHERE a.id=$1 AND a.strategy_instance_id=$2 "+
+      "AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
+      "AND NOT EXISTS (SELECT 1 FROM ledger_events l WHERE l.strategy_instance_id=$2 AND l.created_at>a.calculated_at)",
+      [actionId,strategyInstanceId]
+    );
+    if(!rows[0])return false;
+    return (await buildActionCalculation(strategyInstanceId)).fingerprint===String(rows[0].fingerprint);
+  }catch{return false;}
+}
+
 export async function calculateAction(strategyInstanceId:string){
   return sql.begin(async(tx)=>{
     // Match the lock order used by financial mutations: strategy row first, then
@@ -717,6 +737,13 @@ export async function executeAction(
     const actionType=String(action.action_type);
     if(["DATA_REQUIRED","NO_ACTION"].includes(actionType))throw new Error("ACTION_NOT_EXECUTABLE");
     if(actionType==="REBALANCE")throw new Error("REBALANCE_TRADES_REQUIRED");
+
+    // The ledger guard alone does not catch expired quotes, withdrawn mappings
+    // or changed settings. Rebuild under the same strategy lock before a fill
+    // or HOLD can advance the review. Already-completed broker fills can still
+    // be recorded through the historical import/reconciliation path.
+    const current=await buildActionCalculation(String(strategy.id));
+    if(current.fingerprint!==String(action.fingerprint))throw new Error("ACTION_STALE_INPUTS");
 
     let partial=false;
     let actualNotional:string|null=null;
