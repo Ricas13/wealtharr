@@ -1,6 +1,6 @@
 import {afterAll,beforeAll,describe,expect,it,vi} from "vitest";
 import postgres from "postgres";
-import {calculateAction,executeAction} from "@/lib/action-service";
+import {executeAction} from "@/lib/action-service";
 
 const caller=vi.hoisted(()=>({id:"",role:"USER",country:"US",timezone:"America/New_York"}));
 vi.mock("@/lib/session",()=>({requireUser:async()=>caller}));
