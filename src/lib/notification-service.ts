@@ -198,7 +198,7 @@ async function processDeliveryBatch(limit:number,deadline:number){
         }
         {
           // allowed_mentions stops message text from ever pinging @everyone/@here or roles.
-          const response=await fetch(decryptSecret(String(endpoints[0].encrypted_destination)),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:"**"+String(d.title)+"**\n"+String(d.body),allowed_mentions:{parse:[]}}),signal:AbortSignal.timeout(10_000),cache:"no-store"});
+          const response=await fetch(decryptSecret(String(endpoints[0].encrypted_destination)),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:"**"+String(d.title)+"**\n"+String(d.body),allowed_mentions:{parse:[]}}),signal:AbortSignal.timeout(10_000),cache:"no-store",redirect:"error"});
           ok=response.ok;
           if(response.status===429){
             const raw=response.headers.get("retry-after");

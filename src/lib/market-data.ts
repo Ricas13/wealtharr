@@ -95,6 +95,7 @@ class HttpMarketDataProvider implements MarketDataProvider {
         authorization: "Bearer " + this.token
       },
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(10_000)
     });
     if (response.status === 404) return null;

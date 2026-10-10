@@ -171,3 +171,7 @@ Licensed market/FX/adjusted history and actual samples; real Stripe test-mode li
 email/Telegram/Discord delivery and recovery; actual broker/instrument/wrapper eligibility;
 independent author-method/source rights review; off-site restore; UK legal/regulatory review.
 These remain commercial gates. Private staging must fail closed without them.
+
+## Additional October 10 engineering work
+
+Cron auth occurs before settings IO; admin connection errors are redacted and regression-tested. Operator retry supports Telegram and transient action-validation failures. Provider requests reject redirects, and market worker errors use generic codes. These changes require exact-head CI and do not resolve external staging or commercial gates.

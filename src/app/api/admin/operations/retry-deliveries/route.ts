@@ -3,7 +3,7 @@ import {requireAdmin} from "@/lib/session";
 import {assertSameOrigin} from "@/lib/security";
 import {sql} from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
-const schema=z.object({channel:z.enum(["EMAIL","DISCORD"]).optional(),limit:z.number().int().min(1).max(25).default(10),includeDeadLetter:z.boolean().default(false)});
+const schema=z.object({channel:z.enum(["EMAIL","DISCORD","TELEGRAM"]).optional(),limit:z.number().int().min(1).max(25).default(10),includeDeadLetter:z.boolean().default(false)});
 /** An operator may advance a *bounded* set of pending failed deliveries.
  * Never resend SENT, CANCELLED or action-superseded notifications.
  * Existing worker re-validates entitlement and active action before sending.
@@ -17,7 +17,7 @@ export async function POST(request:Request){
    const selected=await tx.unsafe(
     "SELECT d.id FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id "+
     "LEFT JOIN actions a ON a.id=n.action_id "+
-    "WHERE ((d.status='PENDING' AND d.last_error_code='DELIVERY_FAILED') OR ($3::boolean AND d.status='DEAD_LETTER')) "+
+    "WHERE ((d.status='PENDING' AND d.last_error_code IN ('DELIVERY_FAILED','ACTION_REVALIDATION_FAILED')) OR ($3::boolean AND d.status='DEAD_LETTER')) "+
     "AND ($1::text IS NULL OR d.channel=$1) "+
     "AND (n.action_id IS NULL OR (a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
     "AND n.id=(SELECT newest.id FROM notifications newest WHERE newest.action_id=n.action_id ORDER BY newest.created_at DESC,newest.id DESC LIMIT 1))) "+
