@@ -60,6 +60,12 @@ jobs:
           npm run db:provision-roles
           npm run db:provision-roles
           npm run db:verify-roles
+          # Exercise actual pg_dump under the backup-only credentials, not the owner.
+          docker run --rm --network host --env "PGPASSWORD=$BACKUP_DB_PASSWORD" \
+            public.ecr.aws/docker/library/postgres:16-alpine \
+            pg_dump -h 127.0.0.1 -U wealtharr_backup -d strategyos_test \
+            --format=custom --no-owner --no-acl > /tmp/wealtharr-readonly-backup.pgcustom
+          test -s /tmp/wealtharr-readonly-backup.pgcustom
       - name: Validate Oracle Compose and offsite backup image
         run: |
           printf 'POSTGRES_PASSWORD=ci-db-pass\nAPP_DB_PASSWORD=ci-app-database-password-long-enough\nBACKUP_DB_PASSWORD=ci-backup-database-password-long-enough\nWEALTHARR_STAGING_ALLOWLIST=203.0.113.7/32\nDATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@db:5432/strategyos\n' > .env.production
@@ -112,7 +118,7 @@ jobs:
         run: |
           docker run --rm --network host --env DATABASE_URL wealtharr-ci:${{ github.sha }} npm run db:migrate
           docker run --detach --name wealtharr-runtime-smoke --network host \
-            --env DATABASE_URL --env AUTH_SECRET --env AUTH_TRUST_HOST \
+            --env DATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@127.0.0.1:5432/strategyos_test --env AUTH_SECRET --env AUTH_TRUST_HOST \
             --env APP_ENCRYPTION_KEY --env CRON_SECRET --env NEXT_PUBLIC_APP_URL \
             --env EMAIL_PROVIDER --env MARKET_DATA_PROVIDER wealtharr-ci:${{ github.sha }}
           trap 'docker logs wealtharr-runtime-smoke; docker rm -f wealtharr-runtime-smoke' EXIT
