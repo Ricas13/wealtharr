@@ -127,6 +127,30 @@ describe.skipIf(!url)("quote -> action -> notification",()=>{
     expect(row.metadata.executedAt).toBe(actual);
   });
 
+  it("detects a deposit whose transaction began before the action was calculated",async()=>{
+    const {executeAction}=await import("@/lib/action-service");
+    const instance=(await sql!.unsafe("SELECT strategy_version_id FROM strategy_instances WHERE id=$1",[instanceId]))[0];
+    let actionId="";
+    await sql!.begin(async(tx)=>{
+      // Establish an older transaction, then calculate on another connection.
+      await tx.unsafe("SELECT now()");
+      const rows=await sql!.unsafe(
+        "INSERT INTO actions (strategy_instance_id,account_id,strategy_version_id,fingerprint,action_type,status,title,instruction,amount,currency,trading_line_id,explanation,next_state,confidence) "+
+        "VALUES ($1,$2,$3,$4,'BUY','CALCULATED','Concurrent action','A prior buy',100,'GBP',$5,'[]'::jsonb,'{}'::jsonb,'HIGH') RETURNING id",
+        [instanceId,accountId,instance.strategy_version_id,"older-transaction-"+run,lineId]
+      );
+      actionId=String(rows[0].id);
+      await tx.unsafe("SELECT id FROM strategy_instances WHERE id=$1 FOR UPDATE",[instanceId]);
+      await tx.unsafe(
+        "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount) VALUES ($1,$2,now(),'CONTRIBUTION','GBP',1)",
+        [instanceId,accountId]
+      );
+    });
+    await expect(executeAction(userId,actionId,{price:"100",quantity:"1",fee:"0"}))
+      .rejects.toThrow("ACTION_STALE_LEDGER_MUTATION");
+    expect(await sql!.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND metadata->>'actionId'=$2",[instanceId,actionId])).toHaveLength(0);
+  });
+
   it("never executes a stale calculated trade after a newer deposit changes the ledger",async()=>{
     const {executeAction}=await import("@/lib/action-service");
     const instance=(await sql!.unsafe("SELECT strategy_version_id FROM strategy_instances WHERE id=$1",[instanceId]))[0];

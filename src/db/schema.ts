@@ -282,7 +282,7 @@ export const ledgerEvents = pgTable("ledger_events", {
   metadata: jsonb("metadata").notNull().default({}),
   createdBy: text("created_by").notNull().default("USER"),
   requestKey: uuid("request_key"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`clock_timestamp()`)
 }, (t) => [
   index("ledger_instance_time_idx").on(t.strategyInstanceId, t.occurredAt, t.createdAt),
   uniqueIndex("ledger_events_strategy_request_unique").on(t.strategyInstanceId,t.requestKey).where(sql`${t.requestKey} IS NOT NULL`)

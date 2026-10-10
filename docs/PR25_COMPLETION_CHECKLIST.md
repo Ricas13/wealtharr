@@ -33,6 +33,11 @@ This checklist records evidence, not certification. Unchecked work remains open.
 
 ## Verification and fixes recorded 10 October 2026
 
+- [CI #1047](https://github.com/Ricas13/wealtharr/actions/runs/38063705746)
+  passed at `79992b6917f2e7cfd3942a7beedb32dc53e08ac8`, including billing
+  recovery, notification time budgets, the production container and browser suite.
+  The financial integrity increment below still requires its own exact-head CI.
+
 - [CI #1045](https://github.com/Ricas13/wealtharr/actions/runs/38044105082)
   passed at `ab66e94e0352b4cfa1791d295701917e2517b28f`: 122 files/990
   unit and database tests, 116 browser tests with six pre-existing project skips,
@@ -104,6 +109,31 @@ request may finish after the deadline (provider timeout is ten seconds); this is
 a bound on starting work, not cancellation of an in-flight delivery. The direct
 admin drain has a 30-second budget. A deterministic database regression verifies
 one slow send, release of remaining claims, and successful retry without loss.
+
+### Broker fills and ledger precision
+
+Local verification: lint, TypeScript, all 124 files/1,006 unit and database
+tests, and the production build passed. The final historical-overdraft assertion
+also passed in a focused run. Exact-head Linux CI remains required.
+
+Imported first purchases keep the initial review open until final HOLD
+confirmation. The real-database HFEA journey checks the independently calculated
+$5,500 equity and $4,500 bond legs against $10,000 starting cash, both imported
+fills, final HOLD, retry recovery after review/closure, conflicting request keys,
+and rejection of new backdated or closed-strategy writes.
+
+Fill validation and ledger folding use an isolated 80-digit decimal constructor,
+enough for a 30-digit quantity multiplied by a 24-digit price before checking
+storage precision. Boundary tests cover exact 24-digit cash values, one-unit
+overdrafts at eight decimal places, residual holdings, and independent quantity,
+price and fee overflow. Historical balance validation no longer tolerates a
+negative smallest cash unit. This does not certify all engine/analytics arithmetic.
+
+Migration 0033 changes future ledger insertion timestamps to `clock_timestamp()`.
+Existing timestamps are preserved. The stale-action concurrency regression was
+observed failing before migration (the outdated action executed), then passing
+after migration: a deposit transaction begun before calculation but inserted
+afterwards now invalidates that action. Migration reapplication also passed.
 
 ## External gates (no completion evidence yet)
 

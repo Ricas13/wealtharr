@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import {LedgerDecimal} from "./ledger-decimal";
 
 export type TradeSide = "BUY" | "SELL";
 
@@ -147,12 +148,12 @@ export function planPracticalTrade(input: {
 }
 
 export function validateExecution(input: ExecutionInput): ValidatedExecution {
-  const proposed = new Decimal(input.proposedAmount);
-  const price = new Decimal(input.price);
-  const fee = new Decimal(input.fee ?? 0);
-  const availableCash = new Decimal(input.availableCash);
-  const heldQuantity = new Decimal(input.heldQuantity);
-  const maxDeviation = new Decimal(input.maxNotionalDeviation ?? "0.02");
+  const proposed = new LedgerDecimal(input.proposedAmount);
+  const price = new LedgerDecimal(input.price);
+  const fee = new LedgerDecimal(input.fee ?? 0);
+  const availableCash = new LedgerDecimal(input.availableCash);
+  const heldQuantity = new LedgerDecimal(input.heldQuantity);
+  const maxDeviation = new LedgerDecimal(input.maxNotionalDeviation ?? "0.02");
 
   if (!proposed.isFinite() || proposed.lte(0)) throw new Error("INVALID_PROPOSED_AMOUNT");
   if (!price.isFinite() || price.lte(0)) throw new Error("INVALID_PRICE");
@@ -161,7 +162,7 @@ export function validateExecution(input: ExecutionInput): ValidatedExecution {
 
   const quantity = input.quantity == null
     ? proposed.div(price)
-    : new Decimal(input.quantity);
+    : new LedgerDecimal(input.quantity);
   if (!quantity.isFinite() || quantity.lte(0)) throw new Error("INVALID_QUANTITY");
 
   const grossNotional = quantity.mul(price);
@@ -175,7 +176,7 @@ export function validateExecution(input: ExecutionInput): ValidatedExecution {
     throw new Error("EXECUTION_AMOUNT_TOO_LARGE");
   const deviation = grossNotional.minus(proposed).abs().div(proposed);
   if (input.allowPartial) {
-    if (grossNotional.gt(proposed.mul(new Decimal(1).plus(maxDeviation)))) throw new Error("EXECUTION_NOTIONAL_MISMATCH");
+    if (grossNotional.gt(proposed.mul(new LedgerDecimal(1).plus(maxDeviation)))) throw new Error("EXECUTION_NOTIONAL_MISMATCH");
   } else if (deviation.gt(maxDeviation)) {
     throw new Error("EXECUTION_NOTIONAL_MISMATCH");
   }

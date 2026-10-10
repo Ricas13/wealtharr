@@ -1,4 +1,4 @@
-import Decimal from "decimal.js";
+import {LedgerDecimal as Decimal} from "./ledger-decimal";
 import { localDateInZone } from "./schedule";
 
 /**
@@ -41,7 +41,8 @@ export function historicalBrokerFill(input:HistoricalBrokerFill,now=new Date()){
     ||!fee.isFinite()||fee.lt(0))throw new Error("INVALID_TRADE_AMOUNT");
   const gross=quantity.mul(unitPrice);
   if(gross.decimalPlaces()>8)throw new Error("TRADE_NOTIONAL_PRECISION_UNSUPPORTED");
-  if(gross.greaterThan("9999999999999999"))throw new Error("TRADE_TOO_LARGE");
+  if(quantity.gte("1000000000000000000")||unitPrice.gte("100000000000000")||
+    fee.gte("10000000000000000")||gross.gte("10000000000000000"))throw new Error("TRADE_TOO_LARGE");
   return {
     quantity:input.side==="BUY"?quantity:quantity.neg(),
     cashAmount:input.side==="BUY"?gross.neg():gross,
