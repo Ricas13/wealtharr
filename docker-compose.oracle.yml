@@ -25,7 +25,7 @@ services:
     env_file: [.env.production]
     environment:
       # Supply a URL-encoded password in the private env file, avoiding malformed DSNs.
-      DATABASE_URL: ${DATABASE_URL:?Configure the protected PostgreSQL URL with db hostname}
+      DATABASE_URL: postgresql://wealtharr_app:${APP_DB_PASSWORD:?Required}@db:5432/strategyos
       # Bootstrap DB secrets must not reach the online app through env_file.
       POSTGRES_PASSWORD: ""
       APP_DB_PASSWORD: ""

@@ -48,7 +48,7 @@ Audited head at the start of the 11 October session: `1fc78f3` (CI run 1052 gree
 | Billing lifecycle | Complete (mocked Stripe) | free/paid, monthly/annual, trials, renewal, portal changes, past due, cancel, expiry, replay, out-of-order, outage recovery, ownership, store isolation | `tests/db/billing-lifecycle.test.ts` (27 tests), `tests/db/store-webhook.test.ts`, `tests/db/stripe-price-history.test.ts` | proration is computed by Stripe; the app mirrors Stripe's state and does not compute it |
 | Live payments need strategy sign-off | Complete | `c8d8ec0`: live Stripe checkout refused while any customer-visible strategy lacks a recorded sign-off; Admin Launch lists them | `tests/db/strategy-evidence.test.ts`, `tests/master-admin-checkout.test.ts` | the sign-off records who approved a card; it does not verify the card |
 | Master Admin configurability | Complete (earlier work) | operational settings, prices, instruments, strategy publication in the web interface; only bootstrap values in Docker | `tests/settings-registry.test.ts`, `tests/db/app-settings.test.ts` | |
-| Database role separation | Not started (hardening) | the app and backup connect as the owner role that is also the PostgreSQL superuser | none | recommended: separate migration role and a DML-only application role |
+| Database role separation | Implemented, exact-head CI and Oracle acceptance pending | Opt-in maintenance profile; app DML-only and backup read-only roles with separate credentials, enforced runtime DSN | Real PostgreSQL `db:provision-roles` twice / `db:verify-roles`, rendered Compose checks | Existing host requires a backed-up cutover; independent security sign-off separate |
 | Corporate actions | Not modelled | large price moves are rejected by the plausibility gate and strategies return DATA_REQUIRED until reconciled | `tests/quote-plausibility.test.ts` | splits and mergers need the user to reconcile holdings |
 
 ### Review findings and dispositions
@@ -56,6 +56,13 @@ Audited head at the start of the 11 October session: `1fc78f3` (CI run 1052 gree
 - Migration review: 2 low (lock behaviour of 0031 and 0028), documented.
 - Security review: no exploitable defect; 1 hardening item (database roles), 1 fixed (stored error text), 1 accepted (a user can be socially engineered into pressing Start on an attacker's Telegram link; no data is disclosed or changed).
 - Financial review: 7 items. Verified and fixed: negative balances via corrections or withdrawals (1, 5), stuck review after a corrected fill (2), fabricated returns from backdated flows (3), future-dated entries (4), short-history annualisation (7). Not reachable: nullable ledger account (6), because no code deletes a single account.
+
+### Database least-privilege increment after verified CI 38090585235
+
+- Prior commit `562a599` passed run 38090585235, but later role hardening needs its own exact-head CI.
+- Scripts provision and test non-owner app DML and backup read-only roles against real PostgreSQL, including denied writes/DDL, twice for provisioning idempotency.
+- Oracle Compose enforces the app DSN and restricts the privileged migrator to the optional one-shot maintenance profile. Bootstrap database passwords are scrubbed from the app environment.
+- Staging cutover and off-site recovery are not executed by CI; operator evidence remains essential.
 
 ## B. Private staging acceptance (needs the real Oracle host)
 

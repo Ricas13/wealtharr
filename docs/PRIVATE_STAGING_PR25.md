@@ -28,9 +28,13 @@ docker network inspect media_net >/dev/null
 umask 077
 test ! -e .env.production
 DB_PASSWORD=$(openssl rand -hex 32)
+APP_DB_PASSWORD=$(openssl rand -hex 32)
+BACKUP_DB_PASSWORD=$(openssl rand -hex 32)
 cat > .env.production <<EOF
 POSTGRES_PASSWORD=$DB_PASSWORD
-DATABASE_URL=postgresql://strategyos:$DB_PASSWORD@db:5432/strategyos
+APP_DB_PASSWORD=$APP_DB_PASSWORD
+BACKUP_DB_PASSWORD=$BACKUP_DB_PASSWORD
+DATABASE_URL=postgresql://wealtharr_app:$APP_DB_PASSWORD@db:5432/strategyos
 AUTH_SECRET=$(openssl rand -hex 32)
 APP_ENCRYPTION_KEY=$(openssl rand -base64 32)
 CRON_SECRET=$(openssl rand -hex 32)
@@ -42,7 +46,7 @@ WEALTHARR_PAID_LAUNCH_ENABLED=false
 MARKET_DATA_MODE=PROVIDER
 MARKET_DATA_PROVIDER=unconfigured
 EOF
-unset DB_PASSWORD
+unset DB_PASSWORD APP_DB_PASSWORD BACKUP_DB_PASSWORD
 chmod 600 .env.production
 ```
 
@@ -56,11 +60,13 @@ unavailable until a real provider is configured; first-admin setup is local.
 ```sh
 dc() { docker compose --env-file .env.production -f docker-compose.oracle.yml -f docker-compose.traefik.yml "$@"; }
 dc config --quiet
-dc build app
+dc build app maintenance
 dc up -d db
-dc run --rm app npm run db:migrate
-dc run --rm app npm run db:migrate
-dc run --rm app npm run db:seed
+dc --profile maintenance run --rm maintenance npm run db:migrate
+dc --profile maintenance run --rm maintenance npm run db:migrate
+dc --profile maintenance run --rm maintenance npm run db:seed
+dc --profile maintenance run --rm maintenance npm run db:provision-roles
+dc --profile maintenance run --rm maintenance npm run db:verify-roles
 dc up -d app scheduler
 dc ps
 curl --fail --silent --show-error https://wealtharr.vpn4u.cc/api/health
@@ -70,6 +76,29 @@ dc logs --tail=100 app
 Read the one-time setup code privately from the app log. Open
 `https://wealtharr.vpn4u.cc/setup`, create the first administrator, then sign in
 and open `/admin/configuration`. Enrol administrator MFA before enforcing it.
+
+## Existing installation: safe credential cutover
+
+**Do not run the fresh bootstrap block again on an existing Wealtharr installation.**
+Never regenerate `.env.production`, AUTH_SECRET, APP_ENCRYPTION_KEY or CRON_SECRET,
+and do not wipe the database volume. Keep the previously working image available.
+First take a restorable database dump and a secure copy of the env file.
+Generate only two additional long random hexadecimal passwords
+(`APP_DB_PASSWORD`, `BACKUP_DB_PASSWORD`), add them to the existing private
+environment file and stop the scheduler. Build the new maintenance image.
+Run migrations twice, seed, role provisioning and role verification through
+`dc --profile maintenance run --rm maintenance npm run <script>` as in the
+fresh-install sequence. If any step fails, do not start the new app.
+The Compose configuration enforces the `wealtharr_app` DSN irrespective of
+an old `DATABASE_URL` in the file. Provision roles before application startup.
+`maintenance` is an opt-in one-shot service; never run it as a daemon.
+Run the provisioning step again after any future schema migration.
+
+The online app uses non-owner `wealtharr_app`; the backup container uses
+read-only `wealtharr_backup`. The privileged database login is restricted
+to the one-shot maintenance job and database itself. Compose scrubs the
+bootstrap passwords from the running application environment. Hexadecimal
+passwords avoid URL escaping problems.
 
 ## Configuration and acceptance
 
@@ -115,6 +144,10 @@ dc exec -T db pg_dump -U strategyos -d strategyos -Fc > "backups/pre-upgrade-$(d
 Copy backups to the configured encrypted off-site repository using
 `scripts/backup-postgres.sh` and verify a separate scratch restore using
 `scripts/restore-drill.sh`. A local dump is not an off-site restore drill.
+A scratch restore needs CREATE DATABASE privileges; perform it with separate,
+authorised maintenance credentials on a scratch database. Never elevate the
+long-running read-only backup service to perform restoration.
+
 Enable the optional backup container only after configuring and initializing
 its restic repository and credentials (`dc --profile backups up -d backup`).
 

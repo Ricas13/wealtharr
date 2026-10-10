@@ -6,7 +6,7 @@ Then open `/admin/configuration` to complete setup from one place.
 
 ## What remains in Docker Compose or its private environment
 
-- Database connectivity and password (the application cannot store the credentials needed to read its own configuration).
+- Database connectivity and password (the application cannot store the credentials needed to read its own configuration). Oracle Compose enforces non-owner `wealtharr_app` at runtime; a separate maintenance profile owns schema changes.
 - `AUTH_SECRET` and `APP_ENCRYPTION_KEY` (session and encrypted-settings bootstrap keys).
 - `CRON_SECRET` shared between **both** app and scheduler containers. Never rotate it only in the web UI.
 - Reverse proxy and certificates, container ports/networks, persistent volumes, backup container/repository credentials and hosting.
