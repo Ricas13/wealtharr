@@ -541,6 +541,7 @@ html[data-theme="light"] .customer-workspace-shell .app-main {
              radial-gradient(ellipse at 85% 0%,#e5f8f0 0%,transparent 37%),var(--cw-bg);
 }
 html[data-theme="light"] .customer-workspace-shell > .sidebar {border-color:var(--cw-border)}
+html[data-theme="light"] .customer-workspace-shell > .sidebar .nav-link:not(.current) {color:#4b6079;}
 html[data-theme="light"] .customer-workspace-shell > .sidebar .nav-link.current {
   color:var(--cw-mint);background:#dff4ed;
 }
