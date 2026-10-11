@@ -129,7 +129,11 @@ test.describe("approved customer dashboard visual contract",()=>{
     const topbar=shell.locator(".app-topbar");
     expect(await sidebar.evaluate(node=>Math.round(node.getBoundingClientRect().width))).toBe(195);
     expect(await topbar.evaluate(node=>Math.round(node.getBoundingClientRect().height))).toBe(61);
+    // Both user-selectable themes retain their approved colour tokens.
+    await page.evaluate(()=>document.documentElement.setAttribute("data-theme","dark"));
     expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#78f3c6");
+    await page.evaluate(()=>document.documentElement.setAttribute("data-theme","light"));
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#08795d");
     await expect(sidebar.locator('.nav-link[aria-current="page"]')).toHaveText("Main");
     await expect(page.getByRole("heading",{name:"Start with one simple decision."})).toBeVisible();
     await page.getByRole("link",{name:"Strategies",exact:true}).click();
