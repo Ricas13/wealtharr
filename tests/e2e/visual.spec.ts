@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 
+// Midnight Ink theme: 2026-10-11 digests are CI's renderer output, checked against local renders of
+// the same pages (landing and demo). Earlier review notes below describe the previous design.
 // Reviewed 2026-10-08 against the rendered Wealtharr pages (accessible mobile menu, demo chart
 // settled). Digests are those produced by CI's renderer (Playwright Chromium 153, ubuntu-latest) and
 // are reviewed against CI screenshots (the mobile demo has two visually equivalent raster variants).
@@ -10,16 +12,15 @@ const expected:Record<string,Record<string,string | string[]>>={
   // Two equivalent mobile-demo renders were visually reviewed from the CI retry traces; tiny
   // subpixel raster differences affect only text/chart labels, not layout or user-visible content.
   "mobile-chromium":{
-    landing:"c9b1d56b3b79a28294eaa5c8a6c4674b46052b2e03e63dba76fcaf584ea6549a",
-    demo:["5c2d458e3777c7e31fdbd1ef3f923b872f0a67f10a8f32beafb5bb1b8a349df9","9f0a4b76fdef0f9d5dd38544e85667e3725b6a928a8ac71484f9f20a804da288"]
+    landing:"4c549e5fab2390ff3c14644e70c4fb4544d5dbcf353c02874731c974293f070c",
+    demo:["e86bf5f269fceed69cb54695196576dd5a0f7ff7efc6be5d19692fb3e5cd30d0","2efb7e98989e5418fad7c474e3a0631b7b4518de6c2f63b820e54bfdd44b8a49"]
   },
   "desktop-chromium":{
-    landing:"8bb40d5ebfa3721ce6721f3ea33f71f12103038643f5b5d425439ffeb17cf0b7",
+    landing:"8417d6a87de2a2baa323234f6a47ffbedea486b1dbe0cf811baae3ed358a938c",
     // 2026-10-09: the second settled raster was inspected from the GitHub trace PNG
     // (1280x1442). Header, value cards, next-action panel, chart, legends and
     // footer cards are intact; differences are rendering-only, not missing UI.
-    demo:["e33b2064ae861de5277a378e9d390367f9ecc1aba0b326c50b2f99791b57d3a8",
-      "c407471ad87c3e1c996a9cd55e3343b4898cc90a3546c7e23a90e5c99c3e411d"]
+    demo:["e23ed51d198a7f2a4ccad3088ab9d5eba9a99dda77de2ad83558923d82e97753"]
   }
 };
 
