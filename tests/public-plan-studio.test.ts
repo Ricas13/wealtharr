@@ -41,8 +41,9 @@ describe("public landing and plan publication boundaries",()=>{
   expect(route).toContain("cannot be archived");
   const seed=source("scripts/seed.ts");
   expect(seed).toContain('await seedPlan("free"');
-  expect(seed).not.toContain('await seedPlan("investor"');
-  expect(seed).not.toContain('await seedPlan("pro"');
+  expect(seed).toContain('await seedPlan("investor"');
+  expect(seed).toContain('await seedPlan("pro"');
+  expect(seed).toContain("sort_order,visible) VALUES");
  });
  it("treats PayPal integration as staging-only",()=>{
   const admin=source("src/app/admin/plans/page.tsx");
