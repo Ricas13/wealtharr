@@ -1,103 +1,58 @@
-# Portfolio tracker expansion — Wealtharr
+# Strategy-scoped read-only brokerage verification — Wealtharr
 
-**Scope:** Investment bookkeeping and rule-based strategy tracking are different products. Maintain a clear separation.
+**Owner clarification (2026-10-11):** Read-only broker connectivity must serve **only the customer's selected Wealtharr strategies**. Other investments in the broker account should be ignored. This is **not** a portfolio aggregator or an "All Holdings" feature.
 
-## Product design
+## Desired customer journey
 
-Top-level default is the currently implemented `/app` **My Strategies** dashboard:
-existing rule-based plans, due reviews, contributions, exact investment instructions and their authenticated ledger.
+1. The user opens a specific strategy tab, e.g. **My Strategies → 9Sig → Connect broker**.
+2. Wealtharr explains the actual broker-level data scope and requests the minimum read-only access permitted by the provider. The user selects a connected brokerage account.
+3. The user explicitly selects **which investments or transactions belong to the strategy**. Prefer a dedicated brokerage account if available.
+4. Wealtharr previews matched positions, transaction lots, cash attributed to the strategy, recent activity, and any discrepancies. No unrelated holdings are shown.
+5. The user approves a one-time matching map and may edit/revoke it later.
+6. Subsequent read-only syncs help verify the recorded holdings/transactions and make reconciliation proposals. **No external activity silently enters the immutable strategy ledger or triggers orders.**
+7. The strategy tab presents the verified positions, broker-vs-ledger differences and sync freshness. A customer can always continue in manual mode without broker access.
 
-Introduce an **optional** account-level **All Holdings** view only for customers who choose to use it. It contains imported
-brokerage positions, cash, dividends and historical transactions, including holdings outside a strategy. It must
-not be required to create or use a strategy. Put detailed exposure, goals, dividends and broker sync under the
-optional Portfolio section; do **not** place a new widget for every feature on the landing dashboard.
+Do **not** create global account-wide tracking, unrelated-holding pages, portfolio-wide dividend calendars, full-account performance charts, unrelated stock import, or goals/FIRE features as part of this requirement.
 
-Proposed navigation, when launched:
-- Dashboard — highlights, one next action, graphs and overall progress
-- My Strategies — per-strategy positions and rule-specific execution
-- All Holdings — optional unassigned investments, connected accounts and income
-- Activity — future reviews, notifications and import/reconciliation issues
-- Settings — brokerage permissions, syncing and account privacy
+## Read-only permission nuance
 
-Customers may choose whether their global overview includes unassigned holdings. Until explicit FX conversion
-is backed by dated/licensed quotes, display values by currency, not as a blended total.
+Trading/broker APIs often grant permissions for an **entire account**, even if Wealtharr is interested in one strategy. Do not promise that the API can restrict visibility to a subset of ETFs unless that broker specifically supports the restriction. Depending on provider behaviour, the sync adapter may receive other holdings briefly while filtering.
 
-## Crucial accounting boundary
+Apply data minimisation: avoid requesting unneeded endpoints; process and filter to strategy-linked instruments/transactions within the trusted backend; do not retain unrelated holdings, transmit them to a client, include them in metrics or log them. Display a concise permission disclosure before consent.
 
-**Do not** insert broker-synced trades directly into `ledger_events`, `strategy_states` or `actions`.
-`ledger_events` is the audited strategy ledger; imported provider data is observational evidence, not
-user-confirmed execution or an implicit allocation rule. A strategy's rebalance calculations never query
-unassigned imported holdings.
+**Never** request, store or exercise permissions to place, amend, cancel or route orders. Write-API methods must be rejected by the connector's allowlist, and controls must be backed by tests.
 
-Design an independent, user-scoped observation model in a future migration:
-- `broker_connections`: owner, provider, connection state, explicitly READ_ONLY permission proof,
-  encrypted credentials/reference, sync freshness and revocation.
-- `broker_accounts`: external account IDs namespaced by provider and connection, wrapper, base currency,
-  `user_id`; default private/visible only after owner consent.
-- `broker_positions`: provenance, provider instrument ID/ISIN/exchange/ticker, quantity, market value,
-  native currency, observed timestamp, immutable snapshot ID.
-- `broker_cash`, `broker_transactions`, `broker_income`: independently versioned source-backed records
-  and idempotency keys. Never infer missing dividends, FX, unit quantities, splits or fees.
-- `strategy_import_links`: explicit mapping `broker_account + instrument + strategy_instance_id`,
-  approved and reversible by the user. A link enables **comparison and reconciliation only**. Moving
-  observed transactions to confirmed strategy ledger requires a separate reviewed, idempotent action.
-- `portfolio_view_settings`: opt-in to show other holdings on global dashboard. Default off.
+## Mixed-use account example
 
-Enforce owner isolation through parameterized ownership checks on every read/write; least-privilege
-runtime DB roles, encrypted sensitive fields, no key logging, no browser-side provider calls.
-Accounts from the same broker may have mixed holdings and multiple currencies. Never classify by ticker alone,
-never assume an entire brokerage account belongs to 9Sig, and never sum the same imported/linked holding
-twice in whole-portfolio metrics.
+A user owns 30 units of an ETF within a Wealtharr 9Sig strategy and another 20 units of the **same ETF** as a separate personal investment, all in one broker ISA.
 
-## Brokerage priority (UK first)
+A broker's account-level position endpoint may return **50 units**. Wealtharr must not import 50 into 9Sig. It must identify the 30 units through explicit broker transaction/lot assignment or a user-confirmed quantity and supporting history. If the mapping is ambiguous, the result is **needs reconciliation**, not an automatic 30/50 split.
 
-1. **Manual CSV statement import and preflight**: Trading 212 first. File parsed and previewed before
-   persistent write. Exact transaction IDs, instrument identities, currency, fees, duplicates and missing
-   history must be reconciled. Invalid rows are quarantined, not silently accepted.
-2. **Official Trading 212 read-only key pilot**, with user-generated granular keys limited to
-   Account data, Metadata, Portfolio and only the History scopes required for the requested views.
-   The official public API is beta and currently covers Invest and Stocks ISA; it also exposes
-   order *write* endpoints, which the integration must never call. Mask keys in responses and logs,
-   encrypt at rest, support revoke/disconnect, and avoid prompting for trading permissions.
-3. **Multi-broker adapter** via e.g. SnapTrade when required, and only with provider-commercial
-   terms reviewed. SnapTrade connections should explicitly use `connectionType=read`; never
-   `trade-if-available` or `trade`. Validate real ISA support before claiming it: support documentation
-   has described Trading212 Invest-only limits even though the official T212 API supports ISA.
-4. Backfill history only through consent and verified cursor-based pagination; schedule idempotent
-   daily sync with error/backoff/rate limits, freshness banners and per-account failure handling.
+Two strategies holding the same ticker must have distinct approved allocations to external transaction/lot identifiers and cannot double-count broker positions. Broker cash can also be shared, so account cash is not automatically allocated to either strategy. Strategy attribution must survive ticker changes, splits, dividends and currency conversions; otherwise fail closed.
 
-Official reference:
-https://docs.trading212.com/api
-https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key
-https://docs.snaptrade.com/docs/broker-access-guide
-https://docs.snaptrade.com/docs/trading-with-snaptrade
+## Accounting and safety boundary
 
-## Feature priorities
+- Existing immutable `ledger_events`, `strategy_states` and `actions` remain authoritative until separately user-confirmed and audited reconciliation of imported evidence.
+- A provider observation is **not** an executed Wealtharr trade, an approved contribution, a price with valid licensing, or a user-approved rebalance.
+- Retain only the strategy-scoped provider evidence necessary to substantiate matched positions and discrepancies: provider, external IDs, strategy mapping, effective timestamps, currency, confidence/freshness.
+- Per-user/per-strategy scope checks on every query and API; no cross-account bleed. Encrypt provider secrets at rest; no credentials or unrelated holdings in client responses, error messages or application logs.
+- Missing/broken pagination, stale provider data, API changes, incomplete historical fills, missing FX or overlapping matching lots → mark stale/ambiguous, preserve previous confirmed state and prompt the user to review.
+- A disconnected broker doesn't stop manually managed strategies or remove historical user ledger events.
+- Account deletion/export and retention must cover brokerage connections, consent and retained scoped evidence.
+- No blending of currency-denominated values without independently verified dated FX prices. No invented holdings or double-counted aggregate balances.
 
-| Feature | Priority | Meaning | Release guard |
-| --- | --- | --- | --- |
-| Performance vs licensed benchmark | Existing | Estimated flow-adjusted history only | Never label estimated return exact TWR |
-| Portfolio composition by strategy | PR 26 | Observed value by same-currency strategy | All open strategies valued, no FX guessing |
-| Historical cash income | PR 26 | Recorded dividends/distributions/interest in strategy ledger | Do not imply untracked brokerage income or forecasts |
-| Read-only brokerage + CSV | First expansion | All Holdings isolated from strategy ledger | Consent, account-scoped IDs and import preview |
-| Consolidated asset allocation | After integration | Instrument/sector/geography and accounts | Reliable instrument mapping; distinguish ETFs' look-through |
-| Verified TWR and XIRR | After reconciliation | Complete external flows, fees, dividends and valuation checkpoints | Fail closed on missing history/FX; independently golden-tested |
-| Dividend calendar and projections | Later | Actual vs announced future payments | Separate verified receipts from estimates |
-| Custom targets and FIRE | Later, optional | Scenario projections, not trading instructions | User-controlled assumptions and explicit uncertainty |
-| Alerts, drift and price targets | Later | Optional notification preferences | Source freshness, dedupe and strategy isolation |
+## Engineering sequence
 
-Admin GUI shall control provider credentials/enablement, sync cadence/limits, available imports,
-feature gating and retention settings. Infrastructure secrets, bootstrap encryption keys, network
-and Docker deployment parameters remain environment/Compose-only.
+1. **Strategy-scoped matching model.** Add consent-managed broker connections, connection-to-strategy association and independently recorded scoped observations. Save only user-approved strategy-to-transaction/lot/instrument mappings. Do not create account-wide holdings analytics.
+2. **CSV pilot.** Preview a Trading 212 statement inside a selected strategy. Let the user choose exact relevant trades; reject duplicates and missing currency/fees, inspect corporate actions; import observation first, not ledger.
+3. **Read-only Trading 212 API pilot.** Confirm current Invest/Stocks ISA support and least-privilege permissions against provider documentation. Handle account/token revocation, encryption, sync freshness, rate limits, errors and historical completeness; disallow trading endpoints by method and path.
+4. **Within-strategy UI.** Small **Connected broker** section on the strategy detail page: connection state, last sync, matched holding quantities, observed market value, evidence provenance, mismatch banner, and optional **Review differences** action. No extra top-level navigation and no "Other Holdings" list.
+5. **Reconciliation workflow.** User confirms imported activity or quantity adjustments with explicit audit trail and idempotency key; ensure any recalculation uses only confirmed strategy ledger evidence.
+6. **Independent testing.** Test same-symbol personal holdings, multi-strategy overlap, partial transactions, dividends/reinvestments, cash allocation, FX, fees, sync retries, deletion, cross-user isolation and refusal of all trading writes. Golden-test any return measures against reconciled cash flows.
+7. **Admin GUI.** Provider enablement, limits, frequency, health, encrypted provider settings and per-provider features in Master Admin. Docker-only encryption bootstrap stays in deployment configuration.
 
-## Ready-for-public pilot acceptance
+## What PR #26 delivers
 
-- Security review including SSRF, CSRF, permission scopes, key rotation/revocation, PII export and deletion.
-- Real paper/test broker key; negative test proves **no** write methods or unassigned strategy mutations.
-- Broker sync corruption/missing fields must stop and alert; no inferred quantities.
-- Immutable source IDs, reconciled cash movements, corporate actions, mixed-currency and duplicate imports.
-- Full valuation/TWR/IRR independent reference tests; licensed market and FX data.
-- Disclosure/privacy/DPIA/commercial rights and UK regulatory review before paid availability.
+PR #26 introduces an original Snowball-inspired **strategy dashboard layout**, data-backed allocation across tracked Wealtharr strategies where all values share a currency, and displayed **recorded** dividends/interest from the strategy ledger only. It does **not** integrate broker accounts, request read-only credentials, import unassigned holdings or implement account-wide Snowball analytics.
 
-**Status 2026-10-11:** This document is the implementation contract and release sequence. **No brokerage
-linking, auto-sync, API credential storage, CSV import, precise TWR or IRR engine has been released by PR 26.**
+**Tracking:** [Issue #27 — Strategy-scoped read-only brokerage verification](https://github.com/Ricas13/wealtharr/issues/27). Keep paid launch/indexing gates disabled until current independent financial verification and UK privacy/regulatory checks are complete.
