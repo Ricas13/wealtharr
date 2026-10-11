@@ -1641,3 +1641,45 @@ html[data-theme="light"] .app-shell > .sidebar { background:rgba(255,255,255,.94
 @media(max-width:1180px){.admin-overview-hero{grid-template-columns:1.3fr 1fr}.admin-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-quick-start>div:last-child{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.admin-overview-heading{align-items:stretch;flex-direction:column}.admin-overview-hero{grid-template-columns:1fr}.admin-overview-hero-side{border-left:0;border-top:1px solid #2f465e}.admin-overview-panels{grid-template-columns:1fr}.admin-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-quick-start>div:last-child{grid-template-columns:1fr 1fr}.admin-flag-grid{grid-template-columns:1fr}}
 
+
+
+/* Admin is a deliberately dark control plane in both customer theme settings.
+   Override the legacy app-shell light/sidebar and mobile bottom-nav selectors
+   (which otherwise make administrator labels unreadable). */
+html[data-theme="light"] .app-shell.admin-workspace-shell{
+  --text:#edf4ff;--muted:#9eb3ca;--line:rgba(158,184,214,.17);
+  --accent:#78f3c6;--accent2:#79a8ff;--danger:#ff9baa;--warning:#ffd27a;
+  color:var(--text);background:#080f1d;
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell > .sidebar.admin-workspace-sidebar{
+  background:#0b1424;color:#edf4ff;border-color:#293b51;
+}
+html[data-theme="light"] .admin-workspace-shell .card{
+  background:rgba(255,255,255,.035);
+}
+html[data-theme="light"] .admin-workspace-shell .glass{
+  background:linear-gradient(180deg,rgba(21,39,63,.88),rgba(12,26,44,.86));
+}
+html[data-theme="light"] .admin-workspace-shell .button:not(.primary){
+  background:#182b42;color:#e9f4ff;border-color:#385169;
+}
+html[data-theme="light"] .admin-workspace-shell .button:not(.primary):hover{
+  background:#243b55;
+}
+html[data-theme="light"] .admin-workspace-shell .field input,
+html[data-theme="light"] .admin-workspace-shell .field select,
+html[data-theme="light"] .admin-workspace-shell .field textarea{
+  background:#192c41;color:#eff7ff;border-color:#3b546f;
+}
+.admin-workspace-sidebar .admin-nav-heading{color:#9db4d2}
+.admin-workspace-sidebar .admin-workspace-brand small{color:#adc3df}
+@media(max-width:980px){
+  .app-shell.admin-workspace-shell{padding-bottom:0}
+  .app-shell.admin-workspace-shell > .sidebar.admin-workspace-sidebar{
+    position:relative;top:auto;bottom:auto;left:auto;right:auto;
+    height:auto;z-index:9;display:block;overflow:hidden;
+    padding:0;border:0;border-bottom:1px solid #293b51;
+    backdrop-filter:none;
+  }
+}
+

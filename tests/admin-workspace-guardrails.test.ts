@@ -21,6 +21,13 @@ describe("Admin strategy workspace guardrails",()=>{
   expect(api).toContain("strategy_version_attestations");
   expect(api).toContain("Publish and verify this strategy before enabling it.");
  });
+ it("retains an accessible dark admin control-plane across light theme and mobile shell",()=>{
+   const css=readFileSync("src/app/globals.css","utf8");
+   expect(css).toContain('html[data-theme="light"] .app-shell.admin-workspace-shell > .sidebar.admin-workspace-sidebar');
+   expect(css).toContain("background:#0b1424");
+   expect(css).toContain(".app-shell.admin-workspace-shell > .sidebar.admin-workspace-sidebar{");
+   expect(css).toContain(".admin-workspace-sidebar .admin-nav-heading{color:#9db4d2}");
+ });
  it("keeps public checkout locked independently of admin presentation",()=>{
   const layout=readFileSync("src/app/admin/layout.tsx","utf8");
   expect(layout).toContain('process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true"');
