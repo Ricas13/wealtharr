@@ -7,7 +7,7 @@ import { authFailure } from "@/lib/api-auth";
 import { ALL_CHANNELS, ALL_FEATURES } from "@/domain/entitlements";
 
 const schema=z.object({
-  slug:z.string().regex(/^[a-z][a-z0-9-]{0,59}$/),displayName:z.string().min(1),description:z.string().default(""),
+  slug:z.string().regex(/^[a-z][a-z0-9-]{0,59}$/).refine((slug)=>slug!=="admin",{message:"\"admin\" is reserved for the administrator entitlement snapshot."}),displayName:z.string().min(1),description:z.string().default(""),
   monthlyPriceMinor:z.number().int().nonnegative(),annualPriceMinor:z.number().int().nonnegative(),
   annualDiscountBps:z.number().int().min(0).max(10000).default(0),
   currency:z.string().length(3),supportedBillingCurrencies:z.array(z.string().length(3)).min(1),

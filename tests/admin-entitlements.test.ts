@@ -54,6 +54,11 @@ describe("admin entitlement wiring",()=>{
     expect(enforce).toContain("await loadEntitlements(userId)");
     expect(enforce).not.toContain("JOIN plans");
   });
+  it("keeps the subscription row lock for the race-sensitive callers",()=>{
+    expect(read("src/lib/strategy-switch-service.ts")).toContain("loadEntitlementsWith(tx,userId,{lockSubscription:true})");
+    expect(read("src/app/api/strategies/[id]/accounts/route.ts")).toContain("loadEntitlementsWith(tx,user.id,{lockSubscription:true})");
+    expect(read("src/lib/entitlement-service.ts")).toContain("FOR UPDATE OF s");
+  });
   it("leaves no other call site resolving a plan on its own",()=>{
     for(const path of ["src/lib/strategy-service.ts","src/lib/strategy-switch-service.ts","src/app/api/strategies/[id]/accounts/route.ts","src/lib/notification-service.ts","src/app/api/strategies/[id]/preview/route.ts","src/app/api/integrations/telegram/webhook/route.ts"]){
       const source=read(path);

@@ -11,7 +11,12 @@ describe.skipIf(!url)("admin entitlement super-user",()=>{
   const run=Math.random().toString(36).slice(2,10);
   const users:string[]=[];
   const instruments:string[]=[];
+  let lineInstalled=false;
+  // One verified GB/ISA line for the whole file: trading_lines is unique on (exchange,ticker,effective_from)
+  // and two equally-ranked EXACT mappings would make the resolver ambiguous (fail closed).
   async function installVerifiedLine(){
+    if(lineInstalled)return;
+    lineInstalled=true;
     const instrument=await sql!.unsafe("INSERT INTO instruments (name,economic_exposure,leverage,direction,fund_currency) VALUES ($1,'NASDAQ_100_3X_LONG',3,'LONG','GBP') RETURNING id",["Admin entitlement test "+run]);
     const instrumentId=String(instrument[0].id);
     instruments.push(instrumentId);
