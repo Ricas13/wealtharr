@@ -18,15 +18,15 @@ export function LoginForm({next="/app"}:{next?:string}) {
   </form>;
 }
 
-export function RegisterForm() {
+export function RegisterForm({next="/app"}:{next?:string}) {
   const router=useRouter(); const [error,setError]=useState(""); const [busy,setBusy]=useState(false);
   return <form className="stack" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);setError("");const f=new FormData(e.currentTarget);
     const response=await fetch("/api/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:f.get("email"),password:f.get("password"),country:f.get("country"),baseCurrency:f.get("currency")})});
     const body=await response.json();setBusy(false); if(!response.ok) return setError(body.error ?? "Could not register.");
     if(body.verificationDelivery==="unavailable") return setError("Account created, but email delivery is not configured. An administrator must configure the email provider.");
-    if(process.env.NODE_ENV!=="production") { await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),redirect:false}); router.push("/app"); }
-    else router.push("/login?registered=1");
+    if(process.env.NODE_ENV!=="production") { await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),redirect:false}); router.push(next); }
+    else router.push("/login?registered=1&next="+encodeURIComponent(next));
   }}>
     <div className="field"><label htmlFor="register-email">Email</label><input id="register-email" name="email" type="email" autoComplete="email" required/></div>
     <div className="field"><label htmlFor="register-password">Password</label><input id="register-password" name="password" type="password" autoComplete="new-password" minLength={12} required/><div className="help">At least 12 characters.</div></div>
