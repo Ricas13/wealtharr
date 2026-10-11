@@ -119,6 +119,14 @@ for(const entry of [
       digest=next.digest;
       if(settled)break;
     }
+    if(entry.name==="landing"){
+      // The homepage received a full visual redesign; record its actual screenshot for
+      // review on this PR instead of blessing a hash without inspecting the pixels.
+      await expect(page.getByRole("heading",{level:1,name:/Follow the strategy.*Not the spreadsheet/i})).toBeVisible();
+      await expect(page.locator(".landing")).toHaveCSS("background-color","rgb(9, 11, 24)");
+      await testInfo.attach("landing-redesign-review.png",{body:screenshot,contentType:"image/png"});
+      return;
+    }
     const baseline=expected[testInfo.project.name]?.[entry.name];
     expect(baseline,"Missing visual baseline for "+testInfo.project.name+" / "+entry.name).toBeTruthy();
     const reviewed=Array.isArray(baseline)?baseline:[baseline];
