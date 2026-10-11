@@ -2096,3 +2096,33 @@ html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-status.i
 @media(max-width:1000px){.admin-three-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.admin-three-kpis{grid-template-columns:1fr 1fr}.admin-customer-panel .admin-design-panel-header{flex-direction:column}.admin-customer-search{max-width:none;width:100%;flex:auto}}
 
+
+/* Remove global page-entry fade: financial values must remain fully legible. */
+.app-shell.admin-workspace-shell .app-content.admin-workspace-content > *{animation:none!important;opacity:1!important;transform:none!important}
+/* Light theme WCAG AA readability in old and new admin components. */
+html[data-theme="light"] .app-shell.admin-workspace-shell{
+ --ac-muted:#394c66;--ac-subtle:#435772;--ac-indigo:#244b98;
+ --text:var(--ac-text);--muted:var(--ac-muted);--accent:var(--ac-indigo);
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell :is(.card,.glass,.form-card) :is(p,.help,small){color:var(--ac-muted)!important}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-panel p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-heading p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .page-title p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-setup-help{color:var(--ac-muted)!important}
+.app-shell.admin-workspace-shell .admin-stats-strip{background:var(--ac-surface)!important;border-color:var(--ac-border)!important;color:var(--ac-text)}
+.app-shell.admin-workspace-shell .admin-stats-strip>div{border-color:var(--ac-border);color:var(--ac-text)}
+.app-shell.admin-workspace-shell .admin-stats-strip strong{color:var(--ac-text)!important}
+.app-shell.admin-workspace-shell .admin-stats-strip span,
+.app-shell.admin-workspace-shell .admin-stats-strip small{color:var(--ac-muted)!important}
+.app-shell.admin-workspace-shell .admin-catalogue-toolbar p,
+.app-shell.admin-workspace-shell .admin-tile-meta,
+.app-shell.admin-workspace-shell .admin-tile-reason,
+.app-shell.admin-workspace-shell .admin-tile-footer span{color:var(--ac-muted)!important}
+.app-shell.admin-workspace-shell .admin-studio-table th{color:var(--ac-subtle)!important}
+.app-shell.admin-workspace-shell .admin-release-banner{background:var(--ac-surface);border-color:var(--ac-border)}
+.app-shell.admin-workspace-shell .admin-release-banner p{color:var(--ac-muted)}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-button{color:#fff;background:#344fad;border-color:#344fad}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-setup-step-number,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-setup-detail>span,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-integration-description small,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-integration-status{color:var(--ac-muted)}

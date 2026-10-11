@@ -47,7 +47,7 @@ export default async function AdminPage(){
    <div><span className="admin-kicker">WORKSPACE / OVERVIEW</span><h1>Overview</h1><p>Business performance and platform health</p></div>
    <span className={"admin-design-status "+(launchLocked?"is-prelaunch":"is-live")}>{launchLocked?"Pre-launch":"Launch enabled"}</span>
   </div>
-  <div className="admin-overview-kpis" aria-label="Key business indicators">{cards.map(({label,value,detail,href,Icon})=>
+  <div className="admin-overview-kpis" role="region" aria-label="Key business indicators">{cards.map(({label,value,detail,href,Icon})=>
    <Link key={label} href={href} className="admin-design-kpi">
     <span className="admin-design-kpi-title">{label}<Icon size={17} aria-hidden="true"/></span>
     <strong>{value}</strong><span className="admin-design-kpi-detail">{detail}</span>
