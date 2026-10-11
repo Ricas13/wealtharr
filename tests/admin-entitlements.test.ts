@@ -1,0 +1,64 @@
+import { describe,expect,it } from "vitest";
+import { readFileSync } from "node:fs";
+import { ALL_CHANNELS,ALL_FEATURES,adminEntitlementSnapshot,assertCanCreateStrategy,assertStrategyFeatureAccess } from "../src/domain/entitlements";
+
+const read=(path:string)=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
+
+describe("admin entitlement snapshot",()=>{
+  const snapshot=adminEntitlementSnapshot();
+  it("has no strategy limit and no strategy-key restriction",()=>{
+    expect(snapshot.planSlug).toBe("admin");
+    expect(snapshot.maxActiveStrategies).toBeNull();
+    expect(snapshot.availableStrategyKeys).toBeNull();
+    expect(()=>assertCanCreateStrategy(snapshot,500,"any-strategy-key")).not.toThrow();
+    expect(()=>assertStrategyFeatureAccess(snapshot,{accountCount:10})).not.toThrow();
+  });
+  it("includes every feature and every channel",()=>{
+    for(const feature of ALL_FEATURES)expect(snapshot.features.has(feature)).toBe(true);
+    for(const channel of ALL_CHANNELS)expect(snapshot.notificationChannels.has(channel)).toBe(true);
+    expect(snapshot.notificationChannels.has("IN_APP")).toBe(true);
+    expect(snapshot.features.size).toBe(ALL_FEATURES.length);
+  });
+  it("offers exactly the features and channels the plan editor and plan API accept",()=>{
+    // Both derive from the single domain constants; no literal list may reappear.
+    const route=read("src/app/api/admin/plans/route.ts");
+    const editor=read("src/components/SimplePlanEditor.tsx");
+    expect(route).toContain("z.enum(ALL_FEATURES)");
+    expect(route).toContain("z.enum(ALL_CHANNELS)");
+    expect(route).not.toContain('"what_if"');
+    expect(editor).toContain("ALL_FEATURES.map");
+    expect(editor).toContain("ALL_CHANNELS.map");
+    expect(ALL_FEATURES).toContain("what_if");
+    expect(ALL_FEATURES).toContain("multi_account");
+  });
+});
+
+describe("admin entitlement wiring",()=>{
+  it("resolves plan entitlements in one role-aware loader",()=>{
+    const service=read("src/lib/entitlement-service.ts");
+    const loader=service.slice(service.indexOf("export async function loadEntitlementsWith"),service.indexOf("export async function loadEntitlements("));
+    expect(loader).toContain("deleted_at IS NULL");
+    expect(loader).toContain('"ADMIN"');
+    expect(loader.indexOf("adminEntitlementSnapshot()")).toBeGreaterThan(-1);
+    expect(loader.indexOf("adminEntitlementSnapshot()")).toBeLessThan(loader.indexOf("FROM subscriptions s JOIN plans"));
+    expect(loader).toContain("FOR UPDATE OF s");
+  });
+  it("makes createStrategy and enforceStrategyEntitlements go through it with no inline plan query",()=>{
+    const strategy=read("src/lib/strategy-service.ts");
+    const create=strategy.slice(strategy.indexOf("export async function createStrategy"),strategy.indexOf("export async function migrateStrategyVersion"));
+    expect(create).toContain("loadEntitlementsWith(tx, userId)");
+    expect(create).not.toContain("JOIN plans");
+    expect(create).not.toContain("buildEntitlementSnapshot");
+    const service=read("src/lib/entitlement-service.ts");
+    const enforce=service.slice(service.indexOf("export async function enforceStrategyEntitlements"));
+    expect(enforce).toContain("await loadEntitlements(userId)");
+    expect(enforce).not.toContain("JOIN plans");
+  });
+  it("leaves no other call site resolving a plan on its own",()=>{
+    for(const path of ["src/lib/strategy-service.ts","src/lib/strategy-switch-service.ts","src/app/api/strategies/[id]/accounts/route.ts","src/lib/notification-service.ts","src/app/api/strategies/[id]/preview/route.ts","src/app/api/integrations/telegram/webhook/route.ts"]){
+      const source=read(path);
+      expect(source,path).not.toContain("JOIN plans p ON p.id=s.plan_id");
+      expect(source,path).not.toContain("buildEntitlementSnapshot");
+    }
+  });
+});

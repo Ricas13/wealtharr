@@ -4,6 +4,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { enforceStrategyEntitlements } from "@/lib/entitlement-service";
 import { authFailure } from "@/lib/api-auth";
+import { ALL_CHANNELS, ALL_FEATURES } from "@/domain/entitlements";
 
 const schema=z.object({
   slug:z.string().regex(/^[a-z][a-z0-9-]{0,59}$/),displayName:z.string().min(1),description:z.string().default(""),
@@ -12,7 +13,7 @@ const schema=z.object({
   currency:z.string().length(3),supportedBillingCurrencies:z.array(z.string().length(3)).min(1),
   maxActiveStrategies:z.number().int().positive().nullable(),availableStrategyKeys:z.array(z.string()).default([]),
   stripeMonthlyPriceId:z.string().nullable().optional(),stripeAnnualPriceId:z.string().nullable().optional(),
-  entitlements:z.object({features:z.array(z.enum(["history","reconciliation","resume","community","analytics","comparisons","what_if","advanced_imports","multi_account"])).default([]),notificationChannels:z.array(z.enum(["EMAIL","DISCORD","TELEGRAM"])).default([])}).strict(),trialDays:z.number().int().nonnegative().default(0),
+  entitlements:z.object({features:z.array(z.enum(ALL_FEATURES)).default([]),notificationChannels:z.array(z.enum(ALL_CHANNELS)).default([])}).strict(),trialDays:z.number().int().nonnegative().default(0),
   visible:z.boolean().default(true),archived:z.boolean().default(false),sortOrder:z.number().int().default(0)
 });
 export async function PUT(request:Request){

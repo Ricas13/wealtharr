@@ -45,17 +45,20 @@ export default async function SettingsPage(){
   const telegram=await sql.unsafe("SELECT enabled FROM notification_endpoints WHERE user_id=$1 AND channel='TELEGRAM' LIMIT 1",[user.id]);
   const telegramConnected=Boolean(telegram[0]?.enabled);
   const paidSubscription=Boolean(plan?.stripe_subscription_id)&&!["FREE","CANCELED"].includes(currentStatus);
+  // Admins are entitlement super-users: no upgrade prompts, unless they also hold a real paid subscription they may need to manage.
+  const adminAllIncluded=user.role==="ADMIN"&&!paidSubscription&&!storeBilled;
 
   return <>
     <div className="page-title"><div><div className="eyebrow">Settings</div><h1>Keep it simple.</h1><p>Your plan, notifications, privacy and account data live here.</p></div></div>
     <div className="detail-grid settings-grid">
       <section id="plan" className="glass form-card settings-plan-card">
-        <div className="settings-card-heading"><div><div className="eyebrow">Plan</div><h3>{plan?.display_name??"Free"}</h3></div><span className="pill good">{currentStatus.replaceAll("_"," ")}</span></div>
+        <div className="settings-card-heading"><div><div className="eyebrow">Plan</div><h3>{adminAllIncluded?"Admin":plan?.display_name??"Free"}</h3></div><span className="pill good">{adminAllIncluded?"ALL FEATURES":currentStatus.replaceAll("_"," ")}</span></div>
+        {adminAllIncluded&&<p className="help">Admin - all features included. Your account has unlimited strategies, every plan feature and every notification channel, so there is nothing to upgrade.</p>}
         {plan?.current_period_end&&paidSubscription&&<p className="help">Current billing period runs to {new Date(plan.current_period_end).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.</p>}
-        {storeBilled&&<p className="help">Your subscription is billed through the {storeName(billedBy)}. Change or cancel it there{platform?<> (<a href={manageSubscriptionUrl(platform)} target="_blank" rel="noreferrer">manage subscription</a>)</>:null}.</p>}
-        {!storeBilled&&!canPurchase&&platform&&storeKey&&storeProducts.length>0&&!paidSubscription?<StorePurchase apiKey={storeKey} userId={user.id} products={storeProducts} currentPlanSlug={currentPlanSlug} manageUrl={manageSubscriptionUrl(platform)}/>:null}
-        {!storeBilled&&canPurchase?<BillingButtons prices={prices} defaultCurrency={user.baseCurrency} currentPlanSlug={currentPlanSlug} paidSubscription={paidSubscription} activeStrategyCount={activeStrategyCount} currentMaxActiveStrategies={plan?.max_active_strategies==null?null:Number(plan.max_active_strategies)}/>:null}
-        {!storeBilled&&!canPurchase&&!(platform&&storeKey&&storeProducts.length>0&&!paidSubscription)&&<p className="help">{paidSubscription?"Your subscription is billed through the website. Sign in there to change or cancel it.":"Plans are managed on the website. Sign in there to subscribe, change or cancel."}</p>}
+        {!adminAllIncluded&&storeBilled&&<p className="help">Your subscription is billed through the {storeName(billedBy)}. Change or cancel it there{platform?<> (<a href={manageSubscriptionUrl(platform)} target="_blank" rel="noreferrer">manage subscription</a>)</>:null}.</p>}
+        {!adminAllIncluded&&!storeBilled&&!canPurchase&&platform&&storeKey&&storeProducts.length>0&&!paidSubscription?<StorePurchase apiKey={storeKey} userId={user.id} products={storeProducts} currentPlanSlug={currentPlanSlug} manageUrl={manageSubscriptionUrl(platform)}/>:null}
+        {!adminAllIncluded&&!storeBilled&&canPurchase?<BillingButtons prices={prices} defaultCurrency={user.baseCurrency} currentPlanSlug={currentPlanSlug} paidSubscription={paidSubscription} activeStrategyCount={activeStrategyCount} currentMaxActiveStrategies={plan?.max_active_strategies==null?null:Number(plan.max_active_strategies)}/>:null}
+        {!adminAllIncluded&&!storeBilled&&!canPurchase&&!(platform&&storeKey&&storeProducts.length>0&&!paidSubscription)&&<p className="help">{paidSubscription?"Your subscription is billed through the website. Sign in there to change or cancel it.":"Plans are managed on the website. Sign in there to subscribe, change or cancel."}</p>}
       </section>
       <section className="glass form-card">
         <div className="eyebrow">Notifications</div><h3>Discord</h3>
