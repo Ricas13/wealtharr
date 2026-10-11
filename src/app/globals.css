@@ -1884,3 +1884,40 @@ html[data-theme="light"] .portfolio-shell .pill.warn{
  background:#fff1cf;border-color:#c4a467;
 }
 .portfolio-onboarding-disclosure{font-weight:700;font-size:12px}
+
+
+/* Shared wizard and legacy detail screens: readable against the portfolio surface
+   in both themes, including inherited opacity from older inline presentations. */
+.portfolio-shell .step{color:#aabbd4}
+.portfolio-shell .step:not(.active):not(.complete)>b{color:#aabbd4}
+.portfolio-shell .onboarding-trust{color:#b5c8de}
+html[data-theme="light"] .portfolio-shell .step,
+html[data-theme="light"] .portfolio-shell .step:not(.active):not(.complete)>b{
+ color:#4a5970;
+}
+html[data-theme="light"] .portfolio-shell .onboarding-trust{color:#4b5e75}
+html[data-theme="light"] .portfolio-shell .strategy-heading .eyebrow{
+ color:#183e88!important;opacity:1;
+}
+html[data-theme="light"] .portfolio-shell .back-link,
+html[data-theme="light"] .portfolio-shell .strategy-heading p{
+ color:#31445f!important;opacity:1;
+}
+html[data-theme="light"] .portfolio-shell .pill.warn,
+html[data-theme="light"] .portfolio-shell .recovery-banner-copy strong{
+ color:#593908!important;opacity:1;
+}
+/* Admin has its own intentionally dark workspace even if customer theme was light:
+   metadata must not inherit faint original light-mode text colors. */
+.admin-workspace-shell .admin-stats-strip small{color:#a9bfd9}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-stats-strip small{
+ color:#a9bfd9!important;
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell .page-title p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .help,
+html[data-theme="light"] .app-shell.admin-workspace-shell th{
+ color:#b3c5de!important;
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell .card p{
+ color:#bac9dc!important;
+}
