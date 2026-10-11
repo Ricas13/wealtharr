@@ -53,7 +53,7 @@ export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
      <div><span>Review needed</span><strong>{awaiting}</strong><small>Not trade-ready</small></div>
    </div>
    <div className="admin-catalogue-toolbar">
-     <div><h2>Strategy catalogue</h2><p>Explore every reference profile. Customer availability remains gated by verified releases and instruments.</p></div>
+     <div><h2>Strategy Studio catalogue</h2><p>Explore every reference profile. Customer availability remains gated by verified releases and instruments.</p></div>
      <button type="button" className="button primary" disabled={!eligible.length||bulkBusy} onClick={enableEligible}>{bulkBusy?"Checking releases…":"Enable all eligible ("+eligible.length+")"}</button>
    </div>
    {bulkResult&&<p className="admin-catalogue-result" role="status">{bulkResult}</p>}
@@ -63,23 +63,24 @@ export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
        <button key={option.key} type="button" className={filter===option.key?"selected":""} aria-pressed={filter===option.key} onClick={()=>setFilter(option.key)}>{option.name}</button>
      )}</div>
    </div>
-   <div className="admin-catalogue-grid">
-     {visible.map(s=>{
-       const live=s.status==="ENABLED";const ready=s.status==="READY";
-       const statusLabel=live?"Enabled":ready?"Ready to enable":s.status==="RESEARCH"?"Research only":s.status==="NO_RELEASE"?"Release missing":s.status==="NO_SIGNOFF"?"Approval needed":s.status==="NO_MARKET"?"Markets missing":"Review needed";
-       return <article className="admin-strategy-tile" key={s.key}>
-         <div className="admin-tile-top"><span className="admin-tile-engine">{s.engine.replaceAll("_"," ")}</span><span className={"admin-tile-status "+(live?"is-live":ready?"is-ready":"is-review")}>{statusLabel}</span></div>
-         <h3>{s.name}</h3>
-         <div className="admin-tile-meta">{s.family.replaceAll("_"," ")} <span>·</span> {s.version?"Version "+s.version:"No published version"}</div>
-         <p className="admin-tile-description">{s.rules??s.reason}</p>
-         <p className="admin-tile-reason">{s.reason}</p>
-         <div className="admin-tile-footer">
-           {live||ready?<CuratedStrategyToggle strategyKey={s.key} enabled={s.enabled}/>:<Link href="/admin/strategies/research" className="admin-tile-link">Review research →</Link>}
-           <span>{live?"In customer catalogue":ready?"Passes configuration preflight":"Admin preview only"}</span>
-         </div>
-       </article>;
-     })}
-     {!visible.length&&<div className="admin-empty-catalogue">No strategies match that search. Try another name or filter.</div>}
+   <div className="admin-studio-table-wrap" role="region" aria-label="Strategy Studio catalogue" tabIndex={0}>
+    <table className="admin-studio-table">
+     <thead><tr><th scope="col">STRATEGY</th><th scope="col">RELEASE</th><th scope="col">ENGINE</th><th scope="col">ACTION</th></tr></thead>
+     <tbody>{visible.map(s=>{
+      const live=s.status==="ENABLED",ready=s.status==="READY";
+      const statusLabel=live?"Enabled":ready?"Ready":s.status==="RESEARCH"?"Research":s.status==="NO_RELEASE"?"Unverified":s.status==="NO_SIGNOFF"?"Review needed":s.status==="NO_MARKET"?"Mapping missing":"Review needed";
+      const reviewHref=s.status==="RESEARCH"?"/admin/strategies/research":"/admin/strategies#release-workflow";
+      return <tr key={s.key}>
+       <td><strong className="admin-studio-strategy-name">{s.name}</strong><small>{s.family.replaceAll("_"," ")} · {s.version?"v"+s.version:"No published version"}</small></td>
+       <td><span className={"admin-studio-release-state"+(live?" is-live":ready?" is-ready":" is-review")}>{statusLabel}</span>
+        <small>{s.reason}</small></td>
+       <td className="admin-studio-engine">{s.engine.replaceAll("_"," ")}</td>
+       <td>{ready||live?<CuratedStrategyToggle strategyKey={s.key} enabled={s.enabled}/>:
+        <Link href={reviewHref} className="admin-studio-action">{s.status==="RESEARCH"?"Inspect":"Configure"} <span aria-hidden="true">→</span></Link>}</td>
+      </tr>;
+     })}</tbody>
+    </table>
+    {!visible.length&&<p className="admin-empty-catalogue">No strategies match that search. Try another name or filter.</p>}
    </div>
  </section>;
 }
