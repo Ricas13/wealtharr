@@ -62,10 +62,10 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
   const {id}=await params;
   const s:any=await getStrategyForUser(user.id,id);
   if(!s)notFound();
-  const [entitlements,strategyAccounts,availableStrategies]=await Promise.all([
-    loadEntitlements(user.id),
+  const entitlements=await loadEntitlements(user.id);
+  const [strategyAccounts,availableStrategies]=await Promise.all([
     listStrategyAccounts(user.id,id),
-    listAvailableStrategies()
+    listAvailableStrategies({includeDisabled:entitlements.includeDisabledStrategies})
   ]);
   const canWhatIf=entitlements.features.has("what_if");
   const canMultiAccount=entitlements.features.has("multi_account");
@@ -93,7 +93,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
     })
     .map((strategy:any)=>({
       key:String(strategy.key),
-      name:String(strategy.name),
+      name:String(strategy.name)+(strategy.enabled===false?" (Admin preview - not available to customers)":""),
       version:String(strategy.version),
       inputSchema:Array.isArray(strategy.input_schema)?strategy.input_schema:[]
     }));

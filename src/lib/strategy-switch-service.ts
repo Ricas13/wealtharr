@@ -31,20 +31,22 @@ export async function switchStrategy(
     const currentState=(current.state??{}) as Record<string,unknown>;
     if(currentState.resumeNeedsReconciliation||currentState.unresolvedReconciliation)throw new Error("STRATEGY_SWITCH_REQUIRES_RECONCILIATION");
 
+    // Role-aware (an ADMIN is an entitlement super-user) and loaded before the target lookup because
+    // only the server-derived snapshot may let a disabled definition through.
+    const entitlements=await loadEntitlementsWith(tx,userId,{lockSubscription:true});
     const targets=await tx.unsafe(
-      "SELECT d.id AS definition_id,d.key,d.name,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.engine_key,v.config,v.input_schema "+
+      "SELECT d.id AS definition_id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.engine_key,v.config,v.input_schema "+
       "FROM strategy_definitions d JOIN LATERAL ("+
       " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' "+
       " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
       " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
-      ") v ON true WHERE d.key=$1 AND d.enabled=true LIMIT 1",
-      [input.targetStrategyKey]
+      ") v ON true WHERE d.key=$1 AND (d.enabled=true OR $2::boolean) LIMIT 1",
+      [input.targetStrategyKey,entitlements.includeDisabledStrategies===true]
     );
     const target=targets[0];
     if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
     if(String(target.definition_id)===String(current.strategy_definition_id))throw new Error("STRATEGY_ALREADY_SELECTED");
 
-    const entitlements=await loadEntitlementsWith(tx,userId,{lockSubscription:true});
     const activeRows=await tx.unsafe(
       "SELECT count(*)::int AS count FROM strategy_instances WHERE user_id=$1 AND status='ACTIVE' AND id<>$2",
       [userId,strategyInstanceId]
@@ -139,14 +141,15 @@ export async function switchStrategy(
 
     const primary=accounts.find((account)=>String(account.role)==="PRIMARY")??accounts[0];
     const inserted=await tx.unsafe(
-      "INSERT INTO strategy_instances (user_id,account_id,strategy_definition_id,strategy_version_id,name,status,onboarding_mode,started_at,health_status,settings,execution_constraints,contribution_plan) "+
-      "VALUES ($1,$2,$3,$4,$5,'ACTIVE','RESUME',now(),'NEEDS_ATTENTION',$6::jsonb,$7::jsonb,$8::jsonb) RETURNING id",
+      "INSERT INTO strategy_instances (user_id,account_id,strategy_definition_id,strategy_version_id,name,status,onboarding_mode,started_at,health_status,settings,execution_constraints,contribution_plan,admin_disabled_preview) "+
+      "VALUES ($1,$2,$3,$4,$5,'ACTIVE','RESUME',now(),'NEEDS_ATTENTION',$6::jsonb,$7::jsonb,$8::jsonb,$9) RETURNING id",
       [
         userId,primary.id,target.definition_id,target.version_id,
         input.name?.trim()||String(current.name),
         JSON.stringify(settings),
         JSON.stringify(current.execution_constraints??{}),
-        JSON.stringify(current.contribution_plan??{})
+        JSON.stringify(current.contribution_plan??{}),
+        target.enabled!==true
       ]
     );
     const newId=String(inserted[0].id);

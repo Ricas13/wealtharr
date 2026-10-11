@@ -418,7 +418,8 @@ export async function previewStrategySwitchScenario(
   strategyInstanceId:string,
   targetStrategyKey:string,
   suppliedSettings:Record<string,unknown>|undefined,
-  allowedStrategyKeys:Set<string>|null
+  allowedStrategyKeys:Set<string>|null,
+  includeDisabled:boolean=false
 ){
   const targets=await sql.unsafe(
     "SELECT d.id AS definition_id,d.key,d.name,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.effective_from,v.engine_key,v.config,v.input_schema "+
@@ -426,8 +427,8 @@ export async function previewStrategySwitchScenario(
     " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' "+
     " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
     " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
-    ") v ON true WHERE d.key=$1 AND d.enabled=true LIMIT 1",
-    [targetStrategyKey]
+    ") v ON true WHERE d.key=$1 AND (d.enabled=true OR $2::boolean) LIMIT 1",
+    [targetStrategyKey,includeDisabled===true]
   );
   const target=targets[0];
   if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");

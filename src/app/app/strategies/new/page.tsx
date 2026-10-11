@@ -10,10 +10,10 @@ import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 
 export default async function NewStrategyPage(){
   const user=await requirePageUser();
-  const [rows,existing,entitlements,marketMappings]=await Promise.all([
-    listAvailableStrategies(),
+  const entitlements=await loadEntitlements(user.id);
+  const [rows,existing,marketMappings]=await Promise.all([
+    listAvailableStrategies({includeDisabled:entitlements.includeDisabledStrategies}),
     listUserStrategies(user.id),
-    loadEntitlements(user.id),
     sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)
   ]);
   const activeCount=existing.filter((strategy:any)=>strategy.status==="ACTIVE").length;
@@ -22,7 +22,7 @@ export default async function NewStrategyPage(){
     ? rows.filter((row:any)=>entitlements.availableStrategyKeys?.has(String(row.key)))
     : rows;
   const strategies=allowedRows.map((r:any)=>({
-    key:String(r.key),name:String(r.name),family:String(r.family),description:String(r.description),
+    key:String(r.key),name:String(r.name),adminPreview:r.enabled!==true,family:String(r.family),description:String(r.description),
     version:String(r.version),inputSchema:Array.isArray(r.input_schema)?r.input_schema:[],
     supportedWrappers:Array.isArray(r.supported_wrappers)?r.supported_wrappers.map(String):[],
     supportedMarkets:assessStrategyMarket(String(r.engine_key),(r.config??{}) as Record<string,unknown>,
