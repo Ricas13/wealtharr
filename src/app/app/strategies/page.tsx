@@ -2,6 +2,9 @@ import Link from "next/link";
 import {ArrowRight,Plus} from "lucide-react";
 import {requirePageUser} from "@/lib/session";
 import {listUserStrategies} from "@/lib/strategy-service";
+import {sql} from "@/lib/db";
+import {PortfolioAllocationChart} from "@/components/PortfolioAllocationChart";
+import {portfolioAllocationBreakdown} from "@/domain/portfolio-allocation-view";
 
 function state(strategy:any){
  if(strategy.status==="CLOSED")return {className:"is-attention",label:"Closed"};
@@ -16,6 +19,12 @@ export default async function StrategiesPage(){
  const active=rows.filter((s:any)=>s.status==="ACTIVE").length;
  const paused=rows.filter((s:any)=>s.status==="PAUSED").length;
  const closed=rows.filter((s:any)=>s.status==="CLOSED").length;
+ const valuationRows=await sql.unsafe("SELECT ps.strategy_instance_id,ps.value,a.currency FROM performance_series ps JOIN strategy_instances i ON i.id=ps.strategy_instance_id JOIN accounts a ON a.id=i.account_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND ps.series_type='USER_VALUE' AND ps.date=(SELECT max(p2.date) FROM performance_series p2 WHERE p2.strategy_instance_id=ps.strategy_instance_id AND p2.series_type='USER_VALUE')",[user.id]);
+ const tracked=rows.filter((s:any)=>s.status!=="CLOSED");
+ const allocation=portfolioAllocationBreakdown(
+  tracked.map((s:any)=>({id:String(s.id),name:String(s.name)})),
+  valuationRows.map((v:any)=>({strategy_instance_id:String(v.strategy_instance_id),value:v.value,currency:String(v.currency)}))
+ );
  return <div className="portfolio-strategies-workspace">
   <div className="portfolio-page-heading"><div><div className="eyebrow">PORTFOLIO / STRATEGIES</div>
    <h1>My strategies</h1><p>All your tracked investing methods and accounts in one organised view.</p></div>
@@ -27,6 +36,10 @@ export default async function StrategiesPage(){
    <div><span>Paused</span><strong>{paused}</strong></div>
    <div><span>Closed history</span><strong>{closed}</strong></div>
   </div>
+  {rows.length>0&&<section className="portfolio-panel portfolio-composition-panel" aria-label="Allocation by strategy">
+   <div className="portfolio-panel-heading"><div><h2>Allocation by strategy</h2><p>Share of recorded account values, shown only when every tracked strategy has a valuation in the same currency.</p></div></div>
+   <PortfolioAllocationChart allocation={allocation}/>
+  </section>}
   <section className="portfolio-panel portfolio-holdings-panel">
    <div className="portfolio-panel-heading"><div><h2>All strategies</h2>
     <p>Select a strategy to see its holdings, observed performance, calculations and action history.</p></div>

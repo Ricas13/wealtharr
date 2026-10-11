@@ -84,23 +84,23 @@ test.describe("on a phone",()=>{
     expect(await page.getByLabel("Email").evaluate((n)=>parseFloat(getComputedStyle(n).fontSize))).toBeGreaterThanOrEqual(16);
   });
 
-  test("signed-in navigation is a thumb-sized horizontal top bar without page overflow",async({page},testInfo)=>{
+  test("signed-in navigation is a bottom tab bar clear of the screen edge",async({page},testInfo)=>{
     await signIn(page,await createUser(testInfo));
-    const bar=page.getByRole("navigation",{name:"Primary"});
+    const bar=page.locator(".app-shell > .sidebar");
     await expect(bar).toBeVisible();
-    const header=page.locator(".portfolio-app-header");
-    await expect(header).toBeVisible();
-    const position=await header.evaluate((n)=>{const r=n.getBoundingClientRect();const s=getComputedStyle(n);return {position:s.position,top:r.top,bottom:r.bottom};});
-    expect(position.position).not.toBe("fixed");
-    expect(position.top).toBeGreaterThanOrEqual(0);
-    for(const link of await bar.locator(".portfolio-primary-link").all()){
+    const position=await bar.evaluate((n)=>{const r=n.getBoundingClientRect();const s=getComputedStyle(n);return {position:s.position,bottomGap:Math.round(innerHeight-r.bottom),top:r.top,height:r.height};});
+    expect(position.position).toBe("fixed");
+    expect(position.bottomGap).toBe(0);
+    expect(position.top).toBeGreaterThan(300);
+    for(const link of await bar.locator(".nav-link").all()){
       const box=(await link.boundingBox())!;
       expect(box.height).toBeGreaterThanOrEqual(43.5);
     }
-    // On small screens the navigation alone may scroll horizontally, not the page.
+    // Content is not hidden behind the bar: the last element can scroll above it.
+    const content=page.locator(".app-shell");
+    expect(await content.evaluate((n)=>parseFloat(getComputedStyle(n).paddingBottom))).toBeGreaterThanOrEqual(60);
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
-    await expect(page.getByRole("link",{name:"Start my first strategy"})).toBeVisible();
   });
 });
 
@@ -115,5 +115,42 @@ test.describe("inside the Android / iOS app",()=>{
     const response=await page.request.post("/api/billing/checkout",{headers:{origin:new URL(page.url()).origin,"content-type":"application/json"},data:{planSlug:"pro",cadence:"monthly"}});
     expect(response.status()).toBe(403);
     expect((await response.json()).error).toMatch(/website/i);
+  });
+});
+
+
+test.describe("approved customer dashboard visual contract",()=>{
+  test("desktop keeps the 195px rail, 61px topbar and active navigation",async({page},testInfo)=>{
+    test.skip(testInfo.project.name!=="desktop-chromium","desktop visual contract");
+    await signIn(page,await createUser(testInfo));
+    const shell=page.locator(".customer-workspace-shell");
+    await expect(shell).toBeVisible();
+    const sidebar=shell.locator(":scope > .sidebar");
+    const topbar=shell.locator(".app-topbar");
+    expect(await sidebar.evaluate(node=>Math.round(node.getBoundingClientRect().width))).toBe(195);
+    expect(await topbar.evaluate(node=>Math.round(node.getBoundingClientRect().height))).toBe(61);
+    // Both user-selectable themes retain their approved colour tokens.
+    await page.evaluate(()=>document.documentElement.setAttribute("data-theme","dark"));
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#78f3c6");
+    await page.evaluate(()=>document.documentElement.setAttribute("data-theme","light"));
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#08795d");
+    await expect(sidebar.locator('.nav-link[aria-current="page"]')).toHaveText("Main");
+    await expect(page.getByRole("heading",{name:"Start with one simple decision."})).toBeVisible();
+    await page.getByRole("link",{name:"Strategies",exact:true}).click();
+    await expect(sidebar.locator('.nav-link[aria-current="page"]')).toHaveText("Strategies");
+  });
+
+  test("phone keeps the accessible bottom navigation without horizontal overflow",async({page},testInfo)=>{
+    test.skip(testInfo.project.name!=="mobile-chromium","phone visual contract");
+    await signIn(page,await createUser(testInfo));
+    const shell=page.locator(".customer-workspace-shell");
+    const sidebar=shell.locator(":scope > .sidebar");
+    await expect(sidebar).toBeVisible();
+    expect(await sidebar.evaluate(node=>getComputedStyle(node).position)).toBe("fixed");
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    for(const link of await sidebar.locator(".nav-link").all()){
+      const box=await link.boundingBox();
+      expect(box?.height??0).toBeGreaterThanOrEqual(43.5);
+    }
   });
 });
