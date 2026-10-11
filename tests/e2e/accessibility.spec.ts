@@ -97,7 +97,7 @@ test("admin screens",async({page},testInfo)=>{
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button",{name:"Sign in"}).click();
   await page.waitForURL("**/app");
-  await auditAll(page,["/admin","/admin/settings","/admin/launch","/admin/plans","/admin/strategies","/admin/strategies/research","/admin/instruments","/admin/users","/admin/operations","/admin/seo"]);
+  await auditAll(page,["/admin","/admin/configuration","/admin/integrations","/admin/security","/admin/settings","/admin/launch","/admin/plans","/admin/strategies","/admin/strategies/research","/admin/instruments","/admin/users","/admin/operations","/admin/seo"]);
 });
 
 test("a strategy page with its forms (trades, price, settings, switch)",async({page},testInfo)=>{

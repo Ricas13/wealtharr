@@ -14,7 +14,7 @@ export default async function AdminLayout({children}:{children:React.ReactNode})
   if(error instanceof Error&&error.message==="MFA_REQUIRED")redirect("/app/settings#security");
   throw error;
  }
- const locked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
+ const launchLocked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
  return <div className="app-shell admin-workspace-shell">
   <a href="#admin-main-content" className="skip-link">Skip to main content</a>
   <aside className="sidebar admin-workspace-sidebar"><AdminWorkspaceNav/></aside>
@@ -25,7 +25,7 @@ export default async function AdminLayout({children}:{children:React.ReactNode})
      <strong>Control centre</strong>
     </div>
     <nav aria-label="Quick administration" className="admin-topbar-actions">
-     <span className={"admin-environment-tag "+(locked?"is-locked":"is-live")}>{locked?"Pre-launch":"Paid launch enabled"}</span>
+     <span className={"admin-environment-tag "+(locked?"is-locked":"is-live")}>{launchLocked?"Pre-launch":"Paid launch enabled"}</span>
      <Link href="/admin/operations" aria-label="Operational notifications" title="Operational notifications" className="admin-icon-link"><Bell size={18}/></Link>
      <Link href="/admin/settings" aria-label="Admin settings" title="Admin settings" className="admin-icon-link"><Settings2 size={18}/></Link>
      <Link href="/admin/security" aria-label="Security and audit" title="Security and audit" className="admin-topbar-avatar"><UserRound size={17}/></Link>

@@ -23,7 +23,7 @@ export default async function AdminPage(){
   sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '30 days'")
  ]);
  const alerts=evaluateOps(await gatherSnapshot());
- const locked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
+ const launchLocked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
  const months=Array.from({length:6},(_,i)=>{
   const d=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-5+i,1));
   return {key:d.toISOString().slice(0,7),label:d.toLocaleDateString("en-GB",{month:"short",timeZone:"UTC"})};
@@ -45,7 +45,7 @@ export default async function AdminPage(){
  return <div className="admin-overview admin-fidelity-overview">
   <div className="admin-design-heading">
    <div><span className="admin-kicker">WORKSPACE / OVERVIEW</span><h1>Overview</h1><p>Business performance and platform health</p></div>
-   <span className={"admin-design-status "+(locked?"is-prelaunch":"is-live")}>{locked?"Pre-launch":"Launch enabled"}</span>
+   <span className={"admin-design-status "+(launchLocked?"is-prelaunch":"is-live")}>{launchLocked?"Pre-launch":"Launch enabled"}</span>
   </div>
   <div className="admin-overview-kpis" aria-label="Key business indicators">{cards.map(({label,value,detail,href,Icon})=>
    <Link key={label} href={href} className="admin-design-kpi">
@@ -82,7 +82,7 @@ export default async function AdminPage(){
   </div>
   <section className="admin-design-quick-links" aria-label="Common administrative tasks">
    <div><h2>Quick access</h2><p>Manage your platform from one place</p></div>
-   <div><Link href="/admin/configuration">Setup wizard <ArrowRight size={15}/></Link>
+   <div><Link href="/admin/configuration">Continue setup <ArrowRight size={15}/></Link>
     <Link href="/admin/strategies">Strategy Studio <ArrowRight size={15}/></Link>
     <Link href="/admin/integrations">Integrations <PlugZap size={15}/></Link>
     <Link href="/admin/plans">Commerce <ArrowRight size={15}/></Link></div>
