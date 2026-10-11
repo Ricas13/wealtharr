@@ -13,6 +13,13 @@ import { actionRecalculationDisposition, type ActionStatus } from "@/domain/acti
 import { actionFingerprintMaterial } from "@/domain/action-fingerprint";
 import { validatedEffectivePrice } from "@/domain/manual-override";
 import { loadTrustedHistory } from "@/lib/trusted-history-loader";
+import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
+import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
+import { nextCalendarQuarterDueAt } from "@/domain/schedule";
+import { buildStrategyAlert } from "@/domain/strategy-alert";
+import { validatedFillTime } from "@/domain/execution-time";
+import { postActionReviewState } from "@/domain/strategy/review-completion";
+import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
 
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
 type CalculationScenario={
@@ -145,21 +152,44 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const lastReview=scenario?.resetTimeline?new Date():state.lastReviewAt?new Date(String(state.lastReviewAt)):new Date(instance.started_at);
   const reviewTimezone=String(config.reviewTimezone??instance.user_timezone??"UTC");
   const holidayDates=Array.isArray(config.marketHolidays)?config.marketHolidays.filter((v):v is string=>typeof v==="string"):[];
-  const convention=config.businessDayConvention==="NEXT"?"NEXT":"PREVIOUS";
-  const dueAt=nextReviewDueAt({
+  const convention: "PREVIOUS"|"NEXT"=config.businessDayConvention==="NEXT"?"NEXT":"PREVIOUS";
+  const scheduleInput={
     lastReviewAt:lastReview,
-    frequency,
     timeZone:reviewTimezone,
     cutoffLocal:String(config.reviewCutoffLocal??"16:00"),
     holidays:holidayDates,
     convention
-  });
+  };
+  const dueAt=config.reviewSchedule==="CALENDAR_QUARTER_END"
+    ?nextCalendarQuarterDueAt(scheduleInput)
+    :nextReviewDueAt({...scheduleInput,frequency});
   const reviewDue=Boolean(state.forceReview)||new Date()>=dueAt;
   const contributionRows=scenario?.resetTimeline
     ?[{amount:"0"}]
     :await sql.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview]);
   const contributionsSinceReview=new Decimal(String(contributionRows[0]?.amount??0)).plus(new Decimal(scenario?.contributionDelta??0));
   const engine=getStrategyEngine(calculationEngineKey);
+  const fullyEligibleAccountIds=new Set<string>();
+  // Do not start a partial implementation. The next leg alone may map (e.g. SPY3 in a
+  // UK ISA), while another mandatory leg has no faithful equivalent (TMF duration).
+  // Only complete verified implementations are eligible for action instructions.
+  if(dataStatus==="CURRENT"){
+    const candidateMappings=verifiedCandidates(await sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL));
+    const market=assessLinkedMarkets(calculationEngineKey,config,candidateMappings,
+      accounts.map(account=>({
+        country:String(account.country),wrapper:String(account.wrapper),
+        currency:String(account.currency),broker:account.broker_name?String(account.broker_name):null
+      })),new Date().toISOString().slice(0,10));
+    for(const accountIndex of market.eligibleAccountIndices)
+      fullyEligibleAccountIds.add(String(accounts[accountIndex].id));
+    if(!market.available){
+      dataStatus="MISSING";
+      dataMessage="This strategy cannot be implemented in your linked accounts with the currently verified trading lines. "+
+        "Missing or ambiguous exposures: "+market.missingExposures.join(", ")+". "+
+        (market.supportedMarkets.length?"Verified markets: "+market.supportedMarkets.join(", ")+".":
+          "No fully verified market implementation is available yet.");
+    }
+  }
   // Momentum research engines read licensed price history; every other engine ignores it.
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
@@ -172,7 +202,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   if(proposal.economicExposure&&["BUY","SELL","REBALANCE"].includes(proposal.actionType)){
     if(proposal.actionType==="SELL"){
       const heldExposure=[...exposurePositions]
-        .filter((p)=>p.economicExposure===proposal.economicExposure&&p.tradingLineId)
+        .filter((p)=>p.economicExposure===proposal.economicExposure&&p.tradingLineId&&fullyEligibleAccountIds.has(p.accountId))
         .sort((a,b)=>b.value.cmp(a.value))[0];
       if(heldExposure?.tradingLineId){
         tradingLineId=heldExposure.tradingLineId;
@@ -183,6 +213,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     if(!tradingLineId){
       const leverage=exposureLeverage(proposal.economicExposure,proposal.leverage);
       const rankedAccounts=accounts
+        .filter(account=>fullyEligibleAccountIds.has(String(account.id)))
         .map((account)=>{
           const accountId=String(account.id);
           const position=accountPositions.get(accountId);
@@ -195,7 +226,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       for(const candidateAccount of rankedAccounts){
         const account=candidateAccount.account;
         const mappingRows=await sql.unsafe(
-          "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true",
+          "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
           [proposal.economicExposure,String(account.country),String(account.wrapper)]
         );
         const candidates:MappingCandidate[]=mappingRows.map((r)=>({
@@ -319,6 +350,9 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       .filter(([,quantity])=>!quantity.eq(0))
       .map(([instrumentId,quantity])=>accountId+":"+instrumentId+":"+quantity.toString());
   }).sort().join(",");
+  // Corrections restore the earlier cash and holdings exactly, so those alone cannot tell a corrected
+  // review from the one that was already executed. The append-only ledger length can.
+  const ledgerRevision=String((await sql.unsafe("SELECT count(*)::int AS n FROM ledger_events WHERE strategy_instance_id=$1",[strategyInstanceId]))[0]?.n??0);
   const material=actionFingerprintMaterial({
     strategyInstanceId,
     strategyVersionId:calculationVersionId,
@@ -333,6 +367,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     contributionsSinceReview:contributionsSinceReview.toString(),
     stableHoldings,
     dataStatus,
+    ledgerRevision,
     materialRevision:JSON.stringify({amount:proposal.amount?.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toString()??null,instruction:proposal.instruction,explanation:proposal.actionType==="NO_ACTION"?null:proposal.explanation})
   });
   const fingerprint=crypto.createHash("sha256").update(material).digest("hex");
@@ -341,14 +376,12 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const notificationClass=proposal.actionType==="DATA_REQUIRED"?"DATA_REQUIRED":"REVIEW";
   const reviewKey=crypto.createHash("sha256")
     .update(strategyInstanceId+"|"+lastReview.toISOString()+"|"+notificationClass).digest("hex");
-  const reviewAction=["BUY","SELL","REBALANCE","HOLD"].includes(proposal.actionType);
-  const nextState=reviewAction
-    ? proposal.completesReview===false
-      ? {...state,forceReview:true}
-      : {...proposal.nextState,lastReviewAt:new Date().toISOString(),forceReview:false}
-    : proposal.nextState;
+  // An estimated BUY/SELL is never proof that target weights were achieved.
+  // Keep this cycle due until the broker's real fills and fees are recorded and
+  // the engine recalculates. A HOLD acknowledgement can then close the review.
+  const nextState=postActionReviewState(proposal,state,new Date());
   const totalValue=exposurePositions.reduce((sum,p)=>sum.plus(p.value),effectiveCash);
-  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId};
+  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker};
 }
 
 export async function previewCashScenario(
@@ -408,7 +441,7 @@ export async function previewStrategySwitchScenario(
   if(String(ownership[0].strategy_definition_id)===String(target.definition_id))throw new Error("STRATEGY_ALREADY_SELECTED");
 
   const linkedAccounts=await sql.unsafe(
-    "SELECT a.country,a.wrapper FROM strategy_accounts sa JOIN accounts a ON a.id=sa.account_id WHERE sa.strategy_instance_id=$1 ORDER BY sa.created_at",
+    "SELECT a.country,a.wrapper,a.currency,a.broker_name FROM strategy_accounts sa JOIN accounts a ON a.id=sa.account_id WHERE sa.strategy_instance_id=$1 ORDER BY sa.created_at",
     [strategyInstanceId]
   );
   const regions=Array.isArray(target.supported_regions)?target.supported_regions.map(String):[];
@@ -418,6 +451,12 @@ export async function previewStrategySwitchScenario(
     if(wrappers.length&&!wrappers.includes(String(account.wrapper)))throw new Error("STRATEGY_NOT_SUPPORTED_FOR_WRAPPER");
   }
 
+  const candidates=verifiedCandidates(await sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL));
+  for(const account of linkedAccounts){
+    const choice={country:String(account.country),wrapper:String(account.wrapper),currency:String(account.currency).toUpperCase(),broker:account.broker_name?String(account.broker_name):null};
+    const market=assessStrategyMarket(String(target.engine_key),(target.config??{}) as Record<string,unknown>,candidates,choice,new Date().toISOString().slice(0,10));
+    if(!market.available)throw new StrategyMarketUnavailableError(market,choice);
+  }
   const engine=getStrategyEngine(String(target.engine_key));
   const config=(target.config??{}) as Record<string,unknown>;
   engine.validateConfig(config);
@@ -546,6 +585,26 @@ export async function previewExecutionConstraintsScenario(
   };
 }
 
+export const STALE_ACTION_DISPLAY={
+  action_type:"DATA_REQUIRED",title:"Refresh this review",
+  instruction:"Your holdings, prices or strategy settings have changed. Recalculate to see the current instruction.",
+  amount:null,confidence:"LOW",explanation:[]
+};
+
+/** Read-only validation for dashboard instructions. Never show an old order as current. */
+export async function isStoredActionCurrent(strategyInstanceId:string,actionId:string){
+  try{
+    const rows=await sql.unsafe(
+      "SELECT a.fingerprint FROM actions a WHERE a.id=$1 AND a.strategy_instance_id=$2 "+
+      "AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
+      "AND NOT EXISTS (SELECT 1 FROM ledger_events l WHERE l.strategy_instance_id=$2 AND l.created_at>a.calculated_at)",
+      [actionId,strategyInstanceId]
+    );
+    if(!rows[0])return false;
+    return (await buildActionCalculation(strategyInstanceId)).fingerprint===String(rows[0].fingerprint);
+  }catch{return false;}
+}
+
 export async function calculateAction(strategyInstanceId:string){
   return sql.begin(async(tx)=>{
     // Match the lock order used by financial mutations: strategy row first, then
@@ -556,7 +615,7 @@ export async function calculateAction(strategyInstanceId:string){
     await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[strategyInstanceId]);
 
     const calculation=await buildActionCalculation(strategyInstanceId);
-    const {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId}=calculation;
+    const {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker}=calculation;
     if(dataStatus==="CURRENT")await tx.unsafe("INSERT INTO performance_series (strategy_instance_id,series_type,date,value,metadata) VALUES ($1,'USER_VALUE',current_date,$2,$3::jsonb) ON CONFLICT (strategy_instance_id,series_type,date) DO UPDATE SET value=EXCLUDED.value,metadata=EXCLUDED.metadata",[strategyInstanceId,totalValue.toString(),JSON.stringify({source:"ledger+market"})]);
     const existing=await tx.unsafe(
       "SELECT id,status FROM actions WHERE strategy_instance_id=$1 AND fingerprint=$2 FOR UPDATE",
@@ -572,7 +631,7 @@ export async function calculateAction(strategyInstanceId:string){
         "UPDATE actions SET account_id=$1,strategy_version_id=$2,action_type=$3,status=$4,title=$5,instruction=$6,amount=$7,currency=$8,trading_line_id=$9,explanation=$10::jsonb,next_state=$11::jsonb,confidence=$12,due_at=$13,"+
         "acknowledged_at=CASE WHEN $4='CALCULATED' THEN NULL ELSE acknowledged_at END,"+
         "cancelled_at=CASE WHEN $4='CALCULATED' THEN NULL ELSE cancelled_at END,"+
-        "superseded_by_action_id=CASE WHEN $4='CALCULATED' THEN NULL ELSE superseded_by_action_id END,updated_at=now() WHERE id=$14",
+        "superseded_by_action_id=CASE WHEN $4='CALCULATED' THEN NULL ELSE superseded_by_action_id END,calculated_at=clock_timestamp(),updated_at=now() WHERE id=$14",
         [executionAccountId,instance.strategy_version_id,proposal.actionType,disposition.status,proposal.title,proposal.instruction,proposal.amount?.toString()??null,proposal.currency??null,tradingLineId,JSON.stringify(proposal.explanation),JSON.stringify(nextState),proposal.confidence,proposal.dueAt??null,actionId]
       );
       shouldNotify=disposition.shouldNotify;
@@ -590,9 +649,16 @@ export async function calculateAction(strategyInstanceId:string){
     if(shouldNotify&&proposal.actionType!=="NO_ACTION"){
       // Keep the *alert* stable, not an obsolete execution quantity. An
       // in-flight or delivered alert always points to the latest revision.
-      const noticeTitle=proposal.actionType==="DATA_REQUIRED"?"Strategy data needs attention":"Strategy review ready";
-      const brand=process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr";
-      const noticeBody=`Open your ${brand} dashboard for the latest calculated amounts and current data. Do not trade from an old notification.`;
+      const message=buildStrategyAlert({
+        actionType:proposal.actionType,
+        amount:proposal.amount?.toString()??null,
+        currency:proposal.currency??null,
+        ticker:executionTicker??proposal.economicExposure??null,
+        calculatedAt:new Date(),
+        brand:process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"
+      });
+      const noticeTitle=message.title;
+      const noticeBody=message.body;
       await tx.unsafe(
         "INSERT INTO notifications (user_id,action_id,type,title,body,review_key) "+
         "VALUES ($1,$2,'ACTION',$3,$4,$5) "+
@@ -637,7 +703,7 @@ export async function recalculateAfterMutation(
 export async function executeAction(
   userId:string,
   actionId:string,
-  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean}
+  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string}
 ){
   const result=await sql.begin(async(tx)=>{
     const ownership=await tx.unsafe(
@@ -663,9 +729,25 @@ export async function executeAction(
     if(!action)throw new Error("ACTION_NOT_FOUND");
     if(!["CALCULATED","NOTIFIED","ACKNOWLEDGED"].includes(String(action.status)))throw new Error("ACTION_NOT_EXECUTABLE");
 
+    // A deposit, withdrawal, corrected trade or imported fill can invalidate an old
+    // instruction if asynchronous recalculation failed. Never let an executable
+    // action outlive the financial ledger snapshot it was calculated against.
+    const newerLedger=await tx.unsafe(
+      "SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND created_at>(SELECT calculated_at FROM actions WHERE id=$2) ORDER BY created_at DESC LIMIT 1",
+      [strategy.id,actionId]
+    );
+    if(newerLedger[0])throw new Error("ACTION_STALE_LEDGER_MUTATION");
+
     const actionType=String(action.action_type);
     if(["DATA_REQUIRED","NO_ACTION"].includes(actionType))throw new Error("ACTION_NOT_EXECUTABLE");
     if(actionType==="REBALANCE")throw new Error("REBALANCE_TRADES_REQUIRED");
+
+    // The ledger guard alone does not catch expired quotes, withdrawn mappings
+    // or changed settings. Rebuild under the same strategy lock before a fill
+    // or HOLD can advance the review. Already-completed broker fills can still
+    // be recorded through the historical import/reconciliation path.
+    const current=await buildActionCalculation(String(strategy.id));
+    if(current.fingerprint!==String(action.fingerprint))throw new Error("ACTION_STALE_INPUTS");
 
     let partial=false;
     let actualNotional:string|null=null;
@@ -687,6 +769,14 @@ export async function executeAction(
         instrumentId:r.instrument_id?String(r.instrument_id):null,
         quantity:String(r.quantity)
 })),String(action.account_currency));
+      const ledgerTime=await tx.unsafe(
+        "SELECT max(occurred_at) AS latest_at FROM ledger_events WHERE strategy_instance_id=$1",
+        [action.strategy_instance_id]
+      );
+      const brokerExecutedAt=validatedFillTime(
+        execution.executedAt, new Date(action.created_at),
+        ledgerTime[0]?.latest_at?new Date(ledgerTime[0].latest_at):null
+      );
       const held=position.quantities.get(String(action.instrument_id))??new Decimal(0);
       const constraints=normalizeExecutionConstraints(strategy.execution_constraints);
       if(actionType==="SELL"&&!constraints.allowSelling)throw new Error("SELLING_DISABLED");
@@ -708,7 +798,7 @@ export async function executeAction(
       // Backstop: the signs and fee rules of a trade row are enforced right at the write.
       assertLedgerEvent({eventType:actionType,cashAmount:validated.cashAmount,feeAmount:validated.fee,instrumentId:String(action.instrument_id),quantity:validated.ledgerQuantity});
       const inserted=await tx.unsafe(
-        "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,unit_price,fee_amount,provenance,confidence,metadata) VALUES ($1,$2,now(),$3,$4,$5,$6,$7,$8,$9,'USER_ENTERED','VERIFIED',$10::jsonb) RETURNING id",
+        "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,unit_price,fee_amount,provenance,confidence,metadata) VALUES ($1,$2,$11,$3,$4,$5,$6,$7,$8,$9,'USER_ENTERED','VERIFIED',$10::jsonb) RETURNING id",
         [
           action.strategy_instance_id,
           action.account_id,
@@ -723,8 +813,11 @@ export async function executeAction(
             actionId,
             proposedAmount:String(action.amount),
             actualNotional:validated.grossNotional.toString(),
-            partial:Boolean(execution.partial)
-          })
+            partial:Boolean(execution.partial),
+            executedAt:brokerExecutedAt.toISOString()
+          }),
+          brokerExecutedAt.toISOString()
+        
         ]
       );
       actualNotional=validated.grossNotional.toString();
@@ -737,12 +830,18 @@ export async function executeAction(
           userId,
           partial?"action.partially-executed":"action.executed",
           actionId,
-          JSON.stringify({ledgerEventId:String(inserted[0].id),actualNotional,quantity:validated.quantity.toString(),fee:validated.fee.toString()})
+          JSON.stringify({ledgerEventId:String(inserted[0].id),actualNotional,quantity:validated.quantity.toString(),fee:validated.fee.toString(),executedAt:brokerExecutedAt.toISOString()})
         ]
       );
     }
 
     if(partial){
+      // Even a partial fill must lock the review's original target before the
+      // post-fill recalculation. Otherwise 9Sig grows it again on the next trade.
+      await tx.unsafe(
+        "UPDATE strategy_states SET state=$1::jsonb,calculated_at=now(),confidence=$2 WHERE strategy_instance_id=$3",
+        [JSON.stringify(action.next_state??{}),action.confidence,action.strategy_instance_id]
+      );
       await tx.unsafe(
         "UPDATE actions SET status='PARTIALLY_EXECUTED',executed_at=now(),updated_at=now() WHERE id=$1",
         [actionId]

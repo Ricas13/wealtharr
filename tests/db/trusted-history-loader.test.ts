@@ -21,7 +21,7 @@ describe.skipIf(!url)("trusted history loader", () => {
     for (let d = 0; d < 45; d += 1) {
       const day = new Date(NOW.getTime() - d * 86_400_000);
       if ([0, 6].includes(day.getUTCDay())) continue;
-      await sql!.unsafe("INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed) VALUES ($1,$2,$3,'GBP','test',$4)", [lineId, day.toISOString().slice(0, 10), 100 + d, licensed]);
+      await sql!.unsafe("INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed,adjustment_verified) VALUES ($1,$2,$3,'GBP','test',$4,true)", [lineId, day.toISOString().slice(0, 10), 100 + d, licensed]);
     }
   }
   async function instrument(isin: string) {
@@ -51,6 +51,14 @@ describe.skipIf(!url)("trusted history loader", () => {
     expect(series[0].exposure).toBe(exposure);
     expect(series[0].points.length).toBeGreaterThan(20);
     expect(await loadTrustedHistory([exposure], "USD", 1, NOW)).toEqual([]);
+  });
+
+  it("quarantines legacy licensed bars until independently revalidated as adjusted",async()=>{
+    const first=lineIds[0];
+    await sql!.unsafe("UPDATE price_history SET adjustment_verified=false WHERE trading_line_id=$1",[first]);
+    expect(await loadTrustedHistory([exposure],"GBP",1,NOW)).toEqual([]);
+    await sql!.unsafe("UPDATE price_history SET adjustment_verified=true WHERE trading_line_id=$1",[first]);
+    expect((await loadTrustedHistory([exposure],"GBP",1,NOW)).length).toBe(1);
   });
 
   it("fails closed when two lines compete for the same exposure and currency", async () => {

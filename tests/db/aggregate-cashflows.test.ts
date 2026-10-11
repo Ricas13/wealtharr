@@ -54,17 +54,22 @@ describe.skipIf(!url)("community XIRR inputs",()=>{
   });
 
   it("counts an ordinary portfolio",async()=>{
-    await portfolio("plain",[{type:"CONTRIBUTION",amount:1000,daysAgo:200}]);
+    await portfolio("plain",[{type:"CONTRIBUTION",amount:1000,daysAgo:400}]);
+    expect(await sampleSize()).toBe(1);
+  });
+
+  it("leaves out a portfolio with less than a year of history rather than annualising a few weeks",async()=>{
+    await portfolio("short",[{type:"CONTRIBUTION",amount:1000,daysAgo:30}]);
     expect(await sampleSize()).toBe(1);
   });
 
   it("leaves out a resumed portfolio, whose opening value its cash flows do not explain",async()=>{
-    await portfolio("resumed",[{type:"OPENING_CASH",amount:900,daysAgo:200},{type:"CONTRIBUTION",amount:900,daysAgo:100}]);
+    await portfolio("resumed",[{type:"OPENING_CASH",amount:900,daysAgo:400},{type:"CONTRIBUTION",amount:900,daysAgo:300}]);
     expect(await sampleSize()).toBe(1);
   });
 
   it("ignores a contribution that was reversed by a correction",async()=>{
-    const { instanceId,ids }=await portfolio("corrected",[{type:"CONTRIBUTION",amount:1000,daysAgo:200},{type:"CONTRIBUTION",amount:5000,daysAgo:150}]);
+    const { instanceId,ids }=await portfolio("corrected",[{type:"CONTRIBUTION",amount:1000,daysAgo:400},{type:"CONTRIBUTION",amount:5000,daysAgo:350}]);
     await sql!.unsafe(
       "INSERT INTO ledger_events (strategy_instance_id,occurred_at,event_type,currency,cash_amount,correction_of_event_id) VALUES ($1,now(),'CORRECTION','GBP',-5000,$2)",[instanceId,ids[1]]
     );
@@ -72,8 +77,8 @@ describe.skipIf(!url)("community XIRR inputs",()=>{
     // the value as well as the count.
     expect(await sampleSize()).toBe(2);
     const median=await sql!.unsafe("SELECT value FROM anonymous_aggregates WHERE strategy_definition_id=$1 AND metric_key='MEDIAN_USER_XIRR' ORDER BY as_of_date DESC LIMIT 1",[definitionId]);
-    // Both counted portfolios invested 1,000 about 200 days ago and are worth 1,100: ~ +19% a year.
-    expect(Number(median[0].value)).toBeGreaterThan(0.1);
-    expect(Number(median[0].value)).toBeLessThan(0.3);
+    // Both counted portfolios invested 1,000 about 400 days ago and are worth 1,100: 1.1^(365.25/400) = +9.1% a year.
+    expect(Number(median[0].value)).toBeGreaterThan(0.08);
+    expect(Number(median[0].value)).toBeLessThan(0.1);
   });
 });

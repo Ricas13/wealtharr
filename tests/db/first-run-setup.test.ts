@@ -21,7 +21,7 @@ describe.skipIf(!url)("first-run setup",()=>{
     await admin!.unsafe(`CREATE DATABASE ${dbName}`);
     const scoped=new URL(originalUrl!);
     scoped.pathname="/"+dbName;
-    execFileSync("npx",["tsx","scripts/migrate.ts"],{env:{...process.env,DATABASE_URL:scoped.toString()},stdio:"ignore"});
+    execFileSync(process.execPath,["--import","tsx","scripts/migrate.ts"],{env:{...process.env,DATABASE_URL:scoped.toString()},stdio:"ignore"});
     process.env.DATABASE_URL=scoped.toString();
     vi.resetModules();
     lib=await import("@/lib/setup");

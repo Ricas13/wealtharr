@@ -9,6 +9,8 @@ import { localDateInZone } from "@/domain/schedule";
 import { assertSameOrigin } from "@/lib/security";
 import { assertLedgerEvent } from "@/domain/ledger";
 import { authFailure } from "@/lib/api-auth";
+import { assertNotFuture } from "@/domain/ledger-time";
+import { assertLedgerTimelineNonNegative, invalidateValuationsFrom } from "@/lib/ledger-timeline";
 
 const schema = z.object({
   amount: z.string().regex(/^\d+(?:\.\d{1,8})?$/),
@@ -34,6 +36,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if(String(strategy.status)==="CLOSED")return Response.json({error:"Closed strategies are read-only."},{status:409});
 
     const occurredAt=input.occurredAt ? new Date(input.occurredAt) : new Date();
+    assertNotFuture(occurredAt);
     const result=await sql.begin(async(tx)=>{
       const locked=await tx.unsafe(
         "SELECT i.status,i.contribution_plan,a.id AS account_id,a.currency FROM strategy_instances i JOIN strategy_accounts sa ON sa.strategy_instance_id=i.id JOIN accounts a ON a.id=sa.account_id WHERE i.id=$1 AND i.user_id=$2 AND a.id=COALESCE($3::uuid,i.account_id) FOR UPDATE OF i",
@@ -56,6 +59,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         [id, locked[0].account_id, occurredAt, String(locked[0].currency), amount.toString(),input.requestKey??null]
       );
       const ledgerEventId=String(rows[0].id);
+      await assertLedgerTimelineNonNegative(tx,id,String(locked[0].account_id));
+      await invalidateValuationsFrom(tx,id,occurredAt);
       const currentPlan=normalizeContributionPlan(locked[0].contribution_plan);
       let nextPlan=currentPlan;
       if(currentPlan.enabled){
@@ -79,6 +84,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const code=error instanceof Error?error.message:"FAILED";
     if(code==="STRATEGY_CLOSED")return Response.json({error:"Closed strategies are read-only."},{status:409});
     if(code==="STRATEGY_NOT_FOUND")return Response.json({error:"That account is not linked to this strategy."},{status:404});
+    if(code==="LEDGER_EVENT_IN_FUTURE"||code==="LEDGER_EVENT_TIME_INVALID")return Response.json({error:"The date cannot be in the future."},{status:400});
     return Response.json({ error: "Could not record contribution." }, { status: 500 });
   }
 }

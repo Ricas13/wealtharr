@@ -9,7 +9,7 @@ describe("strategy catalogue consistency",()=>{
  const engines=new Set(supportedEngineKeys());
 
  it("every catalogue entry names a registered engine (or is explicitly pending)",()=>{
-  const unknown=RESEARCH_STRATEGIES.filter((s)=>s.engine!=="CUSTOM_PENDING"&&!engines.has(s.engine)).map((s)=>s.key+":"+s.engine);
+  const unknown=RESEARCH_STRATEGIES.filter((s)=>s.engine!=="RESEARCH_PENDING"&&!engines.has(s.engine)).map((s)=>s.key+":"+s.engine);
   expect(unknown).toEqual([]);
  });
 
@@ -35,34 +35,17 @@ describe("strategy catalogue consistency",()=>{
  });
 });
 
-import {parseInputSchema,validateInstanceSettings} from "@/domain/strategy/config";
-import {effectiveAllocations} from "@/domain/strategy/fixed-allocation";
-
-describe("investor-chosen weights in the catalogue",()=>{
- const chosen=RESEARCH_STRATEGIES.filter((s)=>(s.config as {userWeights?:boolean}|undefined)?.userWeights===true);
-
- it("exactly the strategies without a canonical split let the investor choose",()=>{
-  expect(chosen.map((s)=>s.key).sort()).toEqual(["60-40","80-20","three-fund"]);
- });
-
- it("each exposure has one number field whose default reproduces the illustrative weight",()=>{
-  for(const s of chosen){
-   const fields=parseInputSchema(s.inputSchema);
-   const allocations=(s.config as {allocations:Array<{exposure:string;weight:string}>}).allocations;
-   expect(fields.map((f)=>f.key),s.key).toEqual(allocations.map((a)=>"weight_"+a.exposure));
-   const settings=validateInstanceSettings(fields,{});
-   expect(effectiveAllocations(s.config!,settings)?.map((a)=>String(Number(a.weight))),s.key).toEqual(allocations.map((a)=>String(Number(a.weight))));
+describe("fixed strategy catalogue",()=>{
+ it("no listed fixed strategy exposes arbitrary customer allocation weights",()=>{
+  for(const item of RESEARCH_STRATEGIES) {
+   expect((item.config as {userWeights?:boolean}|undefined)?.userWeights,item.key).not.toBe(true);
+   expect(item.inputSchema?.some(field=>String(field.key).startsWith("weight_")),item.key).not.toBe(true);
   }
  });
-
- it("the investor can change the split, but not to one that fails to total 100%",()=>{
-  const sixty=RESEARCH_STRATEGIES.find((s)=>s.key==="60-40")!;
-  const fields=parseInputSchema(sixty.inputSchema);
-  const ok=validateInstanceSettings(fields,{weight_BROAD_EQUITY:"0.7",weight_AGGREGATE_BONDS:"0.3"});
-  expect(effectiveAllocations(sixty.config!,ok)).not.toBeNull();
-  const bad=validateInstanceSettings(fields,{weight_BROAD_EQUITY:"0.7",weight_AGGREGATE_BONDS:"0.4"});
-  expect(effectiveAllocations(sixty.config!,bad)).toBeNull();
-  expect(()=>validateInstanceSettings(fields,{weight_BROAD_EQUITY:"1.5"})).toThrow("INVALID_STRATEGY_INPUT:weight_BROAD_EQUITY");
+ it("classic HFEA remains 55%/45% with no customer weights",()=>{
+  const hfea=RESEARCH_STRATEGIES.find(item=>item.key==="hfea")!;
+  expect((hfea.config as {allocations:Array<{weight:string}>}).allocations.map(x=>x.weight)).toEqual(["0.55","0.45"]);
+  expect(hfea.inputSchema).toBeUndefined();
  });
 });
 

@@ -4,6 +4,7 @@ import { beforeEach,describe,expect,it,vi } from "vitest";
 // faked, so it is deterministic and cannot touch other tenants' data in a shared test database.
 const h=vi.hoisted(()=>({
   leaseHeld:false,
+  settingsBootstraps:0,
   instances:[] as string[],
   totalActive:0,
   owners:[] as string[],
@@ -16,7 +17,8 @@ const h=vi.hoisted(()=>({
   deletions:{completed:0,stalled:0},
   pendingDeliveries:0,
   backlog:{sent:0,claimed:0,exhausted:true},
-  aggregatesRan:0
+  aggregatesRan:0,
+  billing:{configured:true,checked:0,failed:0,deferred:0,hasMore:false}
 }));
 
 vi.mock("@/lib/db",()=>{
@@ -26,7 +28,7 @@ vi.mock("@/lib/db",()=>{
     if(query.includes("anonymous-aggregates"))return h.aggregatesRecent?[{}]:[];
     if(query.includes("SELECT DISTINCT i.user_id"))return h.owners.map((id)=>({user_id:id}));
     if(query.includes("count(*)::int AS n"))return [{n:h.totalActive}];
-    if(query.includes("ORDER BY i.updated_at ASC")){
+    if(query.includes("ORDER BY i.last_calculation_attempt_at ASC")){
       const limit=Number(params[0]);
       return h.instances.slice(0,limit).map((id)=>({id}));
     }
@@ -39,6 +41,7 @@ vi.mock("@/lib/db",()=>{
   }};
   return {sql:{unsafe:async(query:string,params?:unknown[])=>route(query,params),begin:async(fn:(t:typeof tx)=>unknown)=>fn(tx)}};
 });
+vi.mock("@/lib/settings",()=>({ensureSettings:async()=>{h.settingsBootstraps+=1;}}));
 vi.mock("@/lib/action-service",()=>({calculateAction:async(id:string)=>{
   if(h.calcDelayMs)await new Promise((resolve)=>setTimeout(resolve,h.calcDelayMs));
   if(id==="boom")throw new Error("calc failed");
@@ -52,6 +55,7 @@ vi.mock("@/lib/aggregate-service",()=>({rebuildAnonymousAggregates:async()=>{h.a
 vi.mock("@/lib/market-data-worker",()=>({refreshMarketData:async()=>h.market}));
 vi.mock("@/lib/entitlement-service",()=>({enforceStrategyEntitlements:async()=>({paused:0})}));
 vi.mock("@/lib/account-deletion",()=>({finishPendingAccountDeletions:async()=>h.deletions}));
+vi.mock("@/lib/billing-reconciliation",()=>({reconcileStripeSubscriptions:async()=>h.billing}));
 
 const call=async(authorization?:string)=>{
   const {GET}=await import("@/app/api/cron/actions/route");
@@ -68,16 +72,17 @@ describe("hourly worker orchestration",()=>{
     process.env.CRON_SECRET="cron-secret";
     process.env.MARKET_DATA_MODE="MANUAL";
     delete process.env.CRON_TIME_BUDGET_MS;delete process.env.CRON_MAX_INSTANCES;delete process.env.CRON_CONCURRENCY;
-    Object.assign(h,{leaseHeld:false,instances:[],totalActive:0,owners:[],aggregatesRecent:false,calculated:[],calcDelayMs:0,queries:[],finishedLease:null,
+    Object.assign(h,{leaseHeld:false,settingsBootstraps:0,instances:[],totalActive:0,owners:[],aggregatesRecent:false,calculated:[],calcDelayMs:0,queries:[],finishedLease:null,
       market:{provider:"mock",configured:true,refreshed:0,failed:0,skipped:0},deletions:{completed:0,stalled:0},pendingDeliveries:0,
-      backlog:{sent:0,claimed:0,exhausted:true},aggregatesRan:0});
+      backlog:{sent:0,claimed:0,exhausted:true},aggregatesRan:0,
+      billing:{configured:true,checked:0,failed:0,deferred:0,hasMore:false}});
   });
 
   it("refuses calls without the bearer secret and does no work",async()=>{
     expect((await call()).status).toBe(401);
     expect((await call("Bearer nope")).status).toBe(401);
-    // Reading the saved settings (the bearer secret can live there) is not "work".
-    expect(h.queries.filter((q)=>!String(q).includes("app_settings"))).toHaveLength(0);
+    expect(h.settingsBootstraps).toBe(0);
+    expect(h.queries).toHaveLength(0);
   });
 
   it("skips a run that would overlap one already in progress",async()=>{
@@ -85,6 +90,7 @@ describe("hourly worker orchestration",()=>{
     const result=await call(ok);
     expect(result).toMatchObject({status:202,json:{ok:true,status:"skipped",reason:"ALREADY_RUNNING"}});
     expect(h.calculated).toEqual([]);
+    expect(h.settingsBootstraps).toBe(1);
   });
 
   it("calculates every active strategy and reports healthy",async()=>{
@@ -96,15 +102,15 @@ describe("hourly worker orchestration",()=>{
     expect(h.finishedLease?.status).toBe("SUCCESS");
   });
 
-  it("picks the stalest strategies first when capped, and reports the rest as deferred",async()=>{
-    // The query is ordered stalest-first; the fake returns them in that order.
+  it("picks the least recently attempted strategies first when capped, and reports the rest as deferred",async()=>{
+    // The query is ordered least-recently-attempted first; the fake returns them in that order.
     h.instances=["stalest","stale","fresh","fresher","freshest"];h.totalActive=5;
     process.env.CRON_MAX_INSTANCES="2";process.env.CRON_CONCURRENCY="1";
     const result=await call(ok);
     expect(h.calculated).toEqual(["stalest","stale"]);
     expect(result.status).toBe(503);
     expect(result.json).toMatchObject({ok:false,status:"degraded",calculated:2,deferred:{calculations:3}});
-    expect(h.queries.find((q)=>q.includes("ORDER BY i.updated_at ASC"))).toContain("LIMIT $1");
+    expect(h.queries.find((q)=>q.includes("ORDER BY i.last_calculation_attempt_at ASC"))).toContain("LIMIT $1");
   });
 
   it("stops starting work when the time budget runs out instead of overrunning",async()=>{
@@ -142,6 +148,15 @@ describe("hourly worker orchestration",()=>{
     h.aggregatesRecent=false;
     await call(ok);
     expect(h.aggregatesRan).toBe(1);
+  });
+
+  it("reports missed-webhook recovery failures and deferred subscriptions as degraded",async()=>{
+    h.billing.failed=1;
+    expect((await call(ok)).json).toMatchObject({ok:false,billing:{failed:1}});
+    h.billing.failed=0;h.billing.deferred=1;
+    expect((await call(ok)).json.ok).toBe(false);
+    h.billing.deferred=0;h.billing.hasMore=true;
+    expect((await call(ok)).json.ok).toBe(false);
   });
 
   it("records a failed run on the lease when something throws",async()=>{

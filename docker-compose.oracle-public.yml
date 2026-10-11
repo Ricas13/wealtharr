@@ -1,0 +1,23 @@
+# Public HTTPS deployment behind the existing Traefik service on media_net.
+# Use with docker-compose.oracle.yml, not with either staging or localhost overlay.
+# Users and admins authenticate in Wealtharr; public routing is not a paid-launch
+# or regulatory approval. Keep launch/indexing gates disabled until signed off.
+services:
+  app:
+    ports: !reset []
+    networks:
+      - internal
+      - media_net
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "media_net"
+      traefik.http.routers.wealtharr.rule: "Host(`wealtharr.vpn4u.cc`)"
+      traefik.http.routers.wealtharr.entrypoints: "websecure"
+      traefik.http.routers.wealtharr.tls: "true"
+      traefik.http.routers.wealtharr.tls.certresolver: "le"
+      traefik.http.routers.wealtharr.service: "wealtharr"
+      traefik.http.services.wealtharr.loadbalancer.server.port: "3000"
+networks:
+  media_net:
+    external: true
+    name: media_net

@@ -5,6 +5,7 @@ import { recalculateAfterMutation } from "@/lib/action-service";
 import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
+import { assertLedgerTimelineNonNegative, invalidateValuationsFrom } from "@/lib/ledger-timeline";
 
 const schema=z.object({reason:z.string().min(1).max(240)});
 
@@ -43,6 +44,10 @@ export async function POST(request:Request,context:{params:Promise<{id:string;ev
         ]
       );
       const newId=String(inserted[0].id);
+      // Reversing a funding entry or a trade must not leave a later trade without the cash or units it used.
+      await assertLedgerTimelineNonNegative(tx,id,original.account_id?String(original.account_id):null);
+      // Removing a flow that earlier valuations already accounted for changes those periods retroactively.
+      await invalidateValuationsFrom(tx,id,new Date(original.occurred_at));
       await tx.unsafe(
         "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'ledger.event-corrected','ledger_event',$2,$3::jsonb)",
         [user.id,newId,JSON.stringify({strategyInstanceId:id,correctionOfEventId:eventId,reason:input.reason})]
@@ -60,7 +65,9 @@ export async function POST(request:Request,context:{params:Promise<{id:string;ev
       STRATEGY_CLOSED:"Closed strategies are read-only.",
       LEDGER_EVENT_NOT_FOUND:"Ledger event not found.",
       CORRECTION_CANNOT_BE_REVERSED:"A correction entry cannot itself be reversed. Correct the original replacement entry instead.",
-      LEDGER_EVENT_ALREADY_CORRECTED:"This ledger event has already been reversed."
+      LEDGER_EVENT_ALREADY_CORRECTED:"This ledger event has already been reversed.",
+      LEDGER_WOULD_OVERDRAW_CASH:"Reversing this entry would leave cash negative on a later date. Reverse the later trades that depend on it first.",
+      LEDGER_WOULD_OVERSELL:"Reversing this entry would leave a later sale without the units it sold. Reverse the later sale first."
     };
     return Response.json({error:messages[code]??"Could not correct the ledger event."},{status:code.includes("NOT_FOUND")?404:409});
   }

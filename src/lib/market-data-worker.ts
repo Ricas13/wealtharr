@@ -78,12 +78,10 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
             [line.id, observation.observedAt, observation.price, observation.currency, observation.provider]
           );
           refreshed += 1;
-        } catch (error) {
+        } catch {
           failed += 1;
-          failures.push({
-            tradingLineId: String(line.id),
-            code: error instanceof Error ? error.message.slice(0, 80) : "UNKNOWN"
-          });
+          // Provider exception messages can contain URLs or credentials.
+          failures.push({ tradingLineId: String(line.id), code: "PROVIDER_REQUEST_FAILED" });
         }
       }
     );
@@ -97,7 +95,7 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
   } catch (error) {
     await sql.unsafe(
       "UPDATE worker_runs SET status='FAILED',finished_at=now(),details=$1::jsonb WHERE id=$2",
-      [JSON.stringify({ provider: provider.name, error: error instanceof Error ? error.message : "UNKNOWN" }), runId]
+      [JSON.stringify({ provider: provider.name, error: "MARKET_DATA_WORKER_FAILED" }), runId]
     );
     throw error;
   }

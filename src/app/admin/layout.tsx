@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdmin, requirePageUser } from "@/lib/session";
+import {AdminWorkspaceNav} from "@/components/AdminWorkspaceNav";
 
 export const dynamic="force-dynamic";
 
@@ -12,25 +13,19 @@ export default async function AdminLayout({children}:{children:React.ReactNode})
     if (error instanceof Error && error.message === "MFA_REQUIRED") redirect("/app/settings#security");
     throw error;
   }
-  return <div className="app-shell">
+  const launchLocked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
+  return <div className="app-shell admin-workspace-shell">
     <a className="skip-link" href="#admin-main-content">Skip to main content</a>
-    <aside className="sidebar">
-      <Link href="/admin" className="brand"><span className="brand-mark" aria-hidden="true"/>{process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"} Admin</Link>
-      <nav className="nav-group" aria-label="Admin">
-        <div className="nav-label">Control plane</div>
-        <Link className="nav-link" href="/admin">System</Link>
-        <Link className="nav-link" href="/admin/settings">Settings</Link>
-        <Link className="nav-link" href="/admin/launch">Launch readiness</Link>
-        <Link className="nav-link" href="/admin/seo">SEO &amp; brand</Link>
-        <Link className="nav-link" href="/admin/operations">Integrations &amp; jobs</Link>
-        <Link className="nav-link" href="/admin/plans">Plans</Link>
-        <Link className="nav-link" href="/admin/strategies">Strategies</Link>
-        <Link className="nav-link" href="/admin/strategies/research">Research catalog</Link>
-        <Link className="nav-link" href="/admin/instruments">Instruments</Link>
-        <Link className="nav-link" href="/admin/users">Users</Link>
-        <Link className="nav-link" href="/app">Customer app</Link>
-      </nav>
-    </aside>
-    <main className="app-main" id="admin-main-content" tabIndex={-1}><div className="app-content">{children}</div></main>
+    <aside className="sidebar admin-workspace-sidebar"><AdminWorkspaceNav/></aside>
+    <main className="app-main admin-workspace-main" id="admin-main-content" aria-label="Wealtharr Master Admin" tabIndex={-1}>
+      <header className="admin-workspace-topbar">
+        <div><span className="admin-topbar-kicker">WEALTHARR / ADMIN</span><strong>Control centre</strong></div>
+        <div className="admin-topbar-actions">
+          <span className={"admin-environment-tag "+(launchLocked?"is-locked":"is-live")}>{launchLocked?"Paid launch locked":"Paid launch enabled"}</span>
+          <Link href="/admin/launch" className="admin-topbar-link">Launch review ↗</Link>
+        </div>
+      </header>
+      <div className="app-content admin-workspace-content">{children}</div>
+    </main>
   </div>;
 }

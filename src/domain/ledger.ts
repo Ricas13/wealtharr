@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import {LedgerDecimal} from "./ledger-decimal";
 
 export type LedgerEvent = {
   id?: string;
@@ -22,19 +23,19 @@ export function foldLedger(events: LedgerEvent[], baseCurrency?: string): Ledger
 
   for (const event of events) {
     const currency = String(event.currency ?? baseCurrency ?? "__UNSPECIFIED__").toUpperCase();
-    const previousCash = cashByCurrency.get(currency) ?? new Decimal(0);
-    const delta = new Decimal(event.cashAmount ?? 0).minus(new Decimal(event.feeAmount ?? 0));
+    const previousCash = cashByCurrency.get(currency) ?? new LedgerDecimal(0);
+    const delta = new LedgerDecimal(event.cashAmount ?? 0).minus(new LedgerDecimal(event.feeAmount ?? 0));
     cashByCurrency.set(currency, previousCash.plus(delta));
 
     if (event.instrumentId) {
-      const previous = quantities.get(event.instrumentId) ?? new Decimal(0);
-      quantities.set(event.instrumentId, previous.plus(new Decimal(event.quantity ?? 0)));
+      const previous = quantities.get(event.instrumentId) ?? new LedgerDecimal(0);
+      quantities.set(event.instrumentId, previous.plus(new LedgerDecimal(event.quantity ?? 0)));
     }
   }
 
-  let cash = new Decimal(0);
+  let cash = new LedgerDecimal(0);
   if (baseCurrency) {
-    cash = cashByCurrency.get(baseCurrency.toUpperCase()) ?? new Decimal(0);
+    cash = cashByCurrency.get(baseCurrency.toUpperCase()) ?? new LedgerDecimal(0);
   } else if (cashByCurrency.size === 1) {
     cash = [...cashByCurrency.values()][0];
   } else if (cashByCurrency.size > 1) {
@@ -45,13 +46,13 @@ export function foldLedger(events: LedgerEvent[], baseCurrency?: string): Ledger
 }
 
 export function monetary(value: Decimal.Value, dp = 2) {
-  return new Decimal(value).toDecimalPlaces(dp, Decimal.ROUND_HALF_EVEN);
+  return new LedgerDecimal(value).toDecimalPlaces(dp, Decimal.ROUND_HALF_EVEN);
 }
 
 export function assertLedgerEvent(event: LedgerEvent) {
-  const cash = new Decimal(event.cashAmount ?? 0);
-  const qty = new Decimal(event.quantity ?? 0);
-  const fee = new Decimal(event.feeAmount ?? 0);
+  const cash = new LedgerDecimal(event.cashAmount ?? 0);
+  const qty = new LedgerDecimal(event.quantity ?? 0);
+  const fee = new LedgerDecimal(event.feeAmount ?? 0);
   if (!cash.isFinite() || !qty.isFinite() || !fee.isFinite()) {
     throw new Error("Ledger event contains a non-finite number");
   }

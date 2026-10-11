@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/session";
 import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
+import { benchmarkMetadata } from "@/domain/benchmark-evidence";
 
 const rowSchema=z.object({
   date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -21,6 +22,11 @@ const benchmarkSeriesSchema=z.object({
   label:z.string().min(1).max(80).optional(),
   sortOrder:z.number().int().min(0).max(1000).optional().default(0),
   defaultVisible:z.boolean().optional().default(false),
+  currency:z.string().length(3).optional(),
+  provider:z.string().min(3).max(120).optional(),
+  totalReturnAdjusted:z.boolean().optional().default(false),
+  commercialLicenceConfirmed:z.boolean().optional().default(false),
+  fxConversionVerified:z.boolean().optional().default(false),
   points:z.array(benchmarkPointSchema).min(1).max(5000)
 });
 const schema=z.object({
@@ -52,6 +58,7 @@ export async function PUT(request:Request){
           [series.key,series.name,series.economicExposure,series.description]
         );
         const benchmarkId=String(benchmarkRows[0].id);
+        const metadata=benchmarkMetadata(series);
         await tx.unsafe(
           "INSERT INTO strategy_version_benchmarks (strategy_version_id,benchmark_id,label,sort_order,default_visible) VALUES ($1,$2,$3,$4,$5)"+
           " ON CONFLICT (strategy_version_id,benchmark_id) DO UPDATE SET label=EXCLUDED.label,sort_order=EXCLUDED.sort_order,default_visible=EXCLUDED.default_visible",
@@ -59,9 +66,9 @@ export async function PUT(request:Request){
         );
         for(const point of series.points){
           await tx.unsafe(
-            "INSERT INTO benchmark_performance (benchmark_id,date,value,source,metadata) VALUES ($1,$2,$3,$4,'{}'::jsonb)"+
-            " ON CONFLICT (benchmark_id,date) DO UPDATE SET value=EXCLUDED.value,source=EXCLUDED.source",
-            [benchmarkId,point.date,point.value,input.source]
+            "INSERT INTO benchmark_performance (benchmark_id,date,value,source,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)"+
+            " ON CONFLICT (benchmark_id,date) DO UPDATE SET value=EXCLUDED.value,source=EXCLUDED.source,metadata=EXCLUDED.metadata",
+            [benchmarkId,point.date,point.value,input.source,JSON.stringify(metadata)]
           );
         }
       }

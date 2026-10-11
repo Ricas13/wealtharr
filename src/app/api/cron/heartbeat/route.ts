@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 const schema = z.object({ worker: z.enum(["backup"]) });
 
 export async function POST(request: Request) {
-  await ensureSettings();
   if (!cronAuthorized(request)) return new Response("Unauthorized", { status: 401 });
+  await ensureSettings();
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Unknown worker." }, { status: 400 });
   await sql.unsafe("INSERT INTO worker_runs (worker_key,status,finished_at,details) VALUES ($1,'SUCCESS',now(),'{}'::jsonb)", [parsed.data.worker]);

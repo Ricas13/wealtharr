@@ -8,6 +8,22 @@ Written from what the repository does today. Steps marked **[person]** need some
 3. **[person]** Take a fresh database backup (`scripts/backup-postgres.sh`) and confirm it landed in the off-site store.
 4. Read the migrations in the release (`db/migrations/`). Migrations are applied by filename and never rewritten; each one must be additive or backward-compatible with the previous application version, because rollback runs the old code against the new schema.
 
+### Known lock behaviour in migrations 0026-0034 (from the PR #25 migration review)
+- `0031_action_calculation_time.sql` adds a column and then rewrites every row of `actions` inside one transaction, holding an exclusive table lock until it commits. Apply it in a quiet window (stop the scheduler first); duration grows with the size of `actions`.
+- `0028_verified_adjusted_history.sql` builds an index on `price_history` without `CONCURRENTLY` (the migration runner uses one transaction, which forbids it). That blocks history ingest writes while it builds; harmless while the table is small.
+- Applied migrations are never edited (checksummed by filename); a lock problem is handled by timing, not by rewriting history.
+
+### PostgreSQL role cutover
+
+On an existing host: back up database and env file; preserve encryption/session
+secrets and the previous app image. Add new random `APP_DB_PASSWORD` and
+`BACKUP_DB_PASSWORD` to the private env file, then stop scheduler. Build
+the opt-in maintenance image, run migrate twice, seed, provision roles and
+verify permissions. The app uses the enforced non-owner URL; the backup role
+has SELECT-only privileges. If any check fails, stop and do not deploy the
+new app. Never regenerate bootstrap keys or wipe the database. Re-provision
+grants after future schema migrations.
+
 ## Staged rollout
 1. **Staging first.** **[person]** Deploy to staging with a copy of production-shaped data, run `npm run db:migrate`, then the browser suite (`npm run test:e2e`) and a manual pass: sign in, start a strategy, review an action, billing page.
 2. **Production, quietly.** **[person]** Deploy the new build, run `npm run db:migrate`, then check `/api/health` and `/api/cron/health`. Watch Admin > Launch and the operational alerts for one cron cycle (an hour) before announcing anything.

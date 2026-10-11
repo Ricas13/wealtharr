@@ -49,9 +49,28 @@ export const valueTargetEngine: StrategyEngine = {
       .reduce((sum,x)=>sum.plus(x.value),new Decimal(0));
     const isInitial=ctx.state.targetValue == null;
     const previousTarget=new Decimal(String(ctx.state.targetValue ?? current.toString()));
-    const target=isInitial
-      ? current.plus(ctx.cash).mul(num(ctx.config,"initialTargetRatio","0.60"))
-      : previousTarget.mul(new Decimal(1).plus(num(ctx.config,"targetRate","0"))).plus(ctx.contributionsSinceReview.mul(num(ctx.config,"contributionTargetRatio","0")));
+    // An in-progress review carries the SAME target across multiple confirmed
+    // fills. Applying the periodic target-rate at every recalculation compounds it
+    // several times within one quarter and can create unnecessary trades.
+    const savedReviewTarget=ctx.state.reviewTargetValue;
+    const pendingTarget=savedReviewTarget==null?null:new Decimal(String(savedReviewTarget));
+    if(pendingTarget&&(!pendingTarget.isFinite()||pendingTarget.lt(0)))
+      return {actionType:"DATA_REQUIRED",title:"Saved target needs attention",
+        instruction:"The review target is invalid. Reconcile the strategy before trading.",
+        explanation:[],nextState:ctx.state,confidence:"LOW",dueAt:ctx.now};
+    const recordedContributions=ctx.state.reviewContributionsSnapshot==null
+      ?ctx.contributionsSinceReview:new Decimal(String(ctx.state.reviewContributionsSnapshot));
+    if(!recordedContributions.isFinite()||recordedContributions.lt(0))
+      return {actionType:"DATA_REQUIRED",title:"Saved contributions need attention",
+        instruction:"The review contribution ledger needs reconciliation before trading.",
+        explanation:[],nextState:ctx.state,confidence:"LOW",dueAt:ctx.now};
+    const target=pendingTarget
+      ? pendingTarget.plus(ctx.contributionsSinceReview.minus(recordedContributions)
+        .mul(num(ctx.config,isInitial?"initialTargetRatio":"contributionTargetRatio",isInitial?"0.60":"0.50")))
+      : (isInitial
+        ? current.plus(ctx.cash).mul(num(ctx.config,"initialTargetRatio","0.60"))
+        : previousTarget.mul(new Decimal(1).plus(num(ctx.config,"targetRate","0")))
+            .plus(ctx.contributionsSinceReview.mul(num(ctx.config,"contributionTargetRatio","0"))));
     const gap=target.minus(current);
     const threshold=target.abs().mul(num(ctx.config,"tolerance","0.01"));
     const explanation=[
@@ -60,7 +79,9 @@ export const valueTargetEngine: StrategyEngine = {
       {label:"New contributions",value:money(ctx.contributionsSinceReview),kind:"money" as const},
       {label:"Calculated adjustment",value:money(gap),kind:"money" as const}
     ];
-    const nextState={...ctx.state,targetValue:target.toString(),lastCalculatedAt:ctx.now.toISOString()};
+    const nextState={...ctx.state,targetValue:target.toString(),
+      reviewContributionsSnapshot:ctx.contributionsSinceReview.toString(),
+      lastCalculatedAt:ctx.now.toISOString()};
 
     if(gap.abs().lte(threshold)) return {actionType:"HOLD",title:"No trade required",instruction:"The current exposure is within the strategy tolerance.",explanation,nextState,confidence:"HIGH",dueAt:ctx.now};
     if(gap.gt(0)){

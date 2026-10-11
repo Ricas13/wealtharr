@@ -1,4 +1,5 @@
-import Decimal from "decimal.js";
+import type Decimal from "decimal.js";
+import {LedgerDecimal} from "@/domain/ledger-decimal";
 import {z} from "zod";
 import {requireUser} from "@/lib/session";
 import {assertSameOrigin,consumeRateLimit} from "@/lib/security";
@@ -45,7 +46,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const identity=JSON.stringify({
       accountId:input.accountId,ticker:input.ticker.toUpperCase(),exchange:input.exchange.toUpperCase(),
       executedAt:executedAt.toISOString(),side:input.side,quantity:fill.quantity.abs().toString(),
-      unitPrice:new Decimal(input.unitPrice).toString(),fee:fill.feeAmount.toString()
+      unitPrice:new LedgerDecimal(input.unitPrice).toString(),fee:fill.feeAmount.toString()
     });
     const result=await sql.begin(async(tx)=>{
       const rows=await tx.unsafe(
@@ -59,14 +60,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       );
       const instance=rows[0];
       if(!instance)throw new Error("ACCOUNT_NOT_LINKED");
-      if(String(instance.status)==="CLOSED")throw new Error("STRATEGY_CLOSED");
-      if(!["ACTIVE","PAUSED"].includes(String(instance.status)))throw new Error("STRATEGY_NOT_ACTIVE");
-      if(String(instance.currency).toUpperCase()!==fill.currency)throw new Error("TRADE_CURRENCY_MISMATCH");
-      const state=(instance.state??{}) as Record<string,unknown>;
-      if(state.resumeNeedsReconciliation||state.unresolvedReconciliation)throw new Error("TRADE_RECONCILIATION_REQUIRED");
-      if(state.lastReviewAt&&executedAt<new Date(String(state.lastReviewAt)))
-        throw new Error("TRADE_BEFORE_LAST_REVIEW");
-
+      // A committed fill remains recoverable after a review or lifecycle change.
+      // Ownership/account checks still precede replay; no new write occurs here.
       const previous=await tx.unsafe(
         "SELECT id,metadata FROM ledger_events WHERE strategy_instance_id=$1 AND request_key=$2 LIMIT 1",
         [id,input.requestKey]
@@ -76,6 +71,13 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
         if(metadata?.brokerFillIdentity!==identity)throw new Error("TRADE_REQUEST_KEY_CONFLICT");
         return {id:String(previous[0].id),status:String(instance.status),duplicate:true};
       }
+      if(String(instance.status)==="CLOSED")throw new Error("STRATEGY_CLOSED");
+      if(!["ACTIVE","PAUSED"].includes(String(instance.status)))throw new Error("STRATEGY_NOT_ACTIVE");
+      if(String(instance.currency).toUpperCase()!==fill.currency)throw new Error("TRADE_CURRENCY_MISMATCH");
+      const state=(instance.state??{}) as Record<string,unknown>;
+      if(state.resumeNeedsReconciliation||state.unresolvedReconciliation)throw new Error("TRADE_RECONCILIATION_REQUIRED");
+      if(state.lastReviewAt&&executedAt<new Date(String(state.lastReviewAt)))
+        throw new Error("TRADE_BEFORE_LAST_REVIEW");
 
       const matches=await tx.unsafe(
         "SELECT tl.id,tl.instrument_id,i.economic_exposure FROM trading_lines tl "+
@@ -109,22 +111,22 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
         [id,input.accountId,instance.primary_account_id]
       );
       const timeline=history.map(r=>({
-        at:new Date(r.occurred_at).getTime(),cash:new Decimal(String(r.cash_amount)),
-        fee:new Decimal(String(r.fee_amount)),instrument:r.instrument_id?String(r.instrument_id):"",
-        quantity:new Decimal(String(r.quantity))
+        at:new Date(r.occurred_at).getTime(),cash:new LedgerDecimal(String(r.cash_amount)),
+        fee:new LedgerDecimal(String(r.fee_amount)),instrument:r.instrument_id?String(r.instrument_id):"",
+        quantity:new LedgerDecimal(String(r.quantity))
       }));
       timeline.push({
         at:executedAt.getTime(),cash:fill.cashAmount,fee:fill.feeAmount,
         instrument:String(line.instrument_id),quantity:fill.quantity
       });
       timeline.sort((a,b)=>a.at-b.at);
-      let cash=new Decimal(0);
+      let cash=new LedgerDecimal(0);
       const quantities=new Map<string,Decimal>();
       for(const entry of timeline){
         cash=cash.plus(entry.cash).minus(entry.fee);
-        if(cash.lt("-0.00000001"))throw new Error("TRADE_INSUFFICIENT_HISTORICAL_CASH");
+        if(cash.lt(0))throw new Error("TRADE_INSUFFICIENT_HISTORICAL_CASH");
         if(entry.instrument){
-          const units=(quantities.get(entry.instrument)??new Decimal(0)).plus(entry.quantity);
+          const units=(quantities.get(entry.instrument)??new LedgerDecimal(0)).plus(entry.quantity);
           if(units.lt(0))throw new Error("TRADE_INSUFFICIENT_HISTORICAL_HOLDINGS");
           quantities.set(entry.instrument,units);
         }
@@ -135,18 +137,19 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
         "instrument_id,quantity,unit_price,fee_amount,provenance,confidence,metadata,request_key,created_by) "+
         "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USER_CONFIRMED','VERIFIED',$11::jsonb,$12,'USER') RETURNING id",
         [id,input.accountId,executedAt,input.side,fill.currency,fill.cashAmount.toString(),
-         line.instrument_id,fill.quantity.toString(),new Decimal(input.unitPrice).toString(),fill.feeAmount.toString(),
+         line.instrument_id,fill.quantity.toString(),new LedgerDecimal(input.unitPrice).toString(),fill.feeAmount.toString(),
          JSON.stringify({brokerFillIdentity:identity,tradingLineId:String(line.id),ticker:input.ticker.toUpperCase(),
            exchange:input.exchange.toUpperCase(),exchangeTradingDate:tradingDate,
            source:"USER_CONFIRMED_BROKER_FILL",note:input.note??null,
            notice:"Historical market quote is not a broker fill; no provider price has been substituted."}),input.requestKey]
       );
       const eventId=String(inserted[0].id);
-      if(input.side==="BUY"&&String(instance.onboarding_mode)==="START_NEW"&&!state.lastReviewAt&&
-        !history.some(x=>new Decimal(String(x.quantity)).gt(0))){
+      if(String(instance.onboarding_mode)==="START_NEW"&&!state.lastReviewAt){
+        // Importing a fill does not confirm the whole initial allocation. Keep
+        // calculating outstanding legs until the user confirms the final HOLD.
         await tx.unsafe(
-          "UPDATE strategy_states SET state=jsonb_set(state,'{lastReviewAt}',$2::jsonb,true) || '{\"forceReview\":false}'::jsonb,calculated_at=now() WHERE strategy_instance_id=$1",
-          [id,JSON.stringify(executedAt.toISOString())]
+          "UPDATE strategy_states SET state=state || '{\"forceReview\":true}'::jsonb,calculated_at=now() WHERE strategy_instance_id=$1",
+          [id]
         );
       }
       await tx.unsafe(

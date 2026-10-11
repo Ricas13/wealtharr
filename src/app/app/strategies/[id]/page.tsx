@@ -4,9 +4,15 @@ import { AlertTriangle, ArrowLeft, ArrowRight, BarChart3, CalendarClock, Chevron
 import { requirePageUser } from "@/lib/session";
 import { getStrategyForUser, listAvailableStrategies, listStrategyAccounts } from "@/lib/strategy-service";
 import { sql } from "@/lib/db";
+import {isStoredActionCurrent,STALE_ACTION_DISPLAY} from "@/lib/action-service";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { simulateSameCashFlows } from "@/domain/comparison";
 import { PerformanceChart } from "@/components/PerformanceChart";
+import { benchmarkComparison, loadWorkspaceAnalytics } from "@/lib/workspace-analytics";
+import { growthIndex, summarizeObservedPerformance } from "@/domain/portfolio-analytics";
+import { initialAllocationPlan } from "@/domain/initial-allocation";
+import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
+import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { HistoricalQuoteLookup } from "@/components/HistoricalQuoteLookup";
 import { BrokerTradeForm } from "@/components/BrokerTradeForm";
 import { ManualPriceForm } from "@/components/ManualPriceForm";
@@ -93,7 +99,9 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
     }));
 
   const actionRows=await sql.unsafe("SELECT a.id,a.action_type,a.status,a.title,a.instruction,a.amount,a.currency,a.explanation,a.confidence,a.due_at,a.created_at,acc.name AS account_name,acc.wrapper AS account_wrapper FROM actions a LEFT JOIN accounts acc ON acc.id=a.account_id WHERE a.strategy_instance_id=$1 AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') ORDER BY a.created_at DESC LIMIT 1",[id]);
-  const action=actionRows[0];
+  const storedAction=actionRows[0];
+  const action=storedAction&&!(await isStoredActionCurrent(id,String(storedAction.id)))
+    ?{...storedAction,...STALE_ACTION_DISPLAY}:storedAction;
   const priceOptions=await sql.unsafe(
     "SELECT DISTINCT ON (i.id) i.id,tl.ticker,tl.exchange,tl.currency "+
     "FROM strategy_accounts sa JOIN accounts a ON a.id=sa.account_id "+
@@ -211,6 +219,16 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
     if(!byDate.has(marker.date))byDate.set(marker.date,{date:marker.date});
   }
   const chartData=[...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date));
+  const trackedFlows=externalFlows.map((row:any)=>({date:String(row.date).slice(0,10),amount:String(row.cash_amount)}));
+  const trackSummary=summarizeObservedPerformance(actualPoints,trackedFlows);
+  const workspace=await loadWorkspaceAnalytics(user.id);
+  const trackedIndex=growthIndex(actualPoints,trackedFlows);
+  const benchmark=benchmarkComparison(actualPoints,trackedFlows,String(s.currency),workspace.benchmarks);
+  const mainChart=new Map<string,{date:string;actual?:number;benchmarkValues?:Record<string,number>}>();
+  for(const point of trackedIndex)mainChart.set(point.date,{date:point.date,actual:Number(point.value)});
+  for(const [date,values] of benchmark.mapped){const row=mainChart.get(date);if(row)row.benchmarkValues=values;}
+  const performanceOverview=[...mainChart.values()].sort((a,b)=>a.date.localeCompare(b.date));
+  const signedPct=(v:number|null|undefined)=>v==null?"—":new Intl.NumberFormat("en-GB",{style:"percent",maximumFractionDigits:2}).format(v/100);
   const contributions=await sql.unsafe("SELECT l.id,l.occurred_at,l.cash_amount,l.provenance,l.confidence FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) ORDER BY l.occurred_at DESC LIMIT 8",[id]);
   const reconciliations=await sql.unsafe("SELECT occurred_at,expected_value,broker_reported_value,difference,reason FROM reconciliations WHERE strategy_instance_id=$1 ORDER BY occurred_at DESC LIMIT 5",[id]);
   const cashEvents=await sql.unsafe("SELECT l.id,l.occurred_at,l.event_type,l.cash_amount,l.fee_amount,l.metadata FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type IN ('WITHDRAWAL','DIVIDEND','DISTRIBUTION','INTEREST','FEE','TAX') AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) ORDER BY l.occurred_at DESC,l.created_at DESC LIMIT 12",[id]);
@@ -227,6 +245,19 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
   const plainReason=action?plainEnglishActionReason({actionType:String(action.action_type),instruction:String(action.instruction??"")}):null;
   const recovery=action?actionRecoveryGuidance({actionType:String(action.action_type),instruction:String(action.instruction??"")}):null;
   const ruleRows=strategyRuleRows(String(s.engine),(s.config??{}) as Record<string,unknown>);
+  let firstAllocation:ReturnType<typeof initialAllocationPlan>=null;
+  if(String(s.onboarding_mode)==="START_NEW"&&accountOptions.length===1&&isActive){
+    const cashRows=await sql.unsafe("SELECT COALESCE(sum(l.cash_amount-l.fee_amount),0) AS cash, "+
+      "count(*) FILTER (WHERE l.event_type IN ('BUY','SELL'))::int AS trades FROM ledger_events l "+
+      "WHERE l.strategy_instance_id=$1 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[id]);
+    if(Number(cashRows[0]?.trades??0)===0&&Number(cashRows[0]?.cash??0)>0){
+      const choice={country:String(s.country),wrapper:String(s.wrapper),currency:String(s.currency),broker:s.broker_name?String(s.broker_name):null};
+      const eligible=assessStrategyMarket(String(s.engine),(s.config??{}) as Record<string,unknown>,
+        verifiedCandidates(await sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)),choice,new Date().toISOString().slice(0,10));
+      if(eligible.available)firstAllocation=initialAllocationPlan(String(s.engine),(s.config??{}) as Record<string,unknown>,
+        String(cashRows[0].cash),String(s.currency),eligible.positions);
+    }
+  }
   const canSeeTechnicalConfig=user.role==="ADMIN"||!Boolean(s.proprietary);
 
   return <>
@@ -305,6 +336,37 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
 
     {hasVersionUpdate&&<div id="strategy-update"><StrategyVersionUpgrade id={id} currentVersion={String(s.version)} targetVersionId={String(s.latest_version_id)} targetVersion={String(s.latest_version)} releaseNotes={s.latest_release_notes?String(s.latest_release_notes):null} upgradePolicy={String(s.latest_upgrade_policy??"OPTIONAL")} inputSchema={Array.isArray(s.latest_input_schema)?s.latest_input_schema:[]} currentSettings={(s.settings??{}) as Record<string,unknown>} currentConfig={(s.config??{}) as Record<string,unknown>} targetConfig={(s.latest_config??{}) as Record<string,unknown>}/></div>}
 
+    <section className="glass workspace-analytics" aria-label="Strategy performance comparison">
+      <div className="section-head"><div><div className="eyebrow">Your investment performance</div><h2>Progress and benchmarks</h2>
+        <p>Measured since the first recorded portfolio value. Contributions and withdrawals are not counted as profit.</p></div></div>
+      <div className="analytics-stats">
+        <div className="kpi"><span>Profit / loss since tracking began</span><strong>{trackSummary?money(Number(trackSummary.profitSinceStart),String(s.currency)):"—"}</strong></div>
+        <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong>{signedPct(trackSummary?.flowAdjustedReturnPct)}</strong></div>
+        <div className="kpi"><span>Observed maximum drawdown</span><strong>{signedPct(trackSummary?.observedMaxDrawdownPct)}</strong></div>
+        <div className="kpi"><span>Last observed session P/L</span><strong>{trackSummary?.lastObservedSessionPnl!=null?money(Number(trackSummary.lastObservedSessionPnl),String(s.currency)):"—"}</strong></div>
+      </div>
+      {performanceOverview.length>=2?<div className="chart-card">
+        <PerformanceChart data={performanceOverview} comparisons={benchmark.comparisons} indexed fullControls actualLabel={String(s.strategy_name)}/>
+        {benchmark.missing.length>0&&<p className="help comparison-warning">VTI / SPY / QQQ still missing verified, same-currency total-return history for: {benchmark.missing.join(", ")}. Unavailable benchmarks are not estimated.</p>}
+      </div>:<p className="help">We need two reliable dated portfolio valuations before we can calculate returns or drawdowns. Past broker performance is not guessed when you resume a strategy.</p>}
+      {trackSummary&&<p className="help">Best observed session: {signedPct(trackSummary.bestObservedSessionPct)} · Worst observed session: {signedPct(trackSummary.worstObservedSessionPct)} · Current observed drawdown: {signedPct(trackSummary.currentDrawdownPct)}. Sparse data may miss intraday declines.</p>}
+    </section>
+
+    {firstAllocation&&<section className="glass workspace-analytics" aria-label="Your starting allocation">
+      <div className="section-head"><div><div className="eyebrow">Starting this strategy</div><h2>Your first purchases</h2>
+        <p>This is the fixed allocation from your selected strategy, automatically mapped to verified {String(s.wrapper)} instruments. Prices and share quantities are confirmed using your broker.</p></div></div>
+      <div className="initial-order-list">{firstAllocation.orders.map(order=><div className="initial-order" key={order.exposure}>
+        <div><strong>{order.ticker}</strong><small>{order.exchange} · {order.weight}% allocation</small></div>
+        <strong>{money(Number(order.amount),firstAllocation.currency)}</strong>
+      </div>)}
+      {Number(firstAllocation.cashReserve)>0&&<div className="initial-order">
+        <div><strong>Cash reserve</strong><small>Retained under this strategy&apos;s published rules</small></div>
+        <strong>{money(Number(firstAllocation.cashReserve),firstAllocation.currency)}</strong>
+      </div>}</div>
+      <p className="help">Amounts are before dealing fees and subject to market moves. After trading, record the real timestamp, quantity, execution price and fees so your portfolio and next review are accurate.</p>
+      <a className="button primary compact" href="#portfolio-update">Record my purchases <ArrowRight size={14}/></a>
+    </section>}
+
     <div className="strategy-shortcuts">
       <details className="glass quick-drawer" id="portfolio-update">
         <summary><span><WalletCards size={18}/>Update portfolio</span><ChevronRight size={16}/></summary>
@@ -324,7 +386,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         <div className="quick-drawer-content">
           <section className="chart-card explore-chart">
             <div className="section-head"><div><h2>Performance</h2><p>Your account versus the same cash flows applied to the strategy model and benchmark.</p></div></div>
-            <PerformanceChart data={chartData} markers={chartMarkers} comparisons={comparisonSeries.map(({key,label,defaultVisible})=>({key,label,defaultVisible}))}/>
+            <PerformanceChart data={chartData} markers={chartMarkers} comparisons={comparisonSeries.map(({key,label,defaultVisible})=>({key,label,defaultVisible}))} fullControls/>
             <p className="help">Contributions and withdrawals are applied across comparison series so adding money is not mistaken for investment performance.</p>
             {comparisonWarnings.map((warning)=><p className="help comparison-warning" key={warning}>{warning}</p>)}
             <div className="tracking-boundary"><span>Tracked by {process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"} since {new Date(s.started_at).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.</span>{s.onboarding_mode==="RESUME"&&<span>Performance before that date is not reconstructed from incomplete history.</span>}</div>

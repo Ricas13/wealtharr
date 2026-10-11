@@ -6,10 +6,10 @@ type Edits = Record<string, string | null>;
 
 const SOURCE_LABEL: Record<SettingView["source"], string> = { database: "Saved here", environment: "From environment file", unset: "Not set" };
 
-function randomToken() {
+function randomAdminSecret() {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
 }
 
 export function SettingsEditor({ initial, groups }: { initial: SettingView[]; groups: readonly string[] }) {
@@ -61,7 +61,7 @@ export function SettingsEditor({ initial, groups }: { initial: SettingView[]; gr
           ? <textarea id={id} rows={4} placeholder={s.source === "unset" ? "Not set" : "Saved — paste a new value to replace it"} value={pending ? value ?? "" : ""} onChange={(e) => e.target.value ? edit(s.key, e.target.value) : undo(s.key)} autoComplete="off" spellCheck={false}/>
           : <input id={id} type="password" placeholder={s.source === "unset" ? "Not set" : "•••••••• saved — type a new value to replace it"} value={pending ? value ?? "" : ""} onChange={(e) => e.target.value ? edit(s.key, e.target.value) : undo(s.key)} autoComplete="new-password"/>}
         <div className="inline">
-          {s.key === "CRON_SECRET" && <button type="button" className="button" onClick={() => edit(s.key, randomToken())}>Generate</button>}
+          {s.key==="TELEGRAM_WEBHOOK_SECRET"&&<button type="button" className="button" onClick={()=>edit(s.key,randomAdminSecret())}>Generate secure secret</button>}
           {s.source === "database" && !clearing && <button type="button" className="button" onClick={() => edit(s.key, null)}>Remove saved value</button>}
           {clearing && <><span className="pill">Will be removed</span><button type="button" className="button" onClick={() => undo(s.key)}>Undo</button></>}
         </div>
@@ -76,7 +76,7 @@ export function SettingsEditor({ initial, groups }: { initial: SettingView[]; gr
     {groups.map((group) => {
       const rows = settings.filter((s) => s.group === group);
       if (!rows.length) return null;
-      return <section className="glass form-card" key={group}>
+      return <section className="glass form-card" id={"settings-"+group.toLowerCase().replace(/[^a-z0-9]+/g,"-")} key={group}>
         <h3>{group}</h3>
         <div className="stack">
           {rows.map((s) => <div className="field" key={s.key}>

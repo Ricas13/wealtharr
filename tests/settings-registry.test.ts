@@ -8,10 +8,10 @@ describe("settings registry",()=>{
   for(const s of SETTINGS){expect(SETTING_GROUPS as readonly string[],s.key).toContain(s.group);expect(s.help.length,s.key).toBeGreaterThan(10);}
  });
  it("never exposes the bootstrap secrets that must stay outside the database",()=>{
-  for(const key of ["DATABASE_URL","AUTH_SECRET","APP_ENCRYPTION_KEY","NODE_ENV","AUTH_URL"])expect(settingByKey(key),key).toBeUndefined();
+  for(const key of ["DATABASE_URL","AUTH_SECRET","APP_ENCRYPTION_KEY","CRON_SECRET","NODE_ENV","AUTH_URL"])expect(settingByKey(key),key).toBeUndefined();
  });
  it("treats every credential as a secret kind",()=>{
-  for(const key of ["STRIPE_SECRET_KEY","STRIPE_WEBHOOK_SECRET","EMAIL_HTTP_TOKEN","MARKET_DATA_HTTP_TOKEN","AUTH_GOOGLE_SECRET","AUTH_APPLE_SECRET","CRON_SECRET"])expect(def(key).kind,key).toBe("secret");
+  for(const key of ["STRIPE_SECRET_KEY","STRIPE_WEBHOOK_SECRET","EMAIL_HTTP_TOKEN","MARKET_DATA_HTTP_TOKEN","AUTH_GOOGLE_SECRET","AUTH_APPLE_SECRET","TELEGRAM_BOT_TOKEN","TELEGRAM_WEBHOOK_SECRET"])expect(def(key).kind,key).toBe("secret");
   expect(def("AUTH_APPLE_PRIVATE_KEY").kind).toBe("multiline-secret");
  });
 });

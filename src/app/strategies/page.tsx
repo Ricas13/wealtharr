@@ -10,7 +10,7 @@ const types=[
  ["Value-targeting","Set a versioned target-growth rule, record contributions and compare portfolio value against the target at each review. 9Sig belongs to this category."],
  ["Fixed allocation","Track a defined portfolio weight for each exposure, including variations of 60/40, 80/20, Permanent Portfolio or Golden Butterfly."],
  ["Momentum and trend rules","Research approaches such as Ivy, dual momentum, PAA and VAA have distinct signals. These require complete price history and independently verified versions before they are customer-enabled."],
- ["Custom rule sets","Admin-defined strategy versions should preserve existing user rules and be validated before publication. Arbitrary user-written execution code is not supported."]
+ ["Curated strategy library","Choose a researched, versioned strategy with fixed rules. Only the eligible regional instruments and actual customer account records vary."]
 ];
 export default function StrategiesPage(){return <main><div className="container"><nav className="public-nav"><Link href="/" className="brand">{process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"}</Link><Link href="/demo" className="button">View example</Link></nav>
 <section className="section"><div className="eyebrow">Strategy tracking</div><h1>One portfolio workspace. Different rules.</h1><p className="help">Choose your own investing method and track its inputs, holdings, historical changes and scheduled reviews. Availability depends on the strategy version and supported instruments.</p>

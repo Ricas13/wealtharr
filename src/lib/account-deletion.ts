@@ -1,4 +1,5 @@
 import "server-only";
+import { safeErrorCode } from "@/lib/safe-error-code";
 import Stripe from "stripe";
 import { sql } from "@/lib/db";
 
@@ -67,7 +68,7 @@ export async function finishAccountDeletion(userId: string): Promise<FinishOutco
   } catch (error) {
     await sql.unsafe(
       "INSERT INTO audit_events (action,entity_type,entity_id,metadata) VALUES ('account.deletion-stalled','user',$1,$2::jsonb)",
-      [userId, JSON.stringify({ errorCode: error instanceof Error ? error.message.slice(0, 120) : "UNKNOWN" })]
+      [userId, JSON.stringify({ errorCode: safeErrorCode(error) })]
     ).catch(() => {});
     return "PENDING";
   }
@@ -86,7 +87,7 @@ export async function finishAccountDeletion(userId: string): Promise<FinishOutco
   } catch (error) {
     await sql.unsafe(
       "INSERT INTO audit_events (action,entity_type,entity_id,metadata) VALUES ('account.deletion-stalled','user',$1,$2::jsonb)",
-      [userId, JSON.stringify({ errorCode: error instanceof Error ? error.message.slice(0, 120) : "UNKNOWN" })]
+      [userId, JSON.stringify({ errorCode: safeErrorCode(error) })]
     ).catch(() => {});
     return "PENDING";
   }

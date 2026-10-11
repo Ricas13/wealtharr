@@ -1,12 +1,12 @@
 "use client";
 import { Field } from "@/components/Field";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Play, RotateCcw, Sparkles } from "lucide-react";
 
 type InputField={key:string;label:string;type:"text"|"number"|"date"|"select"|"boolean";required?:boolean;help?:string;default?:string|number|boolean;options?:Array<{label:string;value:string}>;min?:string|number;max?:string|number};
-type Strategy={key:string;name:string;family:string;description:string;version:string;inputSchema:InputField[];supportedWrappers:string[]};
+type Strategy={key:string;name:string;family:string;description:string;version:string;inputSchema:InputField[];supportedWrappers:string[];supportedMarkets:string[]};
 
 function StrategyFields({fields}:{fields:InputField[]}){
   if(!fields.length)return null;
@@ -31,6 +31,7 @@ export function CreateStrategyForm({strategies,baseCurrency,brand}:{strategies:S
   const [error,setError]=useState("");
   const [upgradeRequired,setUpgradeRequired]=useState(false);
   const [busy,setBusy]=useState(false);
+  const pendingRequest=useRef<{payload:string;key:string}|null>(null);
   const [regularContribution,setRegularContribution]=useState(false);
   const selected=useMemo(()=>strategies.find((s)=>s.key===selectedKey)??strategies[0],[strategies,selectedKey]);
   const wrappers=selected?.supportedWrappers.length?selected.supportedWrappers:["ISA","SIPP","TAXABLE"];
@@ -39,6 +40,7 @@ export function CreateStrategyForm({strategies,baseCurrency,brand}:{strategies:S
 
   return <form className="onboarding-shell" onSubmit={async(e)=>{
     e.preventDefault();
+    if(busy)return;
     setBusy(true);setError("");setUpgradeRequired(false);
     const f=new FormData(e.currentTarget);
     const settings:Record<string,unknown>={};
@@ -46,7 +48,7 @@ export function CreateStrategyForm({strategies,baseCurrency,brand}:{strategies:S
       if(field.type==="boolean")settings[field.key]=Boolean(f.get("strategyInput:"+field.key));
       else {const value=f.get("strategyInput:"+field.key);if(value!==null&&String(value)!=="")settings[field.key]=String(value);}
     }
-    const response=await fetch("/api/strategies",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+    const payload={
       strategyKey:selectedKey,name:f.get("name"),wrapper:f.get("wrapper"),broker:f.get("broker")||null,currency:f.get("currency"),onboardingMode:mode,
       startingCash:f.get("startingCash")||undefined,approximateValue:f.get("approximateValue")||undefined,settings,
       executionConstraints:{
@@ -62,10 +64,18 @@ export function CreateStrategyForm({strategies,baseCurrency,brand}:{strategies:S
         frequency:String(f.get("contributionFrequency")||"MONTHLY"),
         nextDate:regularContribution&&f.get("nextContributionDate")?String(f.get("nextContributionDate")):null
       }
-    })});
-    const body=await response.json();setBusy(false);
-    if(!response.ok){setUpgradeRequired(Boolean(body.upgrade));return setError(body.error??"Could not add strategy.");}
-    router.push("/app/strategies/"+body.id);
+    };
+    const serialized=JSON.stringify(payload);
+    if(!pendingRequest.current||pendingRequest.current.payload!==serialized)
+      pendingRequest.current={payload:serialized,key:crypto.randomUUID()};
+    try {
+      const response=await fetch("/api/strategies",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...payload,requestKey:pendingRequest.current.key})});
+      const body=await response.json();
+      if(!response.ok){setUpgradeRequired(Boolean(body.upgrade));return setError(body.error??"Could not add strategy.");}
+      router.push("/app/strategies/"+body.id);
+    } catch {
+      setError("The connection was interrupted. Retry with the same details to recover your setup safely.");
+    } finally {setBusy(false);}
   }}>
     <div className="stepper" aria-label="Setup progress">
       {["Strategy","Starting point","Set up"].map((label,index)=><div className={"step "+(index===step?"active":index<step?"complete":"")} key={label}>
@@ -86,6 +96,7 @@ export function CreateStrategyForm({strategies,baseCurrency,brand}:{strategies:S
             <strong>{strategy.name}</strong>
             <p>{strategy.description}</p>
             <small>Version {strategy.version}</small>
+            <small>{strategy.supportedMarkets.length?"Verified markets: "+strategy.supportedMarkets.join(", "):"Not yet available in any verified market"}</small>
           </button>)}
         </div>
       </>}

@@ -33,7 +33,7 @@ describe("research catalog stays fail-closed",()=>{
     expect(hfea.rules).toContain("NOT the original HFEA");
   });
   it("refuses to claim unimplemented momentum and Kelly variants are executable",()=>{
-    expect(RESEARCH_STRATEGIES.filter(x=>["MOMENTUM_ROTATION","CUSTOM_PENDING"].includes(x.engine))
+    expect(RESEARCH_STRATEGIES.filter(x=>["MOMENTUM_ROTATION","RESEARCH_PENDING"].includes(x.engine))
       .every(x=>x.config===undefined)).toBe(true);
   });
 });

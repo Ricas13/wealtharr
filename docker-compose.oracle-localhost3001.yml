@@ -1,0 +1,9 @@
+# Oracle upgrade compatibility overlay for existing Wealtharr on 127.0.0.1:3001.
+# Combine ONLY with docker-compose.oracle.yml; do not layer the old untracked
+# docker-compose.staging.yml or the network-attached Traefik overlay over this file.
+# The existing host's reverse proxy must continue forwarding to localhost:3001
+# and MUST enforce private reviewer access independently.
+services:
+  app:
+    ports: !override
+      - "127.0.0.1:3001:3000"

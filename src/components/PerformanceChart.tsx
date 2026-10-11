@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { rebaseIndexedWindow, periodCutoffIso } from "@/domain/chart-window";
 
 type Point={
   date:string;
@@ -12,26 +13,23 @@ type Point={
 type Marker={date:string;type:"CONTRIBUTION"|"REVIEW";label:string};
 type ComparisonSeries={key:string;label:string;defaultVisible?:boolean};
 const frames=["1M","3M","6M","YTD","1Y","3Y","5Y","MAX"];
+const fullFrames=["1D","1W","1M","3M","6M","YTD","1Y","3Y","5Y","ALL","CUSTOM"];
 const comparisonColors=["var(--chart-comparison-1)","var(--chart-comparison-2)","var(--chart-comparison-3)","var(--chart-comparison-4)","var(--chart-comparison-5)","var(--chart-comparison-6)"];
 
-function cutoff(frame:string) {
-  const now=new Date();
-  if(frame==="MAX") return null;
-  if(frame==="YTD") return new Date(Date.UTC(now.getUTCFullYear(),0,1));
-  const months=frame==="1M"?1:frame==="3M"?3:frame==="6M"?6:frame==="1Y"?12:frame==="3Y"?36:60;
-  const d=new Date(now); d.setUTCMonth(d.getUTCMonth()-months); return d;
-}
 
 function compact(value:number){
   return new Intl.NumberFormat("en-GB",{notation:"compact",maximumFractionDigits:1}).format(value);
 }
 
 export function PerformanceChart({
-  data,markers=[],comparisons=[]
+  data,markers=[],comparisons=[],actualLabel="Your portfolio",indexed=false,fullControls=false
 }:{
   data:Point[];
   markers?:Marker[];
   comparisons?:ComparisonSeries[];
+  actualLabel?:string;
+  indexed?:boolean;
+  fullControls?:boolean;
 }) {
   const gradientId=("actual-"+useId()).replaceAll(":","");
   const hasActual=data.some((point)=>point.actual!=null);
@@ -43,7 +41,10 @@ export function PerformanceChart({
       :hasLegacyBenchmark?[{key:"legacy-benchmark",label:"Benchmark",defaultVisible:!hasActual&&!hasModel}]:[],
     [comparisons,hasLegacyBenchmark,hasActual,hasModel]
   );
-  const [frame,setFrame]=useState("MAX");
+  const [frame,setFrame]=useState(fullControls?"ALL":"MAX");
+  const [customStart,setCustomStart]=useState("");
+  const [customEnd,setCustomEnd]=useState("");
+  const latestDate=useMemo(()=>[...data].sort((a,b)=>a.date.localeCompare(b.date)).at(-1)?.date??"",[data]);
   const [showActual,setShowActual]=useState(hasActual);
   const [showModel,setShowModel]=useState(!hasActual&&hasModel);
   const [visibleComparisons,setVisibleComparisons]=useState<Record<string,boolean>>(
@@ -60,19 +61,27 @@ export function PerformanceChart({
   },[]);
 
   const filtered=useMemo(()=>{
-    const min=cutoff(frame); return min ? data.filter((p)=>new Date(p.date)>=min) : data;
-  },[data,frame]);
+    const min=periodCutoffIso(frame,latestDate);
+    return data.filter(point=>(frame!=="CUSTOM"||(!customStart||point.date>=customStart)&&(!customEnd||point.date<=customEnd))&&
+      (frame==="CUSTOM"||!min||point.date>=min));
+  },[data,frame,latestDate,customStart,customEnd]);
+  // Period returns must start at 100 *within the selected window*, not inherit the
+  // strategy's lifetime baseline. A comparison without the first-date quote is
+  // withheld instead of rebasing on a later date and fabricating a fair start.
+  const chartData=useMemo(()=>indexed?rebaseIndexedWindow(filtered):filtered,[filtered,indexed]);
   const filteredMarkers=useMemo(()=>{
-    const min=cutoff(frame); return min ? markers.filter((m)=>new Date(m.date)>=min) : markers;
-  },[markers,frame]);
+    const dates=new Set(filtered.map(point=>point.date));
+    return markers.filter(marker=>dates.has(marker.date));
+  },[markers,filtered]);
 
   if(!data.length) return <div className="empty">Performance appears here once the strategy has enough valued history.</div>;
 
   return <div className="performance-chart">
     <div className="chart-toolbar">
-      <div className="timeframes">{frames.map((f)=><button type="button" key={f} className={"timeframe "+(frame===f?"active":"")} aria-pressed={frame===f} onClick={()=>setFrame(f)}>{f}</button>)}</div>
+      <div className="timeframes" aria-label="Chart timeframe">{(fullControls?fullFrames:frames).map((f)=><button type="button" key={f} className={"timeframe "+(frame===f?"active":"")} aria-pressed={frame===f} onClick={()=>setFrame(f)}>{f}</button>)}</div>
+      {frame==="CUSTOM"&&<div className="chart-date-range"><span>From <input aria-label="Chart custom start date" type="date" max={customEnd||latestDate} value={customStart} onChange={event=>setCustomStart(event.target.value)}/></span><span>To <input aria-label="Chart custom end date" type="date" min={customStart||undefined} max={latestDate} value={customEnd} onChange={event=>setCustomEnd(event.target.value)}/></span></div>}
       <div className="series-toggles" aria-label="Chart comparisons">
-        {hasActual&&<button type="button" className={"series-chip actual "+(showActual?"active":"")} aria-pressed={showActual} onClick={()=>setShowActual(!showActual)}><span/>Your portfolio</button>}
+        {hasActual&&<button type="button" className={"series-chip actual "+(showActual?"active":"")} aria-pressed={showActual} onClick={()=>setShowActual(!showActual)}><span/>{actualLabel}</button>}
         {hasModel&&<button type="button" className={"series-chip model "+(showModel?"active":"")} aria-pressed={showModel} onClick={()=>setShowModel(!showModel)}><span/>Strategy model</button>}
         {availableComparisons.map((series,index)=>{
           const active=Boolean(visibleComparisons[series.key]);
@@ -86,9 +95,12 @@ export function PerformanceChart({
         })}
       </div>
     </div>
+    {indexed&&<p className="help">Flow-adjusted index, rebased to 100 at the first observed date in this selected period. Comparison lines need a quote on that same date. This is an estimate, not exact time-weighted performance.</p>}
+    {frame==="1D"&&<p className="help">One-day comparisons use the last two dated snapshots where available. Intraday moves cannot be shown from daily values.</p>}
+    {!filtered.length&&<p className="help">No verified values in this date range.</p>}
     {filteredMarkers.length>0&&<div className="chart-markers" aria-label="Chart event markers"><span className="chart-marker-key contribution">+ Contributions</span><span className="chart-marker-key review">R Reviews</span></div>}
     <div className="chart-wrap" role="img" aria-label="Interactive portfolio performance chart"><ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={filtered} margin={{top:22,right:8,left:0,bottom:0}} accessibilityLayer>
+      <AreaChart data={chartData} margin={{top:22,right:8,left:0,bottom:0}} accessibilityLayer>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--chart-actual)" stopOpacity={.28}/><stop offset="100%" stopColor="var(--chart-actual)" stopOpacity={0}/></linearGradient>
         </defs>
@@ -102,7 +114,7 @@ export function PerformanceChart({
           itemStyle={{fontSize:12}}
           formatter={(value,name)=>[new Intl.NumberFormat("en-GB",{maximumFractionDigits:2}).format(Number(value)),String(name)]}
         />
-        {showActual&&<Area type="monotone" dataKey="actual" name="Your portfolio" stroke="var(--chart-actual)" fill={"url(#"+gradientId+")"} strokeWidth={3} connectNulls isAnimationActive={!reduceMotion} animationDuration={650}/>}
+        {showActual&&<Area type="monotone" dataKey="actual" name={actualLabel} stroke="var(--chart-actual)" fill={"url(#"+gradientId+")"} strokeWidth={3} connectNulls isAnimationActive={!reduceMotion} animationDuration={650}/>}
         {showModel&&<Area type="monotone" dataKey="model" name="Strategy model" stroke="var(--chart-model)" fillOpacity={0} strokeWidth={2.25} connectNulls isAnimationActive={!reduceMotion} animationDuration={650}/>}
         {availableComparisons.map((series,index)=>visibleComparisons[series.key]&&<Area
           key={series.key}

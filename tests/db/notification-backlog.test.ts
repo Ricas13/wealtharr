@@ -1,6 +1,7 @@
-import { afterAll,beforeAll,describe,expect,it } from "vitest";
+import { afterAll,beforeAll,describe,expect,it,vi } from "vitest";
 import postgres from "postgres";
 import { createPendingDeliveries,processDeliveryBacklog } from "@/lib/notification-service";
+import * as email from "@/lib/email";
 
 // Real service, real database, built-in mock email provider. Assertions are scoped to rows this
 // file created, because other test files share the database.
@@ -84,6 +85,27 @@ describe.skipIf(!url)("notification worker backlog",()=>{
 
   it("stops at the budget instead of running on, and says it is not finished",async()=>{
     const result=await processDeliveryBacklog({budgetMs:0,batch:100});
-    expect(result).toEqual({sent:0,claimed:0,exhausted:false});
+    expect(result).toEqual({sent:0,claimed:0,exhausted:false,heldBack:0});
+  });
+
+  it("stops inside a slow batch and releases unattempted claims without using up retries",async()=>{
+    const pro=await user("slow-batch","pro");
+    await sql!.unsafe("INSERT INTO notifications (user_id,type,title,body) SELECT $1,'INFO','slow '||g,'b' FROM generate_series(1,3) g",[pro]);
+    await drainPending();
+    let clock=Date.now();
+    const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+    const provider=vi.spyOn(email,"getEmailProvider").mockReturnValue({send:async()=>{clock+=200;return true;}});
+    try{
+      // Fewer rows than the batch size: deferred claims must still report a
+      // backlog, rather than incorrectly declaring this short batch exhausted.
+      expect(await processDeliveryBacklog({budgetMs:100,batch:50})).toEqual({sent:1,claimed:3,exhausted:false,heldBack:0});
+    }finally{now.mockRestore();provider.mockRestore();}
+    const rows=await sql!.unsafe("SELECT d.status,d.attempt_count FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id WHERE n.user_id=$1 ORDER BY d.status",[pro]);
+    expect(rows).toEqual([
+      {status:"PENDING",attempt_count:0},{status:"PENDING",attempt_count:0},{status:"SENT",attempt_count:1}
+    ]);
+    expect(await processDeliveryBacklog({budgetMs:5000,batch:50})).toMatchObject({sent:2,exhausted:true});
+    const delivered=await sql!.unsafe("SELECT d.status,d.attempt_count FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id WHERE n.user_id=$1",[pro]);
+    expect(delivered).toEqual(Array.from({length:3},()=>({status:"SENT",attempt_count:1})));
   });
 });

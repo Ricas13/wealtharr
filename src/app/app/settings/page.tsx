@@ -1,7 +1,8 @@
 import { requirePageUser } from "@/lib/session";
 import { sql } from "@/lib/db";
-import { BillingButtons,DiscordForm,PrivacyControls,SecurityControls } from "@/components/SettingsForms";
+import { BillingButtons,DiscordForm,TelegramForm,PrivacyControls,SecurityControls } from "@/components/SettingsForms";
 import { isMfaEnabled } from "@/lib/mfa";
+import { loadEntitlements } from "@/lib/entitlement-service";
 import { purchasesAllowedFor } from "@/domain/native-app";
 import { StorePurchase } from "@/components/StorePurchase";
 import { manageSubscriptionUrl,platformFromUserAgent,productsForPlatform,storeName } from "@/domain/store-products";
@@ -9,7 +10,7 @@ import { headers } from "next/headers";
 
 export default async function SettingsPage(){
   const user=await requirePageUser();
-  const mfaEnabled=await isMfaEnabled(user.id);
+  const [mfaEnabled,entitlements]=await Promise.all([isMfaEnabled(user.id),loadEntitlements(user.id)]);
   const userAgent=(await headers()).get("user-agent");
   const canPurchase=purchasesAllowedFor(userAgent);
   const platform=platformFromUserAgent(userAgent);
@@ -41,6 +42,8 @@ export default async function SettingsPage(){
   ):[];
   const currentPlanSlug=String(plan?.slug??"free");
   const currentStatus=String(plan?.status??"FREE");
+  const telegram=await sql.unsafe("SELECT enabled FROM notification_endpoints WHERE user_id=$1 AND channel='TELEGRAM' LIMIT 1",[user.id]);
+  const telegramConnected=Boolean(telegram[0]?.enabled);
   const paidSubscription=Boolean(plan?.stripe_subscription_id)&&!["FREE","CANCELED"].includes(currentStatus);
 
   return <>
@@ -58,6 +61,11 @@ export default async function SettingsPage(){
         <div className="eyebrow">Notifications</div><h3>Discord</h3>
         <p className="help">Add an encrypted Discord webhook if your current plan includes Discord alerts.</p>
         <DiscordForm/>
+      </section>
+      <section className="glass form-card">
+        <div className="eyebrow">Notifications</div><h3>Telegram</h3>
+        <p className="help">Connect privately to the Wealtharr bot with a one-time 15-minute link. You never need to enter your Telegram chat ID.</p>
+        <TelegramForm connected={telegramConnected} allowed={entitlements.notificationChannels.has("TELEGRAM")}/>
       </section>
     </div>
     <section id="security" className="card privacy-card"><div className="eyebrow">Security</div><h3>Two-step sign-in</h3><SecurityControls enabled={mfaEnabled}/></section>

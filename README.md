@@ -12,9 +12,11 @@ It separates strategy definitions from versioned strategy rules, user strategy i
 
 ## Current launch scope
 
+Only curated fixed-rule strategies may be activated. Regional account eligibility is proven from the entire strategy’s set of approved exact-leverage instruments; no matching or partial implementation returns an explicit unsupported-market error rather than guessing.
+
 Implemented foundations include authentication, Free / Investor / Pro entitlements, versioned strategies, multiple strategy instances per user, append-only ledger events, cash as a first-class position, quick resume, reconciliation adjustments, regional instrument mapping, action lifecycle and explanations, notification dedupe, Stripe subscription state, public aggregate plumbing, demo mode, customer dashboards and admin views.
 
-The active seed enables the 9Sig-family value-target engine. Fixed-allocation engines exist and are tested, but HFEA / Golden Butterfly definitions are deliberately disabled until faithful regional instruments and full multi-leg execution workflows are configured. Momentum and custom-strategy authoring are extension points, not fake features. Strategy releases use a draft/publish/retire lifecycle; published versions snapshot their engine and configuration, while existing user instances remain pinned until an explicit audited migration.
+The active seed enables the 9Sig-family value-target engine. Fixed-allocation engines exist and are tested, but HFEA / Golden Butterfly definitions are deliberately disabled until faithful regional instruments and full multi-leg execution workflows are configured. Momentum strategies are research-only until verified. Customer custom-strategy authoring is intentionally excluded. Strategy releases use a draft/publish/retire lifecycle; published versions snapshot their engine and configuration, while existing user instances remain pinned until an explicit audited migration.
 
 Production market data uses the configured HTTPS provider adapter. If no licensed provider is configured, the application deliberately fails closed instead of fabricating prices. The development mock provider is unavailable in production.
 

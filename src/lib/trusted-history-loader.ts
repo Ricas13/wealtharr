@@ -17,10 +17,10 @@ export async function loadTrustedHistory(exposures: readonly string[], currency:
     );
     if (lines.length !== 1) continue;
     const rows = await sql.unsafe(
-      "SELECT to_char(trading_day,'YYYY-MM-DD') AS trading_day,adjusted_close::text AS adjusted_close,currency,provider,licensed FROM price_history WHERE trading_line_id=$1 AND trading_day>=($2::date - $3::int) ORDER BY trading_day",
+      "SELECT to_char(trading_day,'YYYY-MM-DD') AS trading_day,adjusted_close::text AS adjusted_close,currency,provider,licensed,adjustment_verified FROM price_history WHERE trading_line_id=$1 AND trading_day>=($2::date - $3::int) ORDER BY trading_day",
       [lines[0].id, now.toISOString().slice(0, 10), lookbackMonths * 31 + 14]
     );
-    const history: HistoryRow[] = rows.map((r) => ({ tradingDay: String(r.trading_day), adjustedClose: String(r.adjusted_close), currency: String(r.currency), provider: String(r.provider), licensed: Boolean(r.licensed) }));
+    const history: HistoryRow[] = rows.map((r) => ({ tradingDay: String(r.trading_day), adjustedClose: String(r.adjusted_close), currency: String(r.currency), provider: String(r.provider), licensed: Boolean(r.licensed), adjustmentVerified: r.adjustment_verified===true }));
     const series = buildTrustedSeries(exposure, history, { now, currency, minSpanDays: lookbackMonths * 28, maxAgeDays: 5 });
     if (series) result.push(series);
   }

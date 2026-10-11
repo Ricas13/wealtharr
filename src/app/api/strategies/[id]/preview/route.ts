@@ -4,6 +4,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { previewCashScenario, previewExecutionConstraintsScenario, previewStrategySwitchScenario } from "@/lib/action-service";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { authFailure } from "@/lib/api-auth";
+import { StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 
 const cashSchema=z.object({
   type:z.enum(["CONTRIBUTION","WITHDRAWAL"]),
@@ -47,6 +48,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     return Response.json({ok:true,preview:true,result});
   }catch(error){const denied=authFailure(error);if(denied)return denied;
     if(error instanceof z.ZodError)return Response.json({error:"Enter valid preview settings."},{status:400});
+    if(error instanceof StrategyMarketUnavailableError)return Response.json({error:error.message,code:error.code,supportedMarkets:error.assessment.supportedMarkets},{status:422});
     const code=error instanceof Error?error.message:"FAILED";
     if(code==="STRATEGY_INSTANCE_NOT_FOUND")return Response.json({error:"Strategy not found."},{status:404});
     if(code==="INVALID_PREVIEW_AMOUNT")return Response.json({error:"Enter an amount greater than zero."},{status:400});

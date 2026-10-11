@@ -2,7 +2,8 @@ import { describe,expect,it } from "vitest";
 import { readFileSync } from "node:fs";
 
 describe("Stripe webhook financial safety",()=>{
-  const source=readFileSync(new URL("../src/app/api/stripe/webhook/route.ts",import.meta.url),"utf8");
+  const source=readFileSync(new URL("../src/lib/stripe-subscription-state.ts",import.meta.url),"utf8")+
+    readFileSync(new URL("../src/app/api/stripe/webhook/route.ts",import.meta.url),"utf8");
 
   it("does not mark a concurrently-processing webhook failed",()=>{
     const catchStart=source.lastIndexOf("}catch(error){");

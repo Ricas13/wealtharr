@@ -7,6 +7,8 @@ import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { assertLedgerEvent } from "@/domain/ledger";
 import { authFailure } from "@/lib/api-auth";
+import { assertNotFuture } from "@/domain/ledger-time";
+import { assertLedgerTimelineNonNegative, invalidateValuationsFrom } from "@/lib/ledger-timeline";
 
 const amount=z.string().regex(/^\d+(?:\.\d{1,8})?$/);
 const schema=z.object({
@@ -35,6 +37,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     if(["WITHDRAWAL","TAX"].includes(input.eventType))cashAmount=value.neg();
     if(input.eventType==="FEE")feeAmount=value;
     assertLedgerEvent({eventType:input.eventType,cashAmount,feeAmount});
+    const occurredAt=input.occurredAt?new Date(input.occurredAt):new Date();
+    assertNotFuture(occurredAt);
 
     if(String(strategy.status)==="CLOSED")return Response.json({error:"Closed strategies are read-only."},{status:409});
 
@@ -55,9 +59,11 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       const rows=await tx.unsafe(
         "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,fee_amount,provenance,confidence,metadata,request_key)"+
         " VALUES ($1,$2,$3,$4,$5,$6,$7,'USER_ENTERED','VERIFIED',$8::jsonb,$9) RETURNING id",
-        [id,locked[0].account_id,input.occurredAt?new Date(input.occurredAt):new Date(),input.eventType,String(locked[0].currency),cashAmount.toString(),feeAmount.toString(),JSON.stringify({note:input.note??null}),input.requestKey??null]
+        [id,locked[0].account_id,occurredAt,input.eventType,String(locked[0].currency),cashAmount.toString(),feeAmount.toString(),JSON.stringify({note:input.note??null}),input.requestKey??null]
       );
       const ledgerEventId=String(rows[0].id);
+      await assertLedgerTimelineNonNegative(tx,id,String(locked[0].account_id));
+      await invalidateValuationsFrom(tx,id,occurredAt);
       await tx.unsafe(
         "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'ledger.cash-event-created','ledger_event',$2,$3::jsonb)",
         [user.id,ledgerEventId,JSON.stringify({strategyInstanceId:id,eventType:input.eventType})]
@@ -71,6 +77,9 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const code=error instanceof Error?error.message:"FAILED";
     if(code==="STRATEGY_CLOSED")return Response.json({error:"Closed strategies are read-only."},{status:409});
     if(code==="STRATEGY_NOT_FOUND")return Response.json({error:"That account is not linked to this strategy."},{status:404});
+    if(code==="LEDGER_EVENT_IN_FUTURE"||code==="LEDGER_EVENT_TIME_INVALID")return Response.json({error:"The date cannot be in the future."},{status:400});
+    if(code==="LEDGER_WOULD_OVERDRAW_CASH")return Response.json({error:"That would take cash below zero on that date. Check the amount and date."},{status:409});
+    if(code==="LEDGER_WOULD_OVERSELL")return Response.json({error:"That would leave a later sale without the units it sold."},{status:409});
     return Response.json({error:"Could not record the cash event."},{status:500});
   }
 }

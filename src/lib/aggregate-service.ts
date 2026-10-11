@@ -1,7 +1,7 @@
 import "server-only";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
-import { xirr } from "@/domain/performance";
+import { isAnnualisableSpan, xirr } from "@/domain/performance";
 
 const PUBLIC_THRESHOLD=20;
 
@@ -43,6 +43,8 @@ export async function rebuildAnonymousAggregates(asOf=new Date()){
           amount:new Decimal(String(flow.cash_amount)).neg()
         }));
         cashFlows.push({at:new Date(latestDate+"T23:59:59Z"),amount:new Decimal(String(instance.value))});
+        // Only histories of at least a year are annualised into the community figure.
+        if(!isAnnualisableSpan(cashFlows))continue;
         try{
           const result=xirr(cashFlows);
           if(result.isFinite()&&result.gt("-1")&&result.lt("1000"))mwrr.push(result);

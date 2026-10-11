@@ -130,3 +130,28 @@ export function SecurityControls({enabled}:{enabled:boolean}){
     {error&&<div className="error">{error}</div>}{message&&<div className="success">{message}</div>}
   </div>;
 }
+
+/** A one-time deep link verifies the user controls the private Telegram chat. */
+export function TelegramForm({connected,allowed}:{connected:boolean;allowed:boolean}){
+  const[linked,setLinked]=useState(connected);
+  const[url,setUrl]=useState("");
+  const[message,setMessage]=useState("");
+  const[busy,setBusy]=useState(false);
+  async function connect(){setBusy(true);setMessage("");setUrl("");try{
+    const r=await fetch("/api/settings/telegram",{method:"POST"});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(data.error||"Could not start Telegram connection.");
+    setUrl(String(data.url));setMessage("Open the link and press Start in the Telegram bot, then refresh this page.");
+  }catch(e){setMessage(e instanceof Error?e.message:"Telegram connection failed.");}finally{setBusy(false);}}
+  async function disconnect(){setBusy(true);setMessage("");try{
+    const r=await fetch("/api/settings/telegram",{method:"DELETE"});
+    if(!r.ok)throw new Error("Could not disconnect Telegram.");
+    setLinked(false);setUrl("");setMessage("Telegram disconnected.");
+  }catch(e){setMessage(e instanceof Error?e.message:"Could not disconnect.");}finally{setBusy(false);}}
+  return <div className="stack">
+    <p className="help">{!allowed?"Telegram alerts are not included in your current plan.":linked?"Telegram is connected. Your plan controls whether alerts are delivered.":"Telegram is not connected."}</p>
+    <div className="inline">{linked?<button className="button" type="button" disabled={busy} onClick={disconnect}>Disconnect Telegram</button>:<button className="button" type="button" disabled={busy||!allowed} onClick={connect}>Connect Telegram</button>}
+      {url&&<a className="button primary" href={url} target="_blank" rel="noopener noreferrer">Open Telegram bot</a>}</div>
+    {message&&<p className="help" role="status">{message}</p>}
+  </div>;
+}
