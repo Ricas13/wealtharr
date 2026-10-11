@@ -1921,3 +1921,11 @@ html[data-theme="light"] .app-shell.admin-workspace-shell th{
 html[data-theme="light"] .app-shell.admin-workspace-shell .card p{
  color:#bac9dc!important;
 }
+
+/* Keep financial values immediately legible. Legacy page-entry fade otherwise
+   causes intermittent WCAG contrast violations while content is semi-transparent. */
+.portfolio-shell .portfolio-content > *{
+  animation:none!important;
+  opacity:1!important;
+  transform:none!important;
+}
