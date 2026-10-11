@@ -4,7 +4,8 @@ import {readFileSync} from "node:fs";
 describe("Admin strategy workspace guardrails",()=>{
  it("shows all curated research profiles without making them automatically customer-eligible",()=>{
   const page=readFileSync("src/app/admin/strategies/page.tsx","utf8");
-  expect(page).toContain("RESEARCH_STRATEGIES.map(s=>s.key)");
+  expect(page).toContain("STRATEGY_PLUGINS.map(p=>p.key)");
+  expect(page).not.toContain('"9sig"');
   expect(page).toContain('engine==="RESEARCH_PENDING"');
   expect(page).toContain('status:"RESEARCH"');
   expect(page).toContain("assertCustomerPublishableEngine");

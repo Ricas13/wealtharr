@@ -4,7 +4,7 @@ This page is a **work queue**, not a certification of production readiness. The 
 
 ## Research and source fidelity
 
-Reference strategy records are in `src/domain/strategy/research-catalog.ts`. Sources are research pointers, not endorsements. Reddit is useful for clarifying practice and disputed variants, but published author specifications are the authority where available.
+Reference strategy records are one plugin file per strategy in `src/domain/strategy/catalog/` (`research-catalog.ts` derives the list from them). Sources are research pointers, not endorsements. Reddit is useful for clarifying practice and disputed variants, but published author specifications are the authority where available.
 
 - [x] Reference definitions for HFEA, Golden Butterfly, Permanent Portfolio, All Weather, three-fund, 60/40 and 80/20
 - [x] Distinguish canonical HFEA 55/45 UPRO/TMF from TQQQ/TMF modifications
