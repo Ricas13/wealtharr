@@ -2357,3 +2357,16 @@ html[data-theme="light"] .portfolio-shell .recovery-banner-copy strong{
   opacity:1!important;
   transform:none!important;
 }
+
+/* The customer design replaces the Snowball shell; keep the retained allocation
+   and strategy-table widgets themed without applying the retired navigation. */
+.customer-workspace-shell .portfolio-strategies-workspace {
+  --pf-surface:#14283e;--pf-surface-hover:#1e344c;
+  --pf-text:#edf4ff;--pf-muted:#aabbd4;--pf-soft:#aabbd4;
+  --pf-border:#344860;--pf-primary:#78f3c6;
+}
+html[data-theme="light"] .customer-workspace-shell .portfolio-strategies-workspace {
+  --pf-surface:#fff;--pf-surface-hover:#f5f8fc;
+  --pf-text:#22344b;--pf-muted:#56657c;--pf-soft:#64738a;
+  --pf-border:#dae3ee;--pf-primary:#315fb7;
+}
