@@ -83,6 +83,20 @@ export async function PUT(request:Request) {
       p.trialDays,p.visible,p.archived,p.sortOrder,JSON.stringify(p.marketing),
       JSON.stringify(p.paymentMethods)]
    );
+   // A newly configured paid plan needs active display prices to appear publicly.
+   // Stripe IDs are intentionally absent until the provider mapping is verified.
+   // Existing prices are never silently overwritten by an unrelated metadata edit.
+   if (!existing.length && p.slug !== "free") {
+     const planRow=await tx.unsafe("SELECT id FROM plans WHERE slug=$1",[p.slug]);
+     for (const [cadence,amount] of [["MONTHLY",p.monthlyPriceMinor],["ANNUAL",p.annualPriceMinor]] as const) {
+       if (amount <= 0) continue;
+       await tx.unsafe(
+         "INSERT INTO plan_prices (plan_id,currency,cadence,amount_minor,active) "+
+         "VALUES ($1,$2,$3,$4,true) ON CONFLICT (plan_id,currency,cadence) DO NOTHING",
+         [planRow[0].id,currency,cadence,amount]
+       );
+     }
+   }
    await tx.unsafe(
     "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'plan',$3,$4::jsonb)",
     [admin.id,existing.length?"plan.updated":"plan.created",p.slug,

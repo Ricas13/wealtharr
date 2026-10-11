@@ -141,8 +141,8 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
   {tab==="billing"&&<div className="stack" style={{marginTop:18}}>
    <div className="field"><label htmlFor="plan-description">Internal description</label><input id="plan-description" value={form.description} onChange={e=>change("description",e.target.value)}/></div>
    <div className="form-grid">
-    <div className="field"><label htmlFor="ps-monthly">Monthly price ({form.currency})</label><input id="ps-monthly" type="number" min="0" step="0.01" value={form.monthlyPriceMinor/100} onChange={e=>change("monthlyPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
-    <div className="field"><label htmlFor="ps-annual">Annual price ({form.currency})</label><input id="ps-annual" type="number" min="0" step="0.01" value={form.annualPriceMinor/100} onChange={e=>change("annualPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
+    <div className="field"><label htmlFor="ps-monthly">Default monthly price ({form.currency})</label><input id="ps-monthly" type="number" min="0" step="0.01" value={form.monthlyPriceMinor/100} onChange={e=>change("monthlyPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
+    <div className="field"><label htmlFor="ps-annual">Default annual price ({form.currency})</label><input id="ps-annual" type="number" min="0" step="0.01" value={form.annualPriceMinor/100} onChange={e=>change("annualPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
     <div className="field"><label htmlFor="ps-currency">Billing currency</label><select id="ps-currency" value={form.currency} onChange={e=>change("currency",e.target.value)}>{["GBP","USD","EUR"].map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label htmlFor="ps-currencies">Supported currencies</label><input id="ps-currencies" value={form.supportedBillingCurrencies.join(", ")} onChange={e=>change("supportedBillingCurrencies",e.target.value.toUpperCase().split(",").map(x=>x.trim()).filter(Boolean))}/></div>
     <div className="field"><label htmlFor="ps-trial">Free trial (days)</label><input id="ps-trial" type="number" min="0" value={form.trialDays} onChange={e=>change("trialDays",Number(e.target.value))}/></div>
@@ -151,7 +151,7 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    <h3>Payment providers</h3>
    <label className="toggle-row"><input type="checkbox" checked={form.paymentMethods.includes("STRIPE")} onChange={()=>toggleProvider("STRIPE")}/>Stripe — website checkout and webhook supported</label>
    <label className="toggle-row"><input type="checkbox" checked={form.paymentMethods.includes("PAYPAL")} onChange={()=>toggleProvider("PAYPAL")}/>PayPal — configure now; checkout integration not yet connected</label>
-   <p className="help">Provider credentials are managed under Admin Settings, not stored in plan copy. Stripe Price IDs and future PayPal Plan IDs are configured separately for each currency and billing period below this editor. Unconnected gateways never appear as working payment buttons.</p>
+   <p className="help">New plans create public display-price rows from these defaults. For existing plans, update live currency-specific amounts using the Plan price by currency editor below. Provider credentials are managed under Admin Settings, not stored in plan copy. Stripe Price IDs and future PayPal Plan IDs are configured separately for each currency and billing period below this editor. Unconnected gateways never appear as working payment buttons.</p>
   </div>}
   {tab==="features"&&<div className="stack" style={{marginTop:18}}>
    <div className="field"><label htmlFor="ps-limit">Maximum active strategies (blank means unlimited)</label><input id="ps-limit" type="number" min="1" value={form.maxActiveStrategies??""} onChange={e=>change("maxActiveStrategies",e.target.value?Number(e.target.value):null)}/></div>
