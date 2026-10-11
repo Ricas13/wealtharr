@@ -24,6 +24,7 @@ export default async function StrategiesAdmin(){
  ]);
  const candidates=verifiedCandidates(mappingRows);
  const asOf=new Date().toISOString().slice(0,10);
+ const dateKey=(value:unknown)=>value instanceof Date?value.toISOString().slice(0,10):String(value).slice(0,10);
  const installed=new Map(definitions.map(d=>[String(d.key),d]));
  const profiles=new Map(RESEARCH_STRATEGIES.map(s=>[s.key,s]));
  const list=[...new Set(["9sig",...RESEARCH_STRATEGIES.map(s=>s.key),...definitions.map(d=>String(d.key))])];
@@ -31,7 +32,7 @@ export default async function StrategiesAdmin(){
    const def=installed.get(key);
    const profile=profiles.get(key);
    const release=versions.find(v=>String(v.key)===key&&v.lifecycle_status==="PUBLISHED"&&
-      String(v.effective_from).slice(0,10)<=asOf&&(!v.effective_to||String(v.effective_to).slice(0,10)>=asOf));
+      dateKey(v.effective_from)<=asOf&&(!v.effective_to||dateKey(v.effective_to)>=asOf));
    const name=String(def?.name??profile?.name??key);
    const engine=String(def?.engine??profile?.engine??"UNAVAILABLE");
    const base={key,name,family:String(def?.family??"RESEARCH"),engine,enabled:def?.enabled===true,
@@ -62,7 +63,7 @@ export default async function StrategiesAdmin(){
   <details id="release-workflow" className="admin-advanced-workflow"><summary><span><strong>Release management</strong><small>Versions, immutable rules and attestation records</small></span><span aria-hidden="true">⌄</span></summary>
     <div className="admin-advanced-content">
       <div className="table-wrap" tabIndex={0} role="region" aria-label="Version releases"><table><thead><tr><th>Strategy</th><th>Version</th><th>Status</th><th>Approval</th><th>Effective</th><th>UUID</th></tr></thead><tbody>
-      {versions.map(v=><tr key={String(v.version_id)}><td>{String(v.name)}</td><td>{String(v.version)}</td><td>{String(v.lifecycle_status)}</td><td>{v.attested?"Recorded":"Missing"}</td><td>{String(v.effective_from).slice(0,10)}</td><td><code>{String(v.version_id)}</code></td></tr>)}
+      {versions.map(v=><tr key={String(v.version_id)}><td>{String(v.name)}</td><td>{String(v.version)}</td><td>{String(v.lifecycle_status)}</td><td>{v.attested?"Recorded":"Missing"}</td><td>{dateKey(v.effective_from)}</td><td><code>{String(v.version_id)}</code></td></tr>)}
       </tbody></table></div>
       <StrategyVersionManager/>
     </div>

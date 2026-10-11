@@ -54,7 +54,7 @@ export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
    </div>
    <div className="admin-catalogue-toolbar">
      <div><h2>Strategy catalogue</h2><p>Explore every reference profile. Customer availability remains gated by verified releases and instruments.</p></div>
-     <button type="button" className="button primary" disabled={!eligible.length||bulkBusy} onClick={enableEligible}>{bulkBusy?"Checking releases…":"Enable all verified ("+eligible.length+")"}</button>
+     <button type="button" className="button primary" disabled={!eligible.length||bulkBusy} onClick={enableEligible}>{bulkBusy?"Checking releases…":"Enable all eligible ("+eligible.length+")"}</button>
    </div>
    {bulkResult&&<p className="admin-catalogue-result" role="status">{bulkResult}</p>}
    <div className="admin-catalogue-search-row">
