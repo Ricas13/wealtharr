@@ -3,6 +3,7 @@ import {siteOrigin,publicIndexingEnabled} from "@/lib/public-seo";
 import { ensureSettings } from "@/lib/settings";
 import { PwaRegister } from "@/components/PwaRegister";
 import "./globals.css";
+import "./theme.css";
 
 // SEO indexing is an operational release gate. Resolve runtime environment on Oracle Docker.
 export const dynamic="force-dynamic";
@@ -14,8 +15,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#07111f" },
-    { media: "(prefers-color-scheme: light)", color: "#f4f7fb" }
+    { media: "(prefers-color-scheme: dark)", color: "#070b14" },
+    { media: "(prefers-color-scheme: light)", color: "#f4f6fb" }
   ]
 };
 
@@ -47,9 +48,7 @@ const themeScript = `
 (() => {
   try {
     const saved = (localStorage.getItem("wealtharr-theme") ?? localStorage.getItem("rebalune-theme") ?? localStorage.getItem("strategyos-theme"));
-    const theme = saved === "light" || saved === "dark"
-      ? saved
-      : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    const theme = saved === "light" ? "light" : "dark";
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
   } catch {

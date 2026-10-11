@@ -42,7 +42,7 @@ test("Master Admin uses the approved sidebar, spacing, metrics and SVG chart",as
  });
  expect(styles.font).toContain("Inter");
  expect(styles.accent).toBe("#344fad");
- expect(styles.kpiRadius).toBe("14px");
+ expect(styles.kpiRadius).toBe("10px");
  expect(styles.kpiPadding).toBe(testInfo.project.name==="mobile-chromium"?"15px":"19px");
  expect(styles.contentPadding).toBe(testInfo.project.name==="mobile-chromium"?"23px":"35px");
  if(testInfo.project.name==="desktop-chromium")expect(styles.sidebarWidth).toBeGreaterThanOrEqual(210);

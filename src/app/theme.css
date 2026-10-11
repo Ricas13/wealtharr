@@ -1,0 +1,200 @@
+/*
+ * Wealtharr "Midnight Ink" — the single, shared theme for public pages, the customer
+ * workspace and Master Admin.
+ *
+ * This file is loaded last (see layout.tsx). It does three things and nothing else:
+ *   1. Re-points every palette family (--bg/--text, --cw-*, --ac-*, --pf-*) at ONE set of tokens.
+ *   2. Standardises shape (compact radii), type scale and the primary-button treatment.
+ *   3. Adds restrained motion (hover lift, button sheen, live-dot pulse, chart-line draw).
+ *      There is deliberately NO opacity entrance animation: contrast is measured on live text.
+ * Layout metrics (rail width, topbar height, gutters) are untouched. Every pair below keeps WCAG AA.
+ * Light theme remains a user setting; it uses the same structure with AA-safe ink colours.
+ */
+
+/* ---------- 1. Tokens ---------- */
+html:root {
+  --mi-bg: #070b14;
+  --mi-bg-2: #0a1020;
+  --mi-surface: #0e1424;
+  --mi-surface-2: #141c3a;
+  --mi-border: #1f2a44;
+  --mi-border-strong: #2a3658;
+  --mi-text: #e8ecf6;
+  --mi-muted: #9aa5c2;
+  --mi-subtle: #8b96b3;
+  --mi-indigo: #9aa6ff;
+  --mi-positive: #5eeac4;
+  --mi-warning: #f5b84b;
+  --mi-danger: #ff8a9b;
+  --mi-on-accent: #070b14;
+  --mi-grad: linear-gradient(135deg, #9aa6ff, #5eeac4);
+  --mi-r: 10px;
+  --mi-r-sm: 6px;
+  --mi-r-md: 8px;
+  --mi-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px -24px rgba(0,0,0,.6);
+
+  --bg: var(--mi-bg); --bg2: var(--mi-bg-2);
+  --panel: var(--mi-surface); --panel-solid: var(--mi-surface);
+  --text: var(--mi-text); --muted: var(--mi-muted);
+  --line: var(--mi-border);
+  --accent: var(--mi-positive); --accent2: var(--mi-indigo);
+  --danger: var(--mi-danger); --warning: var(--mi-warning);
+  --radius: var(--mi-r); --radius-lg: var(--mi-r); --radius-md: var(--mi-r-md); --radius-sm: var(--mi-r-sm);
+  --surface-soft: rgba(154,166,255,.04); --surface-raised: rgba(154,166,255,.07);
+  --shadow: var(--mi-shadow); --shadow-soft: var(--mi-shadow);
+  --chart-actual: #5eeac4; --chart-model: #9aa6ff;
+}
+html:root[data-theme="light"] {
+  --mi-bg: #f4f6fb;
+  --mi-bg-2: #eceff7;
+  --mi-surface: #ffffff;
+  --mi-surface-2: #f3f5fd;
+  --mi-border: #dce2ef;
+  --mi-border-strong: #c3cce2;
+  --mi-text: #14203a;
+  --mi-muted: #4a5878;
+  --mi-subtle: #566587;
+  --mi-indigo: #3446c4;
+  --mi-positive: #0b7a5e;
+  --mi-warning: #8a5a00;
+  --mi-danger: #b4243f;
+  --mi-on-accent: #0b1020;
+  --mi-shadow: 0 1px 2px rgba(20,32,58,.05), 0 14px 30px -22px rgba(20,32,58,.25);
+  --chart-actual: #0b7a5e; --chart-model: #3446c4;
+}
+
+/* Customer workspace palette (kept token names so existing rules inherit the theme). */
+html:root .customer-workspace-shell {
+  --cw-bg: var(--mi-bg); --cw-sidebar: var(--mi-bg-2);
+  --cw-panel: var(--mi-surface); --cw-card: var(--mi-surface);
+  --cw-text: var(--mi-text); --cw-muted: var(--mi-muted); --cw-subtle: var(--mi-subtle);
+  --cw-border: var(--mi-border); --cw-line: var(--mi-border);
+  --cw-mint: var(--mi-positive); --cw-blue: var(--mi-indigo); --cw-loss: var(--mi-danger);
+  --cw-shadow: var(--mi-shadow);
+}
+html:root[data-theme="light"] .customer-workspace-shell {
+  --cw-bg: var(--mi-bg); --cw-sidebar: var(--mi-surface);
+  --cw-panel: var(--mi-surface); --cw-card: var(--mi-surface);
+  --cw-text: var(--mi-text); --cw-muted: var(--mi-muted); --cw-subtle: var(--mi-subtle);
+  --cw-border: var(--mi-border); --cw-line: var(--mi-border);
+  --cw-mint: var(--mi-positive); --cw-blue: var(--mi-indigo); --cw-loss: var(--mi-danger);
+  --cw-shadow: var(--mi-shadow);
+}
+html:root .customer-workspace-shell .portfolio-strategies-workspace {
+  --pf-surface: var(--mi-surface); --pf-surface-hover: var(--mi-surface-2);
+  --pf-text: var(--mi-text); --pf-muted: var(--mi-muted); --pf-soft: var(--mi-subtle);
+  --pf-border: var(--mi-border); --pf-primary: var(--mi-indigo);
+}
+html:root[data-theme="light"] .customer-workspace-shell .portfolio-strategies-workspace {
+  --pf-surface: var(--mi-surface); --pf-surface-hover: var(--mi-surface-2);
+  --pf-text: var(--mi-text); --pf-muted: var(--mi-muted); --pf-soft: var(--mi-subtle);
+  --pf-border: var(--mi-border); --pf-primary: var(--mi-indigo);
+}
+html:root .app-shell.portfolio-shell {
+  --pf-bg: var(--mi-bg); --pf-surface: var(--mi-surface); --pf-surface-hover: var(--mi-surface-2);
+  --pf-text: var(--mi-text); --pf-muted: var(--mi-muted); --pf-soft: var(--mi-subtle);
+  --pf-border: var(--mi-border); --pf-primary: var(--mi-indigo);
+  --pf-positive: var(--mi-positive); --pf-negative: var(--mi-danger); --pf-header: var(--mi-bg-2);
+}
+html:root[data-theme="light"] .app-shell.portfolio-shell {
+  --pf-bg: var(--mi-bg); --pf-surface: var(--mi-surface); --pf-surface-hover: var(--mi-surface-2);
+  --pf-text: var(--mi-text); --pf-muted: var(--mi-muted); --pf-soft: var(--mi-subtle);
+  --pf-border: var(--mi-border); --pf-primary: var(--mi-indigo);
+  --pf-positive: var(--mi-positive); --pf-negative: var(--mi-danger); --pf-header: var(--mi-surface);
+}
+
+/* Master Admin: same palette. It is a dark control plane in both user themes. */
+html:root .app-shell.admin-workspace-shell,
+html:root[data-theme="light"] .app-shell.admin-workspace-shell {
+  --ac-bg: #070b14; --ac-side: #0a1020; --ac-surface: #0e1424; --ac-surface-2: #141c3a;
+  --ac-top: #0a1020; --ac-border: #1f2a44; --ac-text: #e8ecf6; --ac-muted: #b3bdd6; --ac-subtle: #9aa5c2;
+  --ac-indigo: #9aa6ff; --ac-positive: #5eeac4; --ac-warning: #f5b84b; --ac-danger: #ff9bab;
+  --text: var(--ac-text); --muted: var(--ac-muted); --line: var(--ac-border);
+  --accent: var(--ac-indigo); --accent2: #9aa6ff;
+  --danger: #ff9bab; --warning: #f5b84b;
+  color: var(--ac-text); background: var(--ac-bg);
+}
+html:root[data-theme="light"] .app-shell.admin-workspace-shell > .sidebar.admin-workspace-sidebar {
+  background: var(--ac-side); color: var(--ac-text); border-color: var(--ac-border);
+}
+
+/* Page ground. */
+html:root body {
+  background:
+    radial-gradient(60rem 30rem at 70% -10%, rgba(124,140,255,.16), transparent 60%),
+    radial-gradient(40rem 24rem at 0% 0%, rgba(94,234,196,.05), transparent 60%),
+    var(--mi-bg);
+  color: var(--mi-text);
+}
+html:root[data-theme="light"] body {
+  background:
+    radial-gradient(60rem 30rem at 70% -10%, rgba(52,70,196,.07), transparent 60%),
+    var(--mi-bg);
+}
+
+/* ---------- 2. Shape, type, buttons ---------- */
+:is(.card,.kpi,.glass,.hero-card,.price,.empty,.today-card,.premium-card,.chart-card,.leaderboard-row,
+    .what-if-form,.what-if-result,.form-card,.linked-account-card,.billing-usage,.admin-design-kpi,
+    .admin-design-panel,.quick-strip > div) {
+  border-radius: var(--mi-r) !important;
+}
+:is(.button,.field input,.field select,.field textarea,.theme-toggle,.scenario-switch,
+    .landing-btn,.landing-arrows button) {
+  border-radius: var(--mi-r-sm) !important;
+}
+:is(.pill,.timeframe,.series-chip,.strategy-tab-link,.badge) { border-radius: 5px !important; }
+.hero-card { transform: none; }
+
+body { font-size: 14px; line-height: 1.55; letter-spacing: 0; }
+.hero h1 { font-size: clamp(38px, 5vw, 56px); line-height: 1.05; letter-spacing: -.035em; }
+.hero p { font-size: 16px; }
+.page-title h1 { font-size: 28px; letter-spacing: -.03em; }
+.section-head h2 { font-size: 26px; letter-spacing: -.03em; }
+.eyebrow { font-size: 11px; letter-spacing: .14em; }
+.card h3 { letter-spacing: -.015em; }
+.kpi strong, .price strong { font-variant-numeric: tabular-nums; }
+:is(td, th, .kpi, .price, .tabular) { font-variant-numeric: tabular-nums; }
+.price strong { font-size: 30px; letter-spacing: -.03em; }
+.button { font-weight: 600; font-size: 13px; padding: 9px 15px; }
+
+html:root .button.primary,
+html:root .button.primary:hover,
+html:root .portfolio-shell .button.primary,
+html:root .portfolio-shell .button.primary:hover,
+html:root[data-theme="light"] .button.primary {
+  position: relative; overflow: hidden;
+  color: var(--mi-on-accent); border: 0; background: var(--mi-grad);
+  box-shadow: 0 6px 18px -8px rgba(124,140,255,.7);
+}
+html:root[data-theme="light"] .button.primary { color: #fff; background: linear-gradient(135deg, #3446c4, #0b7a5e); }
+.button { transition: transform var(--motion-fast, .16s) ease, background var(--motion-fast, .16s) ease, border-color var(--motion-fast, .16s) ease; }
+.button:hover { transform: translateY(-1px); }
+.card, .kpi, .glass { box-shadow: var(--mi-shadow); border-color: var(--mi-border); }
+.card, .price { transition: border-color .2s ease, transform .2s ease; }
+.card:hover, .price:hover { border-color: var(--mi-border-strong); }
+:is(.eyebrow, .brand-mark) { color: var(--mi-indigo); }
+.brand-mark { border-radius: 7px; background: var(--mi-grad); box-shadow: none; }
+
+/* ---------- 3. Motion (no opacity entrance animations) ---------- */
+@keyframes mi-sheen { 0%{transform:translateX(-140%)} 55%,100%{transform:translateX(260%)} }
+@keyframes mi-pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+@keyframes mi-draw { from{stroke-dashoffset:var(--mi-len,1200)} to{stroke-dashoffset:0} }
+html:root .button.primary::after {
+  content:""; position:absolute; top:0; bottom:0; left:0; width:38%; pointer-events:none;
+  transform: translateX(-140%);
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.38), transparent);
+  animation: mi-sheen 6s ease-in-out infinite;
+}
+.status-dot { animation: mi-pulse 2.6s ease-in-out infinite; }
+.performance-chart path[stroke]:not([fill]):first-of-type,
+.performance-chart polyline { stroke-dasharray: var(--mi-len,1200); animation: mi-draw 2.2s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:root .button.primary::after, .status-dot,
+  .performance-chart path, .performance-chart polyline { animation: none !important; }
+  .button:hover, .card:hover, .price:hover { transform: none; }
+}
+
+/* Sidebar group labels sit on the darker rail; keep them AA-readable. */
+html:root .nav-label { color: var(--mi-subtle); }
+html:root .customer-workspace-shell > .sidebar .nav-label { color: var(--mi-subtle); }
