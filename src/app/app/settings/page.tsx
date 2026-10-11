@@ -8,7 +8,9 @@ import { StorePurchase } from "@/components/StorePurchase";
 import { manageSubscriptionUrl,platformFromUserAgent,productsForPlatform,storeName } from "@/domain/store-products";
 import { headers } from "next/headers";
 
-export default async function SettingsPage(){
+export default async function SettingsPage({searchParams}:{searchParams:Promise<{plan?:string}>}){
+  const params=await searchParams;
+  const preferredPlanSlug=typeof params.plan==="string"&&/^[a-z][a-z0-9-]{0,59}$/.test(params.plan)?params.plan:undefined;
   const user=await requirePageUser();
   const [mfaEnabled,entitlements]=await Promise.all([isMfaEnabled(user.id),loadEntitlements(user.id)]);
   const userAgent=(await headers()).get("user-agent");
@@ -22,7 +24,7 @@ export default async function SettingsPage(){
   const activeRows=await sql.unsafe("SELECT count(*)::int AS count FROM strategy_instances WHERE user_id=$1 AND status='ACTIVE'",[user.id]);
   const activeStrategyCount=Number(activeRows[0]?.count??0);
   const priceRows=await sql.unsafe(
-    "SELECT p.slug,p.display_name,p.max_active_strategies,p.entitlements,pp.currency,pp.cadence,pp.amount_minor FROM plan_prices pp JOIN plans p ON p.id=pp.plan_id WHERE pp.active=true AND p.visible=true AND p.archived=false AND p.slug<>'free' ORDER BY p.sort_order,pp.currency,pp.cadence"
+    "SELECT p.slug,p.display_name,p.max_active_strategies,p.entitlements,p.marketing,pp.currency,pp.cadence,pp.amount_minor FROM plan_prices pp JOIN plans p ON p.id=pp.plan_id WHERE pp.active=true AND pp.stripe_price_id IS NOT NULL AND p.payment_methods ? 'STRIPE' AND p.visible=true AND p.archived=false AND p.slug<>'free' ORDER BY p.sort_order,pp.currency,pp.cadence"
   );
   const prices=priceRows.map((p:any)=>({
     planSlug:String(p.slug),
@@ -31,7 +33,8 @@ export default async function SettingsPage(){
     cadence:String(p.cadence) as "MONTHLY"|"ANNUAL",
     amountMinor:Number(p.amount_minor),
     maxActiveStrategies:p.max_active_strategies==null?null:Number(p.max_active_strategies),
-    entitlements:(p.entitlements??{}) as Record<string,unknown>
+    entitlements:(p.entitlements??{}) as Record<string,unknown>,
+    featured:p.marketing?.featured===true
   }));
   const billedBy=String(plan?.source??"STRIPE");
   const storeBilled=billedBy!=="STRIPE"&&!["FREE","CANCELED"].includes(String(plan?.status??"FREE"));
@@ -54,7 +57,7 @@ export default async function SettingsPage(){
         {plan?.current_period_end&&paidSubscription&&<p className="help">Current billing period runs to {new Date(plan.current_period_end).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.</p>}
         {storeBilled&&<p className="help">Your subscription is billed through the {storeName(billedBy)}. Change or cancel it there{platform?<> (<a href={manageSubscriptionUrl(platform)} target="_blank" rel="noreferrer">manage subscription</a>)</>:null}.</p>}
         {!storeBilled&&!canPurchase&&platform&&storeKey&&storeProducts.length>0&&!paidSubscription?<StorePurchase apiKey={storeKey} userId={user.id} products={storeProducts} currentPlanSlug={currentPlanSlug} manageUrl={manageSubscriptionUrl(platform)}/>:null}
-        {!storeBilled&&canPurchase?<BillingButtons prices={prices} defaultCurrency={user.baseCurrency} currentPlanSlug={currentPlanSlug} paidSubscription={paidSubscription} activeStrategyCount={activeStrategyCount} currentMaxActiveStrategies={plan?.max_active_strategies==null?null:Number(plan.max_active_strategies)}/>:null}
+        {!storeBilled&&canPurchase?<BillingButtons prices={prices} preferredPlanSlug={preferredPlanSlug} defaultCurrency={user.baseCurrency} currentPlanSlug={currentPlanSlug} paidSubscription={paidSubscription} activeStrategyCount={activeStrategyCount} currentMaxActiveStrategies={plan?.max_active_strategies==null?null:Number(plan.max_active_strategies)}/>:null}
         {!storeBilled&&!canPurchase&&!(platform&&storeKey&&storeProducts.length>0&&!paidSubscription)&&<p className="help">{paidSubscription?"Your subscription is billed through the website. Sign in there to change or cancel it.":"Plans are managed on the website. Sign in there to subscribe, change or cancel."}</p>}
       </section>
       <section className="glass form-card">
