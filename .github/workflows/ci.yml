@@ -20,7 +20,7 @@ jobs:
       postgres:
         # Mirror of the official Postgres image. Avoid Docker Hub unauthenticated rate limits
         # on ephemeral GitHub runners (toomanyrequests before tests even start).
-        image: public.ecr.aws/docker/library/postgres:16
+        image: postgres:16
         env:
           POSTGRES_USER: strategyos
           POSTGRES_PASSWORD: strategyos
@@ -63,7 +63,7 @@ jobs:
           # Exercise actual pg_dump under the backup-only credentials, not the owner.
           # Reuse the already-pulled service image; a second ECR tag often hits 429.
           docker run --rm --network host --env "PGPASSWORD=$BACKUP_DB_PASSWORD" \
-            public.ecr.aws/docker/library/postgres:16 \
+            postgres:16 \
             pg_dump -h 127.0.0.1 -U wealtharr_backup -d strategyos_test \
             --format=custom --no-owner --no-acl > /tmp/wealtharr-readonly-backup.pgcustom
           test -s /tmp/wealtharr-readonly-backup.pgcustom
