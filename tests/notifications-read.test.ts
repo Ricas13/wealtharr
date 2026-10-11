@@ -17,7 +17,7 @@ describe("notification read route",()=>{
     expect(route).toMatch(/export async function POST/);
     expect(route).not.toMatch(/export async function (GET|PUT|PATCH|DELETE)/);
     const updates=route.match(/UPDATE notifications[^"]*/g)??[];
-    expect(updates.length).toBe(2);
+    expect(updates.length).toBe(1);
     for(const update of updates)expect(update).toMatch(/user_id=\$1/);
   });
   it("maps auth, origin and validation failures to proper statuses",()=>{
@@ -43,5 +43,13 @@ describe("shell and settings wiring",()=>{
     const page=read("src/app/app/notifications/page.tsx");
     expect(page).not.toMatch(/UPDATE notifications/);
     expect(page).toContain("MarkAllReadButton");
+  });
+});
+
+describe("refreshed alerts surface again",()=>{
+  it("resets read_at when a recalculated notification changes its content",()=>{
+    const service=read("src/lib/action-service.ts");
+    expect(service).toMatch(/DO UPDATE SET read_at=CASE WHEN notifications\.action_id IS DISTINCT FROM EXCLUDED\.action_id/);
+    expect(service).toContain("THEN NULL ELSE notifications.read_at END");
   });
 });

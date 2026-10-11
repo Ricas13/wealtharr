@@ -4,26 +4,15 @@ import { sql } from "@/lib/db";
 import { assertSameOrigin } from "@/lib/security";
 import { authFailure } from "@/lib/api-auth";
 
-const schema=z.union([
-  z.object({all:z.literal(true)}).strict(),
-  z.object({ids:z.array(z.string().uuid()).min(1).max(100)}).strict()
-]);
+const schema=z.object({all:z.literal(true)}).strict();
 
-// Marks the caller's own notifications as read. The Activity page shows one row per action
-// (DISTINCT ON COALESCE(action_id,id)), so a row id marks its whole group.
+// Marks all of the caller's own notifications as read. Always scoped by user_id.
 export async function POST(request:Request){
   try{
     assertSameOrigin(request);
     const user=await requireUser();
-    const input=schema.parse(await request.json());
-    if("all" in input){
-      await sql.unsafe("UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL",[user.id]);
-    }else{
-      await sql.unsafe(
-        "UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL AND COALESCE(action_id,id) IN (SELECT COALESCE(action_id,id) FROM notifications WHERE user_id=$1 AND id=ANY($2::uuid[]))",
-        [user.id,input.ids]
-      );
-    }
+    schema.parse(await request.json());
+    await sql.unsafe("UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL",[user.id]);
     return Response.json({ok:true});
   }catch(error){
     const denied=authFailure(error);

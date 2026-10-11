@@ -158,5 +158,5 @@ export function TelegramForm({connected,allowed}:{connected:boolean;allowed:bool
 
 export function SignOutButton(){
   const[busy,setBusy]=useState(false);
-  return <button className="button" type="button" disabled={busy} onClick={async()=>{setBusy(true);await signOut({callbackUrl:"/"});}}>Sign out</button>;
+  return <button className="button" type="button" disabled={busy} onClick={async()=>{setBusy(true);try{await signOut({callbackUrl:"/"});}catch{setBusy(false);}}}>Sign out</button>;
 }

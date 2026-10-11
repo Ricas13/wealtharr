@@ -2372,5 +2372,11 @@ html[data-theme="light"] .customer-workspace-shell .portfolio-strategies-workspa
 }
 
 /* Unread badge (token-based so it follows both themes) */
-.nav-badge { margin-left:auto; min-width:20px; padding:1px 6px; border-radius:999px; background:var(--accent); color:#06131b; font-size:11px; font-weight:800; line-height:18px; text-align:center; }
+.nav-badge { margin-left:auto; min-width:18px; padding:0 5px; border-radius:999px; background:var(--accent); color:#06131b; font-size:11px; font-weight:800; line-height:18px; text-align:center; }
 html[data-theme="light"] .nav-badge { color:#fff; }
+
+/* On phones the tab bar must not grow: overlay the badge on the icon instead. */
+@media (max-width:680px) {
+  .customer-workspace-shell > .sidebar .nav-link { position:relative; }
+  .customer-workspace-shell > .sidebar .nav-badge { position:absolute; top:2px; left:calc(50% + 4px); margin:0; min-width:16px; padding:0 4px; font-size:10px; line-height:14px; }
+}
