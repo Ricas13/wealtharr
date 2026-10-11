@@ -49,7 +49,6 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const [error,setError]=useState(false);
- const count=initialPlans.filter(p=>p.slug!=="free"&&p.visible&&!p.archived).length;
  const published=initialPlans.filter(p=>p.visible&&!p.archived).length;
  function choose(slug:string) {
   setSelection(slug);setMessage("");setError(false);
@@ -92,7 +91,6 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
   } catch (e) {setError(true);setMessage(e instanceof Error?e.message:"Could not save the plan.");}
   finally {setBusy(false);}
  }
- const newBlocked=false;
  const canPublish=!form.archived&&(form.visible||published<5);
  const perks=form.marketing.benefits.length?form.marketing.benefits:[form.maxActiveStrategies===null?
     "Unlimited active strategies":String(form.maxActiveStrategies)+" active strategies"];
@@ -165,8 +163,7 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    {form.availableStrategyKeys.length>0&&<div className="form-grid">{strategies.map(s=><label className="toggle-row" key={s.key}><input type="checkbox" checked={form.availableStrategyKeys.includes(s.key)} onChange={()=>toggleStrategy(s.key)}/>{s.name}{s.enabled?"":" (disabled)"}</label>)}</div>}
    <p className="help">Existing subscriptions are rechecked when entitlements change; incompatible active strategies are paused without rewriting the investment ledger.</p>
   </div>}
-  <div style={{marginTop:22}}><button type="submit" className="button primary" disabled={busy||newBlocked}>{busy?"Saving…":"Save plan configuration"}</button>
-   {newBlocked&&<p className="error">Plan creation unavailable.</p>}
+  <div style={{marginTop:22}}><button type="submit" className="button primary" disabled={busy}>{busy?"Saving…":"Save plan configuration"}</button>
    {message&&<p role="status" className={error?"error":"help"}>{message}</p>}
   </div>
  </form>;
