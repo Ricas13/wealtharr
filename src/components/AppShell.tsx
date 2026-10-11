@@ -12,7 +12,7 @@ export function AppShell({children,isAdmin=false,strategyTabs=[]}:{children:Reac
     <PortfolioNavigation isAdmin={isAdmin}/>
     <div className="portfolio-app-actions">
      <ThemeToggle/>
-     <Link href="/app/strategies/new" className="button primary compact portfolio-add-button"><Plus size={16} aria-hidden="true"/><span>Add strategy</span></Link>
+     <Link href="/app/strategies/new" aria-label="Add strategy" className="button primary compact portfolio-add-button"><Plus size={16} aria-hidden="true"/><span>Add strategy</span></Link>
     </div>
    </div>
   </header>

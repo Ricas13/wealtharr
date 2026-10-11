@@ -84,23 +84,23 @@ test.describe("on a phone",()=>{
     expect(await page.getByLabel("Email").evaluate((n)=>parseFloat(getComputedStyle(n).fontSize))).toBeGreaterThanOrEqual(16);
   });
 
-  test("signed-in navigation is a bottom tab bar clear of the screen edge",async({page},testInfo)=>{
+  test("signed-in navigation is a thumb-sized horizontal top bar without page overflow",async({page},testInfo)=>{
     await signIn(page,await createUser(testInfo));
-    const bar=page.locator(".app-shell > .sidebar");
+    const bar=page.getByRole("navigation",{name:"Primary"});
     await expect(bar).toBeVisible();
-    const position=await bar.evaluate((n)=>{const r=n.getBoundingClientRect();const s=getComputedStyle(n);return {position:s.position,bottomGap:Math.round(innerHeight-r.bottom),top:r.top,height:r.height};});
-    expect(position.position).toBe("fixed");
-    expect(position.bottomGap).toBe(0);
-    expect(position.top).toBeGreaterThan(300);
-    for(const link of await bar.locator(".nav-link").all()){
+    const header=page.locator(".portfolio-app-header");
+    await expect(header).toBeVisible();
+    const position=await header.evaluate((n)=>{const r=n.getBoundingClientRect();const s=getComputedStyle(n);return {position:s.position,top:r.top,bottom:r.bottom};});
+    expect(position.position).not.toBe("fixed");
+    expect(position.top).toBeGreaterThanOrEqual(0);
+    for(const link of await bar.locator(".portfolio-primary-link").all()){
       const box=(await link.boundingBox())!;
       expect(box.height).toBeGreaterThanOrEqual(43.5);
     }
-    // Content is not hidden behind the bar: the last element can scroll above it.
-    const content=page.locator(".app-shell");
-    expect(await content.evaluate((n)=>parseFloat(getComputedStyle(n).paddingBottom))).toBeGreaterThanOrEqual(60);
+    // On small screens the navigation alone may scroll horizontally, not the page.
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+    await expect(page.getByRole("link",{name:"Start my first strategy"})).toBeVisible();
   });
 });
 

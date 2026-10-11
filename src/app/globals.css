@@ -1696,7 +1696,7 @@ html[data-theme="light"] .admin-workspace-shell .field textarea{
 }
 html[data-theme="light"] .app-shell.portfolio-shell{
  --pf-bg:#f6f8fc;--pf-surface:#fff;--pf-surface-hover:#f7f9fd;--pf-text:#202c40;
- --pf-muted:#56657c;--pf-soft:#65748a;--pf-border:#dce4ee;--pf-primary:#315eb7;
+ --pf-muted:#56657c;--pf-soft:#5a697d;--pf-border:#dce4ee;--pf-primary:#315eb7;
  --pf-positive:#126b56;--pf-negative:#b1324b;--pf-header:#fff;
  --text:var(--pf-text);--muted:var(--pf-muted);--line:var(--pf-border);
  color:var(--pf-text);background:var(--pf-bg);
@@ -1836,7 +1836,7 @@ html[data-theme="light"] .app-shell.portfolio-shell{
  .portfolio-app-brand,.portfolio-app-actions{min-height:56px}
  .portfolio-app-actions{margin-left:auto}
  .portfolio-primary-navigation{flex:0 0 100%;order:3;min-height:42px;overflow-x:auto;scrollbar-width:thin}
- .portfolio-primary-link{min-height:42px}
+ .portfolio-primary-link{min-height:46px}
  .portfolio-admin-link{margin-left:0}
  .portfolio-subbar-inner{padding:0 16px}
  .portfolio-dashboard-columns{grid-template-columns:1fr}
@@ -1867,3 +1867,20 @@ html[data-theme="light"] .app-shell.portfolio-shell{
  .portfolio-shell .app-content.portfolio-content{width:calc(100% - 24px);padding-top:19px}
 }
 @media(prefers-reduced-motion:reduce){.portfolio-primary-link{transition:none}}
+
+/* Preserve WCAG AA contrast on legacy strategy-detail widgets within the new workbench. */
+html[data-theme="light"] .portfolio-shell .back-link,
+html[data-theme="light"] .portfolio-shell .strategy-heading p{
+ color:var(--pf-muted);
+}
+html[data-theme="light"] .portfolio-shell .strategy-heading .eyebrow{
+ color:var(--pf-primary);
+}
+html[data-theme="light"] .portfolio-shell .pill.warn,
+html[data-theme="light"] .portfolio-shell .recovery-banner-copy strong{
+ color:#714c12;
+}
+html[data-theme="light"] .portfolio-shell .pill.warn{
+ background:#fff1cf;border-color:#c4a467;
+}
+.portfolio-onboarding-disclosure{font-weight:700;font-size:12px}

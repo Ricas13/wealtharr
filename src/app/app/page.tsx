@@ -109,9 +109,9 @@ export default async function OverviewPage(){
       <section className="portfolio-new-account-state">
        <div className="portfolio-welcome-symbol" aria-hidden="true"><Sparkles size={24}/></div>
        <span className="portfolio-welcome-kicker">WELCOME TO WEALTHARR</span>
-       <h2>Your portfolio starts here.</h2>
-       <p>Add a strategy to begin tracking holdings, real contributions, review dates and performance. We will never invent prices or automatically execute trades.</p>
-       <div className="portfolio-welcome-buttons"><Link className="button primary" href="/app/strategies/new"><Plus size={16}/>Add first strategy</Link><Link className="button" href="/app/community">Explore strategies</Link></div>
+       <h2>Start with one simple decision.</h2>
+       <p>Add a strategy to begin tracking holdings, real contributions, review dates and performance. We will never invent prices or automatically execute trades.</p><p className="portfolio-onboarding-disclosure">No trading is performed automatically.</p>
+       <div className="portfolio-welcome-buttons"><Link className="button primary" href="/app/strategies/new"><Plus size={16}/>Start my first strategy</Link><Link className="button" href="/app/community">Explore strategies</Link></div>
       </section>
       <div className="portfolio-onboarding-grid">
        <div><span>01</span><strong>Choose a strategy</strong><p>Start a new investment plan or import a current position.</p></div>
