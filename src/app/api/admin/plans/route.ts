@@ -33,7 +33,7 @@ const schema=z.object({
  trialDays:z.number().int().nonnegative().max(365).default(0),
  visible:z.boolean().default(false),archived:z.boolean().default(false),
  sortOrder:z.number().int().default(0),
- marketing:marketing.default({}),
+ marketing:marketing.default({title:"",subtitle:"",badge:"",cta:"Choose plan",benefits:[],featured:false}),
  paymentMethods:z.array(z.enum(["STRIPE","PAYPAL"])).max(2).default(["STRIPE"])
 });
 export async function PUT(request:Request) {
