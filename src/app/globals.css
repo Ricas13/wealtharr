@@ -1689,7 +1689,7 @@ html[data-theme="light"] .admin-workspace-shell .field textarea{
    Scoped to signed-in customer UI so public pages and admin keep their own identities. */
 .app-shell.portfolio-shell{
  --pf-bg:#101622;--pf-surface:#1c2331;--pf-surface-hover:#232d3f;--pf-text:#f2f5ff;
- --pf-muted:#a3b0c5;--pf-soft:#8494ac;--pf-border:#343d50;--pf-primary:#4b7be4;
+ --pf-muted:#a3b0c5;--pf-soft:#8494ac;--pf-border:#343d50;--pf-primary:#9cbdff;
  --pf-positive:#4bd1aa;--pf-negative:#ff9ca8;--pf-header:#171e2c;
  --text:var(--pf-text);--muted:var(--pf-muted);--line:var(--pf-border);
  display:block;min-height:100vh;background:var(--pf-bg);color:var(--pf-text);padding-bottom:0;
