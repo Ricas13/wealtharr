@@ -2072,3 +2072,27 @@ html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-status.i
  .app-shell.admin-workspace-shell .admin-design-kpi{transition:none}
 }
 
+
+
+/* Shared finishing touches for legacy tabs and full-width commerce/customer pages. */
+.admin-three-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+.admin-customer-panel{margin-top:17px}
+.admin-customer-search{display:block;max-width:310px;flex:0 1 310px}
+.app-shell.admin-workspace-shell .admin-customer-search input{min-width:0;width:100%;padding:10px 12px;font-size:11.5px}
+.admin-commerce-prices,.admin-commerce-editor{margin-top:16px}
+.app-shell.admin-workspace-shell .admin-advanced-workflow.admin-commerce-editor{margin-top:17px}
+.app-shell.admin-workspace-shell .table-wrap{border-color:var(--ac-border);border-radius:13px;background:var(--ac-surface)}
+.app-shell.admin-workspace-shell table:not(.admin-studio-table){border-collapse:collapse;color:var(--ac-text);min-width:590px}
+.app-shell.admin-workspace-shell table:not(.admin-studio-table) th{
+ padding:13px 14px;background:var(--ac-surface-2);color:var(--ac-subtle);font-size:10px;letter-spacing:.06em;font-weight:800;
+}
+.app-shell.admin-workspace-shell table:not(.admin-studio-table) td{padding:13px 14px;border-color:var(--ac-border);font-size:12px;color:var(--ac-text)}
+.app-shell.admin-workspace-shell .why-row{border-color:var(--ac-border)}
+.app-shell.admin-workspace-shell .form-card .field label{font-size:12px;color:var(--ac-text)}
+.app-shell.admin-workspace-shell .pill{border-color:var(--ac-border);color:var(--ac-muted)}
+.app-shell.admin-workspace-shell .pill.good{color:var(--ac-positive)}
+.app-shell.admin-workspace-shell .pill.warn{color:var(--ac-warning)}
+.app-shell.admin-workspace-shell .pill.bad{color:var(--ac-danger)}
+@media(max-width:1000px){.admin-three-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.admin-three-kpis{grid-template-columns:1fr 1fr}.admin-customer-panel .admin-design-panel-header{flex-direction:column}.admin-customer-search{max-width:none;width:100%;flex:auto}}
+
