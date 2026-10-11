@@ -43,8 +43,15 @@ dc exec -T app node -e '
     .catch(e=>{console.error(e.message);process.exit(1)});
 '
 dc --profile maintenance run --rm maintenance npm run db:verify-roles
-if dc port db 5432 >/dev/null 2>&1; then
-  echo "FAIL: PostgreSQL unexpectedly has a published host port" >&2; exit 4;
+# Compose 'port' exit status is not a reliable published-port test: on some
+# Compose versions it succeeds even when db only exposes 5432/tcp internally.
+# Inspect the running container's actual host bindings instead; internal
+# container-only TCP exposures have empty/null port-binding collections.
+db_id=$(dc ps -q db)
+[ -n "$db_id" ] || { echo "FAIL: Database container missing" >&2; exit 4; }
+db_host_bindings=$(docker inspect --format '{{range $port, $bindings := .NetworkSettings.Ports}}{{range $bindings}}{{.HostIp}}:{{.HostPort}} {{end}}{{end}}' "$db_id")
+if [ -n "$db_host_bindings" ]; then
+  echo "FAIL: PostgreSQL unexpectedly has a published host port: $db_host_bindings" >&2; exit 4;
 fi
 echo "OK: PostgreSQL has no published host port"
 echo "Automated smoke checks finished. Manual: verify external IP denial, backup restore, admin persistence, provider delivery and rollback."

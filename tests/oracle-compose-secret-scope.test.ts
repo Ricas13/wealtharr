@@ -51,6 +51,14 @@ describe("Oracle Compose scheduler boundary",()=>{
     expect(overlay).not.toContain("0.0.0.0:3001");
     expect(overlay).not.toContain("strategyos_db:");
   });
+  it("smoke-checks actual database host bindings, not the Compose port command exit code",()=>{
+    const script=readFileSync("scripts/verify-private-staging.sh","utf8");
+    expect(script).toContain("db_id=$(dc ps -q db)");
+    expect(script).toContain("docker inspect --format");
+    expect(script).toContain(".NetworkSettings.Ports");
+    expect(script).toContain("db_host_bindings");
+    expect(script).not.toMatch(/^if dc port db 5432/m);
+  });
   it("keeps the database private and the application as the only service with the application env file",()=>{
     const config=readFileSync("docker-compose.oracle.yml","utf8");
     expect(config.match(/env_file:/g)?.length).toBe(1);
