@@ -15,7 +15,8 @@ describe("public landing and plan publication boundaries",()=>{
  it("loads public prices from active plan-price rows and hides unpublished plans",()=>{
   const plans=source("src/lib/public-plans.ts");
   expect(plans).toContain("p.visible=true AND p.archived=false");
-  expect(plans).toContain("pp.active=true");
+  expect(plans).toContain("monthly.active=true");
+  expect(plans).toContain("annual.active=true");
   expect(plans).toContain("LIMIT 5");
   expect(plans).not.toContain("Math.random(");
   const home=source("src/app/page.tsx");
