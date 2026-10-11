@@ -29,7 +29,7 @@ export function PublicPlanCards({ plans }: { plans: PublicPlan[] }) {
           <h3>{plan.marketing.title}</h3>
           <p className="landing-price-description">{plan.marketing.subtitle}</p>
           <div className="landing-price-value">
-            {priceAvailable ? money(value, plan.currency) : "Unavailable"}
+            {priceAvailable ? money(value ?? 0, plan.currency) : "Unavailable"}
             {priceAvailable && <small>/{cadence === "monthly" ? "mo" : "yr"}</small>}
           </div>
           <p className="landing-price-footnote">{free ? "No payment required" : priceAvailable && cadence === "monthly" && plan.annualMinor !== null ? "Annual billing also available" : priceAvailable ? "Billed " + (cadence === "annual" ? "annually" : "monthly") : "This billing period is not configured"}</p>

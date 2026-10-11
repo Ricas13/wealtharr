@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 
 export type PublicStrategy = {
@@ -47,7 +47,7 @@ export function StrategyMarquee({ strategies }: { strategies: PublicStrategy[] }
   }, [strategies.length]);
 
   const dragging = useRef<{ x: number; original: number; id: number } | null>(null);
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     dragging.current = { x: event.clientX, original: controlRef.current.target, id: event.pointerId };
     event.currentTarget.setPointerCapture(event.pointerId);

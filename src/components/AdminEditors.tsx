@@ -144,7 +144,7 @@ export function PlanPriceEditor(){
   const {submit,message}=useAdminSubmit("/api/admin/plan-prices");
   return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({
     planSlug:f.get("planSlug"),currency:String(f.get("currency")).toUpperCase(),cadence:f.get("cadence"),
-    amountMinor:Math.round(Number(f.get("amount"))*100),stripePriceId:f.get("stripePriceId")||null,appleProductId:f.get("appleProductId")||null,googleProductId:f.get("googleProductId")||null,active:Boolean(f.get("active"))
+    amountMinor:Math.round(Number(f.get("amount"))*100),stripePriceId:f.get("stripePriceId")||null,paypalPlanId:f.get("paypalPlanId")||null,appleProductId:f.get("appleProductId")||null,googleProductId:f.get("googleProductId")||null,active:Boolean(f.get("active"))
   });}}>
     <h3>Plan price by currency</h3><div className="form-grid">
       <Field label="Plan slug"><input name="planSlug" placeholder="investor" required/></Field>
@@ -152,6 +152,7 @@ export function PlanPriceEditor(){
       <Field label="Cadence"><select name="cadence"><option>MONTHLY</option><option>ANNUAL</option></select></Field>
       <Field label="Amount"><input name="amount" type="number" min="0" step="0.01" required/></Field>
       <Field className="field full" label="Stripe Price ID"><input name="stripePriceId" placeholder="price_..."/></Field>
+      <Field className="field full" label="PayPal Plan ID (staging only — no checkout yet)"><input name="paypalPlanId" placeholder="P-..."/></Field>
       <Field label="App Store product ID"><input name="appleProductId" placeholder="com.example.pro.monthly"/></Field>
       <Field label="Google Play product ID"><input name="googleProductId" placeholder="pro_monthly"/></Field>
       <div className="field"><label><input name="active" type="checkbox" defaultChecked/> Active</label></div>

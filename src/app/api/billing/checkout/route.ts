@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     const currency = (input.currency ?? user.baseCurrency).toUpperCase();
     const cadence = input.cadence.toUpperCase();
     const priceRows = await sql.unsafe(
-      "SELECT p.id,pp.stripe_price_id,pp.amount_minor,pp.currency FROM plans p JOIN plan_prices pp ON pp.plan_id=p.id WHERE p.slug=$1 AND p.slug<>\'free\' AND p.archived=false AND p.visible=true AND pp.currency=$2 AND pp.cadence=$3 AND pp.active=true AND pp.amount_minor>0 LIMIT 1",
+      "SELECT p.id,pp.stripe_price_id,pp.amount_minor,pp.currency FROM plans p JOIN plan_prices pp ON pp.plan_id=p.id WHERE p.slug=$1 AND p.slug<>\'free\' AND p.archived=false AND p.visible=true AND p.payment_methods ? 'STRIPE' AND pp.currency=$2 AND pp.cadence=$3 AND pp.active=true AND pp.amount_minor>0 LIMIT 1",
       [input.planSlug, currency, cadence]
     );
     const price = priceRows[0];

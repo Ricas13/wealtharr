@@ -10,6 +10,7 @@ const schema=z.object({
   cadence:z.enum(["MONTHLY","ANNUAL"]),
   amountMinor:z.number().int().nonnegative(),
   stripePriceId:z.string().nullable().optional(),
+  paypalPlanId:z.string().trim().max(200).regex(/^[A-Za-z0-9-]+$/).nullable().optional(),
   appleProductId:z.string().trim().max(200).regex(/^[A-Za-z0-9._-]+$/).nullable().optional(),
   googleProductId:z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/).nullable().optional(),
   active:z.boolean().default(true)
@@ -36,9 +37,9 @@ export async function PUT(request:Request){
           [p.stripePriceId,plans[0].id,p.currency.toUpperCase(),p.cadence,p.amountMinor]);
       }
       await tx.unsafe(
-      "INSERT INTO plan_prices (plan_id,currency,cadence,amount_minor,stripe_price_id,active,apple_product_id,google_product_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"+
-      " ON CONFLICT (plan_id,currency,cadence) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,stripe_price_id=EXCLUDED.stripe_price_id,active=EXCLUDED.active,apple_product_id=EXCLUDED.apple_product_id,google_product_id=EXCLUDED.google_product_id,updated_at=now()",
-      [plans[0].id,p.currency.toUpperCase(),p.cadence,p.amountMinor,p.stripePriceId??null,p.active,p.appleProductId||null,p.googleProductId||null]
+      "INSERT INTO plan_prices (plan_id,currency,cadence,amount_minor,stripe_price_id,active,apple_product_id,google_product_id,paypal_plan_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)"+
+      " ON CONFLICT (plan_id,currency,cadence) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,stripe_price_id=EXCLUDED.stripe_price_id,active=EXCLUDED.active,apple_product_id=EXCLUDED.apple_product_id,google_product_id=EXCLUDED.google_product_id,paypal_plan_id=EXCLUDED.paypal_plan_id,updated_at=now()",
+      [plans[0].id,p.currency.toUpperCase(),p.cadence,p.amountMinor,p.stripePriceId??null,p.active,p.appleProductId||null,p.googleProductId||null,p.paypalPlanId||null]
     );
       await tx.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'plan-price.upsert','plan',$2,$3::jsonb)",[admin.id,p.planSlug,JSON.stringify({currency:p.currency.toUpperCase(),cadence:p.cadence})]);
     });
