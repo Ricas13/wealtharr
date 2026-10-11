@@ -74,7 +74,7 @@ export function StrategyMarquee({ strategies }: { strategies: PublicStrategy[] }
         <button type="button" aria-label="Next strategies" onClick={() => nudge(1)}>→</button>
       </div>
     </div>
-    <div className="landing-marquee-window" ref={viewportRef} tabIndex={0}
+    <div className="landing-marquee-window" ref={viewportRef} tabIndex={0} role="region"
       aria-label="Strategy catalogue, continuously scrolling. Use left and right arrow keys or swipe."
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}
       onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); nudge(event.key === "ArrowLeft" ? -1 : 1); } }}>
