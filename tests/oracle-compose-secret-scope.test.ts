@@ -44,6 +44,13 @@ describe("Oracle Compose scheduler boundary",()=>{
     expect(maintenance).toContain("BACKUP_DB_PASSWORD:");
     expect(maintenance).not.toContain("ports:");
   });
+  it("preserves the existing reverse-proxy loopback port without publishing the base 3000 port",()=>{
+    const overlay=readFileSync("docker-compose.oracle-localhost3001.yml","utf8");
+    expect(overlay).toContain("ports: !override");
+    expect(overlay).toContain("127.0.0.1:3001:3000");
+    expect(overlay).not.toContain("0.0.0.0:3001");
+    expect(overlay).not.toContain("strategyos_db:");
+  });
   it("keeps the database private and the application as the only service with the application env file",()=>{
     const config=readFileSync("docker-compose.oracle.yml","utf8");
     expect(config.match(/env_file:/g)?.length).toBe(1);

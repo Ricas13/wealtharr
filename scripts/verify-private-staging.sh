@@ -7,7 +7,11 @@ set -eu
   echo "FAIL: deployed checkout does not match reviewed commit" >&2; exit 2;
 }
 [ -r .env.production ] || { echo "FAIL: .env.production missing" >&2; exit 2; }
-dc() { docker compose --env-file .env.production -f docker-compose.oracle.yml -f docker-compose.traefik.yml "$@"; }
+# Use the tracked localhost 3001 overlay when upgrading an existing host-proxy
+# installation; otherwise default to the direct Traefik container overlay.
+overlay="${WEALTHARR_COMPOSE_OVERLAY:-docker-compose.traefik.yml}"
+[ -r "$overlay" ] || { echo "FAIL: Compose overlay does not exist" >&2; exit 2; }
+dc() { docker compose --env-file .env.production -f docker-compose.oracle.yml -f "$overlay" "$@"; }
 dc config --quiet
 for service in db app scheduler; do
   id=$(dc ps -q "$service")

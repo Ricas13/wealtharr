@@ -89,6 +89,42 @@ Read the one-time setup code privately from the app log. Open
 `https://wealtharr.vpn4u.cc/setup`, create the first administrator, then sign in
 and open `/admin/configuration`. Enrol administrator MFA before enforcing it.
 
+## Existing Oracle host using loopback port 3001
+
+On the current Oracle host, running project `wealtharr` uses
+`/opt/wealtharr/docker-compose.staging.yml` (an untracked local file)
+and publishes **127.0.0.1:3001:3000**, rather than joining the external
+`media_net` Traefik network. The tracked compatibility overlay
+`docker-compose.oracle-localhost3001.yml` is explicitly tested to preserve
+this binding. It replaces the base 3000 mapping via `!override` and does
+not change the database volume name or internal network.
+
+**Do not combine this overlay with the untracked old staging file**, and do
+not run either the fresh-install compose pair or the direct container
+Traefik overlay against the existing running project. Review the local file
+for any settings not already in `.env.production` before switching.
+For this host the `dc` helper should be:
+
+```sh
+dc() { docker compose --env-file .env.production -f docker-compose.oracle.yml -f docker-compose.oracle-localhost3001.yml "$@"; }
+```
+
+First take a database dump and secure environment backup, preserve the
+previous app image, provision the new database roles through `maintenance`,
+and verify the final rendered Compose configuration has **only** port
+`127.0.0.1:3001` and existing project/volume identity. Do not start the
+new app if any check fails. The host-level reverse proxy is outside this
+repository: its forwarding and private-access policy must be inspected
+and tested from both allowed and disallowed networks before acceptance.
+
+After deployment, the host smoke-test command is:
+
+```sh
+WEALTHARR_COMPOSE_OVERLAY=docker-compose.oracle-localhost3001.yml \
+EXPECTED_RELEASE_SHA='<reviewed-exact-green-CI-SHA>' \
+sh scripts/verify-private-staging.sh
+```
+
 ## Existing installation: safe credential cutover
 
 **Do not run the fresh bootstrap block again on an existing Wealtharr installation.**
