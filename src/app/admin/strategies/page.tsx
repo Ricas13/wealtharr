@@ -54,8 +54,8 @@ export default async function StrategiesAdmin(){
  }) as CatalogEntry[];
  const published=versions.filter(v=>v.lifecycle_status==="PUBLISHED").length;
  return <div className="admin-strategy-workspace">
-  <div className="page-title admin-page-head"><div><div className="eyebrow">PRODUCT / STRATEGY LIBRARY</div>
-    <h1>Strategies</h1><p>Manage the entire library in one place, with a clear separation between research and customer-ready releases.</p></div>
+  <div className="page-title admin-page-head"><div><div className="eyebrow">PRODUCT / STRATEGY STUDIO</div>
+    <h1>Strategy Studio</h1><p>Manage, test, publish and review every investment method from one organised workspace.</p></div>
     <Link href="/admin/strategies/research" className="button">Evidence library ↗</Link>
   </div>
   <AdminStrategyInventory entries={entries}/>
