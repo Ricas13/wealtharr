@@ -17,7 +17,7 @@ export default async function AdminLayout({children}:{children:React.ReactNode})
   return <div className="app-shell admin-workspace-shell">
     <a className="skip-link" href="#admin-main-content">Skip to main content</a>
     <aside className="sidebar admin-workspace-sidebar"><AdminWorkspaceNav/></aside>
-    <main className="app-main admin-workspace-main" id="admin-main-content" tabIndex={-1}>
+    <main className="app-main admin-workspace-main" id="admin-main-content" aria-label="Wealtharr Master Admin" tabIndex={-1}>
       <header className="admin-workspace-topbar">
         <div><span className="admin-topbar-kicker">WEALTHARR / ADMIN</span><strong>Control centre</strong></div>
         <div className="admin-topbar-actions">
