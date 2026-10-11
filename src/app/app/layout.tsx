@@ -1,3 +1,4 @@
+import "./customer-dashboard.css";
 import { requirePageUser } from "@/lib/session";
 import { AppShell } from "@/components/AppShell";
 import { listUserStrategies } from "@/lib/strategy-service";
