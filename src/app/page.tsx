@@ -1,127 +1,118 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
+import { safeJsonLd, siteOrigin } from "@/lib/public-seo";
+import { loadPublicPlans } from "@/lib/public-plans";
+import type { PublicStrategy } from "@/components/StrategyMarquee";
+import { StrategyMarquee } from "@/components/StrategyMarquee";
+import { PublicPlanCards } from "@/components/PublicPlanCards";
+import "./landing.css";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  let aggregates: any[] = [];
-  let plans: any[] = [];
-
+  const brand = process.env.NEXT_PUBLIC_BRAND_NAME?.trim() || "Wealtharr";
+  const origin = siteOrigin(process.env.NEXT_PUBLIC_APP_URL).toString();
+  const plans = await loadPublicPlans().catch(() => []);
+  let strategies: PublicStrategy[] = [];
   try {
-    aggregates = await sql.unsafe(
-      "SELECT d.name,a.metric_key,a.value,a.sample_size,a.as_of_date FROM anonymous_aggregates a JOIN strategy_definitions d ON d.id=a.strategy_definition_id WHERE a.sample_size>=20 AND a.as_of_date=(SELECT max(as_of_date) FROM anonymous_aggregates) ORDER BY d.name,a.metric_key LIMIT 24"
+    const rows = await sql.unsafe(
+      "SELECT d.key,d.name,d.description,d.family,d.enabled," +
+      "EXISTS(SELECT 1 FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED') AS published " +
+      "FROM strategy_definitions d WHERE d.proprietary=false AND d.key NOT IN ('3sig','6sig','9sig','income-sig') ORDER BY " +
+      "CASE WHEN d.key='all-weather' THEN 0 WHEN d.key='60-40' THEN 1 WHEN d.key='golden-butterfly' THEN 2 " +
+      "WHEN d.key='permanent-portfolio' THEN 3 ELSE 4 END,d.name LIMIT 40"
     );
-    plans = await sql.unsafe(
-      "SELECT p.slug,p.display_name,p.billing_currency,CASE WHEN p.slug='free' THEN 0 ELSE pp.amount_minor END AS monthly_price_minor,p.max_active_strategies,p.entitlements FROM plans p LEFT JOIN plan_prices pp ON pp.plan_id=p.id AND pp.currency=p.billing_currency AND pp.cadence='MONTHLY' AND pp.active=true WHERE p.visible=true AND p.archived=false AND (p.slug='free' OR pp.amount_minor IS NOT NULL) ORDER BY p.sort_order"
-    );
+    strategies = rows.map(row => ({
+      key: String(row.key),
+      name: String(row.name).replace(/\s*—.*$/, "").replace(/\s*\(reference\)$/i, ""),
+      description: String(row.description || ""),
+      family: String(row.family),
+      available: Boolean(row.enabled && row.published)
+    }));
   } catch {
-    // Public financial/community data fails closed instead of rendering cached or invented values.
+    // Catalogues are not invented when the authoritative database is unavailable.
   }
-
-  const brand=process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr";
-  const origin=siteOrigin(process.env.NEXT_PUBLIC_APP_URL).toString();
-  const offeredPlan=plans.find(p=>p.monthly_price_minor!=null&&Number.isFinite(Number(p.monthly_price_minor))&&Number(p.monthly_price_minor)>=0&&/^[A-Z]{3}$/.test(String(p.billing_currency)));
-  const offer=offeredPlan?{offers:{"@type":"Offer",price:(Number(offeredPlan.monthly_price_minor)/100).toFixed(2),priceCurrency:String(offeredPlan.billing_currency)}}:{};
-  const schema={"@context":"https://schema.org","@graph":[{"@type":"WebSite","name":brand,"url":origin},{"@type":"SoftwareApplication","name":brand,"applicationCategory":"FinanceApplication","operatingSystem":"Web","url":origin,"description":"Rules-based portfolio tracker with holdings, user-selected strategies, market price references and scheduled investment review calculations.",...offer}]};
-  return <main>
-    <script type="application/ld+json" dangerouslySetInnerHTML={{__html:safeJsonLd(schema)}}/>
-    <div className="container">
-      <nav className="public-nav">
-        <Link href="/" className="brand"><span className="brand-mark"/>{brand}</Link>
-        <div className="nav-actions">
-          <Link className="nav-link" href="/features">Features</Link>
-          <Link className="nav-link" href="/strategies">Strategies</Link>
-          <Link className="nav-link" href="/pricing">Pricing</Link>
-          <Link className="nav-link" href="/faq">FAQ</Link>
-          <Link className="nav-link" href="/tools/rebalance-calculator">Calculator</Link>
-          <Link className="button" href="/demo">Explore demo</Link>
-          <Link className="button" href="/login">Sign in</Link>
-          <Link className="button primary" href="/register">Start free</Link>
+  const website = {"@context":"https://schema.org","@graph":[
+    {"@type":"WebSite","name":brand,"url":origin},
+    {"@type":"SoftwareApplication","name":brand,"applicationCategory":"FinanceApplication",
+      "operatingSystem":"Web","url":origin,
+      "description":"Tracks published investment strategy calculations, allocations and review reminders; does not place trades."}
+  ]};
+  return <main className="landing">
+    <script type="application/ld+json" dangerouslySetInnerHTML={{__html:safeJsonLd(website)}}/>
+    <nav className="landing-header">
+      <div className="landing-wrap" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20}}>
+        <Link className="landing-logo" href="/"><i aria-hidden="true">w</i>{brand}</Link>
+        <div className="landing-links">
+          <a href="#strategies">Explore strategies</a>
+          <a href="#how-it-works">How it works</a>
+          <Link href="/features">Features</Link>
+          {plans.length>0&&<a href="#plans">Pricing</a>}
         </div>
-        <details className="public-mobile-menu">
-          <summary>Menu</summary>
-          <div className="public-mobile-menu-panel">
-            <Link href="/features">Features</Link>
-            <Link href="/strategies">Strategies</Link>
-            <Link href="/pricing">Pricing</Link>
-            <Link href="/faq">FAQ</Link>
-            <Link href="/tools/rebalance-calculator">Calculator</Link>
-            <Link href="/demo">Explore demo</Link>
-            <Link href="/login">Sign in</Link>
-            <Link className="mobile-menu-primary" href="/register">Start free</Link>
-          </div>
-        </details>
-      </nav>
-
-      <section className="hero">
-        <div>
-          <div className="eyebrow">Rules-based investing, operationalised</div>
-          <h1>Know where you are. Know what comes next.</h1>
-          <p>Track the strategy you chose, reconcile it to reality, and turn complex rules into a transparent action queue. Wealtharr does not choose a strategy for you—it operates the rules you selected.</p>
-          <div className="inline" style={{marginTop:24}}>
-            <Link className="button primary" href="/register">Add your first strategy</Link>
-            <Link className="button" href="/demo">See fictional example</Link>
-          </div>
+        <div className="landing-header-actions">
+          <Link href="/login" className="landing-btn">Log in</Link>
+          <Link href="/register" className="landing-btn primary">Get started ↗</Link>
         </div>
-        <div className="hero-card">
-          <div className="pill good">EXAMPLE · Action required</div>
-          <h3 style={{fontSize:28,margin:"18px 0 8px"}}>9Sig — ISA</h3>
-          <div style={{fontSize:38,fontWeight:850,letterSpacing:"-.05em"}}>Buy £842</div>
-          <p>Fictional example only. A real action is accompanied by the exact inputs and rule calculation that generated it.</p>
-          <div className="kpi-grid">
-            <div className="kpi"><span>Health</span><strong>Healthy</strong></div>
-            <div className="kpi"><span>Review</span><strong>Today</strong></div>
-            <div className="kpi"><span>Confidence</span><strong>High</strong></div>
+        <details className="landing-mobile-nav"><summary>Menu</summary><div>
+          <a href="#strategies">Explore strategies</a><a href="#how-it-works">How it works</a>
+          <Link href="/features">Features</Link>{plans.length>0&&<a href="#plans">Pricing</a>}
+          <Link href="/login">Log in</Link><Link href="/register">Get started</Link>
+        </div></details>
+      </div>
+    </nav>
+    <div className="landing-hero-bg"><div className="landing-wrap landing-hero">
+      <div>
+        <div className="landing-kicker">✦ Smart strategy tracking</div>
+        <h1>Follow the strategy.<br/><span className="landing-gradient-text">Not the spreadsheet.</span></h1>
+        <p>Explore well-known investment strategies without the manual work. Wealtharr applies their defined rules to your portfolio, calculates allocations and rebalancing adjustments, and alerts you when it&apos;s time to act.</p>
+        <div className="landing-hero-buttons">
+          <a href="#strategies" className="landing-btn primary">Explore strategies →</a>
+          <Link href="/demo" className="landing-btn">Explore the demo ↗</Link>
+        </div>
+        <div className="landing-points"><span>✓ Established strategies</span><span>✓ Automated calculations</span><span>✓ Timely notifications</span></div>
+      </div>
+      <div>
+        <div className="landing-preview">
+          <div className="landing-preview-bar">● ● ● &nbsp;&nbsp; {brand} / Strategy overview</div>
+          <div className="landing-preview-content">
+            <div className="landing-preview-top"><div><h2>My strategies</h2><p className="landing-preview-muted">Everything in one place</p></div><span className="landing-preview-badge">● Tracking</span></div>
+            <div className="landing-preview-stats">
+              <div><small>Portfolio value</small><strong>£24,680</strong><em>Fictional</em></div>
+              <div><small>Strategies</small><strong>2</strong><em>Being tracked</em></div>
+              <div><small>Reviews due</small><strong>1</strong><em>Action available</em></div>
+            </div>
+            <div className="landing-preview-row"><span className="landing-preview-icon">AW</span><div><h3>All Weather Portfolio</h3><p>Multi-asset reference model</p></div><span className="landing-preview-state">Review due</span></div>
+            <div className="landing-preview-row"><span className="landing-preview-icon">60</span><div><h3>60/40 Portfolio</h3><p>Stocks and bonds</p></div><span className="landing-preview-state good">On track</span></div>
+            <div className="landing-preview-alert">♧ &nbsp; All Weather review ready — Review calculated changes before trading.</div>
           </div>
         </div>
-      </section>
-
-      <section className="section">
-        <div className="section-head"><div>
-          <h2>Community signal, without exposing people.</h2>
-          <p>Only privacy-thresholded aggregate statistics are publishable. Closed and paused cohorts remain in history to reduce survivorship bias.</p>
-        </div></div>
-        {aggregates.length
-          ? <div className="cards">{aggregates.slice(0,6).map((a,i)=><div className="card" key={i}>
-              <div className="pill">{a.name}</div>
-              <h3 style={{marginTop:16}}>{String(a.metric_key).replaceAll("_"," ")}</h3>
-              <div style={{fontSize:30,fontWeight:850}}>{Number(a.value).toFixed(2)}</div>
-              <p>Aggregate cohort · n={a.sample_size}</p>
-            </div>)}</div>
-          : <div className="empty">There is not yet enough privacy-qualified community data to publish. We do not fill this space with fake live statistics.</div>}
-      </section>
-
-      <section className="section">
-        <div className="section-head"><div>
-          <h2>Plans that scale with complexity.</h2>
-          <p>Limits and feature access come from server-side entitlements, not hard-coded UI checks.</p>
-        </div></div>
-        <div className="pricing">
-          {plans.length
-            ? plans.map((p:any)=><div className="glass price" key={p.slug}>
-                <div className="eyebrow">{p.display_name}</div>
-                <strong>
-                  {new Intl.NumberFormat("en-GB",{
-                    style:"currency",
-                    currency:String(p.billing_currency),
-                    minimumFractionDigits:Number(p.monthly_price_minor)===0?0:2
-                  }).format(Number(p.monthly_price_minor)/100)}
-                  <span style={{fontSize:14,color:"var(--muted)"}}>/mo</span>
-                </strong>
-                <p>{p.max_active_strategies==null
-                  ? "Unlimited active strategy instances"
-                  : p.max_active_strategies+" active strategy instance"+(p.max_active_strategies===1?"":"s")}</p>
-                <Link className="button primary" href="/register">Choose {p.display_name}</Link>
-              </div>)
-            : <div className="empty" style={{gridColumn:"1/-1"}}>Plan pricing is temporarily unavailable. We do not display cached or invented prices.</div>}
-        </div>
-      </section>
-
-      <footer className="footer">
-        <p><Link href="/features">Features</Link> · <Link href="/strategies">Strategies</Link> · <Link href="/pricing">Pricing</Link> · <Link href="/faq">FAQ</Link></p>
-        {brand} is a strategy tracking and rule-calculation tool. It does not place trades, assess suitability or recommend which strategy you should choose. Investments can fall as well as rise, and past performance is not a guide to future results.
-      </footer>
-    </div>
+        <div className="landing-caption">Illustrative dashboard · Fictional data, not actual investment performance</div>
+      </div>
+    </div></div>
+    <StrategyMarquee strategies={strategies}/>
+    <section className="landing-wrap landing-section" id="how-it-works">
+      <div className="landing-kicker">Simple by design</div>
+      <h2 className="section-title">The strategy is defined.<br/>We handle the tracking.</h2>
+      <p className="landing-section-desc">From selecting an established method to the next review notification, Wealtharr replaces spreadsheet work with a simpler, transparent process.</p>
+      <div className="landing-how-grid">
+        <article className="landing-how-card"><span>01 / CHOOSE</span><h3>Explore a strategy</h3><p>Review the published method and select the portfolio approach you want to follow.</p></article>
+        <article className="landing-how-card"><span>02 / TRACK</span><h3>Enter your holdings</h3><p>Record your investments. Wealtharr calculates allocations and tracks progress against the specified rules.</p></article>
+        <article className="landing-how-card"><span>03 / ACT</span><h3>Receive reminders</h3><p>Know when a review is due, examine the calculations and execute the resulting trades yourself.</p></article>
+      </div>
+    </section>
+    {plans.length>0&&<section className="landing-pricing-section" id="plans"><div className="landing-wrap landing-section">
+      <div className="landing-kicker">Plans &amp; pricing</div>
+      <h2 className="section-title">Simple plans.<br/><span className="landing-gradient-text">Powerful tracking.</span></h2>
+      <p className="landing-section-desc">From one strategy to many, choose the tracking tools that suit you. Plan pricing and inclusions are set by the platform administrator.</p>
+      <PublicPlanCards plans={plans}/>
+    </div></section>}
+    <div className="landing-wrap landing-outro"><div className="landing-outro-inner">
+      <div><h2>Keep the strategy.<br/>Lose the spreadsheet.</h2><p>Established methodologies. Automated tracking. One beautifully simple platform.</p></div>
+      <Link href="/register" className="landing-btn primary">Get started →</Link>
+    </div></div>
+    <footer className="landing-wrap landing-footer">
+      <span>{brand} · Investment strategies, simplified.<br/>Rule-calculation software, not investment advice. Investments involve risk; you control every trade.</span>
+      <span><Link href="/strategies">Strategies</Link> · <Link href="/features">Features</Link> · <Link href="/faq">FAQ</Link>{plans.length>0&&<> · <Link href="/pricing">Pricing</Link></>}</span>
+    </footer>
   </main>;
 }
