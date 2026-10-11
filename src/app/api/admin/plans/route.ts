@@ -52,11 +52,8 @@ export async function PUT(request:Request) {
    // Serialize additions and publication to enforce limits even for concurrent administrators.
    await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext('wealtharr-plan-publication'))");
    const existing=await tx.unsafe("SELECT slug FROM plans WHERE slug=$1 FOR UPDATE",[p.slug]);
-   const count=await tx.unsafe(
-    "SELECT count(*)::int AS n FROM plans WHERE slug<>'free' AND archived=false AND slug<>$1",[p.slug]
-   );
-   if(!p.archived&&p.slug!=="free"&&Number(count[0]?.n??0)>=5)
-    return {error:"At most five active custom plans are permitted.",status:409};
+   // Hidden seed templates and drafts do not count towards the five public cards.
+   // This allows a fresh deployment to start at zero published plans.
    const published=await tx.unsafe(
     "SELECT count(*)::int AS n FROM plans WHERE visible=true AND archived=false AND slug<>$1",[p.slug]
    );

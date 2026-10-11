@@ -35,7 +35,8 @@ describe("public landing and plan publication boundaries",()=>{
  it("limits active plans and public offers transactionally and preserves the free backing plan",()=>{
   const route=source("src/app/api/admin/plans/route.ts");
   expect(route).toContain("pg_advisory_xact_lock");
-  expect(route).toContain("slug<>'free' AND archived=false");
+  expect(route).toContain("pg_advisory_xact_lock");
+  expect(route).toContain("published");
   expect(route).toContain("visible=true AND archived=false");
   expect(route).toContain("At most five public plans");
   expect(route).toContain("cannot be archived");

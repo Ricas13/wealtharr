@@ -49,7 +49,7 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const [error,setError]=useState(false);
- const count=initialPlans.filter(p=>p.slug!=="free"&&!p.archived).length;
+ const count=initialPlans.filter(p=>p.slug!=="free"&&p.visible&&!p.archived).length;
  const published=initialPlans.filter(p=>p.visible&&!p.archived).length;
  function choose(slug:string) {
   setSelection(slug);setMessage("");setError(false);
@@ -92,18 +92,18 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
   } catch (e) {setError(true);setMessage(e instanceof Error?e.message:"Could not save the plan.");}
   finally {setBusy(false);}
  }
- const newBlocked=selection==="new"&&count>=5;
+ const newBlocked=false;
  const canPublish=!form.archived&&(form.visible||published<5);
  const perks=form.marketing.benefits.length?form.marketing.benefits:[form.maxActiveStrategies===null?
     "Unlimited active strategies":String(form.maxActiveStrategies)+" active strategies"];
  return <form className="glass form-card" onSubmit={save}>
   <h2>Plans &amp; pricing studio</h2>
   <p className="help">Edit a plan, its actual entitlements, and the separate marketing copy displayed on the public homepage. Hidden or archived plans do not appear publicly.</p>
-  <div className="why-row"><strong>{published}/5 published</strong><span>{count}/5 custom active plans</span></div>
+  <div className="why-row"><strong>{published}/5 published</strong><span>Hidden plans do not count towards the public limit</span></div>
   <div className="field"><label htmlFor="plan-studio-select">Choose a plan</label>
    <select id="plan-studio-select" value={selection} onChange={e=>choose(e.target.value)}>
     {initialPlans.map(p=><option value={p.slug} key={p.slug}>{p.displayName} ({p.archived?"archived":p.visible?"published":"hidden"})</option>)}
-    <option value="new" disabled={count>=5}>+ Create plan {count>=5?"(limit reached)":""}</option>
+    <option value="new">+ Create a draft plan</option>
    </select>
   </div>
   <div className="form-grid">
@@ -166,7 +166,7 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    <p className="help">Existing subscriptions are rechecked when entitlements change; incompatible active strategies are paused without rewriting the investment ledger.</p>
   </div>}
   <div style={{marginTop:22}}><button type="submit" className="button primary" disabled={busy||newBlocked}>{busy?"Saving…":"Save plan configuration"}</button>
-   {newBlocked&&<p className="error">Five active custom plans is the limit. Archive an unused plan first.</p>}
+   {newBlocked&&<p className="error">Plan creation unavailable.</p>}
    {message&&<p role="status" className={error?"error":"help"}>{message}</p>}
   </div>
  </form>;
