@@ -3,7 +3,7 @@ import {test,expect} from "@playwright/test";
 for(const [path,heading] of [
  ["/features","Track the rules. See the numbers. Know the next review."],
  ["/strategies","One portfolio workspace. Different rules."],
- ["/pricing","Start simple. Add strategies as you need them."],
+ ["/pricing","Simple plans. Powerful tracking."],
  ["/faq","Frequently asked questions"],
  ["/tools/rebalance-calculator","Portfolio rebalancing calculator"]
 ] as const){
