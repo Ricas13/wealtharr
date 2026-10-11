@@ -22,7 +22,7 @@ export function PublicPlanCards({ plans }: { plans: PublicPlan[] }) {
         const free = plan.slug === "free";
         const value = cadence === "annual" ? plan.annualMinor : plan.monthlyMinor;
         const priceAvailable = value !== null && (free || value > 0);
-        const activeStripe = plan.paymentMethods.includes("STRIPE") && plan.stripeReady;
+        const activeStripe = plan.paymentMethods.includes("STRIPE") && (cadence === "monthly" ? plan.monthlyStripeReady : plan.annualStripeReady);
         const canStart = free || (priceAvailable && activeStripe);
         return <article key={plan.slug} className={"landing-price-card" + (plan.marketing.featured ? " is-featured" : "")}>
           {plan.marketing.badge && <span className="landing-price-badge">{plan.marketing.badge}</span>}
