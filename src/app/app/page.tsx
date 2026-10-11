@@ -34,6 +34,7 @@ export default async function OverviewPage(){
   }
   const values=await sql.unsafe("SELECT ps.strategy_instance_id,ps.value,a.currency FROM performance_series ps JOIN strategy_instances i ON i.id=ps.strategy_instance_id JOIN accounts a ON a.id=i.account_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND ps.series_type='USER_VALUE' AND ps.date=(SELECT max(p2.date) FROM performance_series p2 WHERE p2.strategy_instance_id=ps.strategy_instance_id AND p2.series_type='USER_VALUE')",[user.id]);
   const contributions=await sql.unsafe("SELECT l.currency,COALESCE(sum(l.cash_amount),0) AS total FROM ledger_events l JOIN strategy_instances i ON i.id=l.strategy_instance_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND l.event_type='CONTRIBUTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) GROUP BY l.currency ORDER BY l.currency",[user.id]);
+  const incomes=await sql.unsafe("SELECT upper(l.currency) AS currency,COALESCE(sum(l.cash_amount),0) AS total FROM ledger_events l JOIN strategy_instances i ON i.id=l.strategy_instance_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND l.event_type IN ('DIVIDEND','DISTRIBUTION','INTEREST') AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) GROUP BY upper(l.currency) ORDER BY upper(l.currency)",[user.id]);
   const reviewRows=await sql.unsafe("SELECT i.id,i.name,x.due_at FROM strategy_instances i LEFT JOIN LATERAL (SELECT a.due_at FROM actions a WHERE a.strategy_instance_id=i.id AND a.due_at IS NOT NULL ORDER BY a.created_at DESC LIMIT 1) x ON true WHERE i.user_id=$1 AND i.status='ACTIVE'",[user.id]);
   const activeStrategies=strategies.filter((s:any)=>s.status==="ACTIVE");
   const trackedStrategies=strategies.filter((s:any)=>s.status!=="CLOSED");
@@ -58,6 +59,11 @@ export default async function OverviewPage(){
   const contributionContext=contributions.length
     ?contributions.map((row:any)=>money(Number(row.total),String(row.currency))).join(" · ")
     :"No contributions recorded";
+  const incomeEntries=incomes.filter((r:any)=>/^[A-Z]{3}$/.test(String(r.currency))&&Number.isFinite(Number(r.total)));
+  const incomeLabel=incomes.length===0?"—":incomeEntries.length!==incomes.length?"Unavailable":incomes.length===1
+    ?money(Number(incomeEntries[0].total),String(incomeEntries[0].currency)):"Multiple currencies";
+  const incomeDetail=incomes.length>1&&incomeEntries.length===incomes.length
+    ?incomeEntries.map((r:any)=>money(Number(r.total),String(r.currency))).join(" · "):"Recorded dividends, distributions and interest";
   const primaryAction:any=actions[0];
   const primaryReason=primaryAction?plainEnglishActionReason({actionType:primaryAction.action_type,instruction:primaryAction.instruction}):null;
   const plannedContributions=activeStrategies
@@ -206,6 +212,8 @@ export default async function OverviewPage(){
        <div className="portfolio-detail-pair"><span>Best observed session</span><strong>{formatPct(combinedSummary?.bestObservedSessionPct)}</strong></div>
        <div className="portfolio-detail-pair"><span>Worst observed session</span><strong>{formatPct(combinedSummary?.worstObservedSessionPct)}</strong></div>
        <div className="portfolio-detail-pair"><span>Current observed drawdown</span><strong>{formatPct(combinedSummary?.currentDrawdownPct)}</strong></div>
+       <div className="portfolio-detail-pair"><span>Cash income recorded</span><strong>{incomeLabel}</strong></div>
+       <p className="portfolio-chart-footnote">{incomeDetail}. Only income already entered in the strategy ledger is included; no forecast or connected brokerage income is assumed.</p>
       </section>
       <section className="portfolio-panel"><div className="portfolio-panel-heading"><div><h2>Strategy comparison</h2><p>Estimated flow-adjusted performance</p></div></div>
        {analytics.leaderboard.length>1?analytics.leaderboard.slice(0,6).map((entry,index)=><Link className="portfolio-compare-row" href={"/app/strategies/"+entry.id} key={entry.id}>
