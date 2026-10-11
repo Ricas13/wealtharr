@@ -1541,7 +1541,7 @@ html[data-theme="light"] .app-shell > .sidebar { background:rgba(255,255,255,.94
 .admin-stats-strip>div:last-child{border-right:0}
 .admin-stats-strip span{display:block;font-size:11px;color:#90a4c0}
 .admin-stats-strip strong{display:block;font-size:31px;line-height:1.2;margin:8px 0 3px;letter-spacing:-.04em}
-.admin-stats-strip small{display:block;font-size:10px;color:#7689a3}
+.admin-stats-strip small{display:block;font-size:10px;color:#a4b9d4}
 .admin-catalogue-toolbar{display:flex;justify-content:space-between;align-items:center;gap:22px;margin:30px 0 16px}
 .admin-catalogue-toolbar h2{font-size:23px;margin:0 0 5px;letter-spacing:-.025em}
 .admin-catalogue-toolbar p{font-size:12px;color:#8ba0b9;margin:0;max-width:700px}
