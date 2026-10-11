@@ -7,7 +7,7 @@ export function DiscordForm(){const[message,setMessage]=useState("");return <for
 
 type BillingPrice={
   planSlug:string;planName:string;currency:string;cadence:"MONTHLY"|"ANNUAL";amountMinor:number;
-  maxActiveStrategies:number|null;entitlements:Record<string,unknown>;
+  maxActiveStrategies:number|null;entitlements:Record<string,unknown>;featured?:boolean;
 };
 function planSummary(prices:BillingPrice[],slug:string,currency:string){
   const rows=prices.filter((price)=>price.planSlug===slug&&price.currency===currency);
@@ -16,9 +16,10 @@ function planSummary(prices:BillingPrice[],slug:string,currency:string){
   return {monthly,annual,meta:monthly??annual};
 }
 export function BillingButtons({
-  prices,defaultCurrency,currentPlanSlug,paidSubscription,activeStrategyCount,currentMaxActiveStrategies
+  prices,preferredPlanSlug,defaultCurrency,currentPlanSlug,paidSubscription,activeStrategyCount,currentMaxActiveStrategies
 }:{
   prices:BillingPrice[];
+  preferredPlanSlug?:string;
   defaultCurrency:string;
   currentPlanSlug:string;
   paidSubscription:boolean;
@@ -57,7 +58,7 @@ export function BillingButtons({
     {error&&<div className="error" role="alert">{error}</div>}
   </div>;
 
-  const slugs=[...new Set(prices.map((price)=>price.planSlug))];
+  const slugs=[...new Set(prices.map((price)=>price.planSlug))].sort((a,b)=>Number(b===preferredPlanSlug)-Number(a===preferredPlanSlug));
   return <div className="stack billing-options">
     {currencies.length>1&&<Field className="field compact-field" label="Billing currency"><select value={currency} onChange={e=>setCurrency(e.target.value)}>{currencies.map(c=><option key={c}>{c}</option>)}</select></Field>}
     <div className="billing-plan-grid">
@@ -67,8 +68,8 @@ export function BillingButtons({
         const limit=plan.meta.maxActiveStrategies==null?"Unlimited active strategies":"Up to "+plan.meta.maxActiveStrategies+" active "+(plan.meta.maxActiveStrategies===1?"strategy":"strategies");
         const raw=plan.meta.entitlements&&typeof plan.meta.entitlements==="object"?plan.meta.entitlements:{};
         const channels=Array.isArray(raw.notificationChannels)?raw.notificationChannels.filter((value):value is string=>typeof value==="string"):[];
-        return <div className={"billing-plan "+(slug==="pro"?"featured":"")} key={slug}>
-          <div><span className="billing-plan-name">{plan.meta.planName}</span>{slug==="pro"&&<span className="pill good">MOST FLEXIBLE</span>}</div>
+        return <div className={"billing-plan "+(plan.meta.featured||slug===preferredPlanSlug?"featured":"")} key={slug}>
+          <div><span className="billing-plan-name">{plan.meta.planName}</span>{slug===preferredPlanSlug?<span className="pill good">SELECTED PLAN</span>:plan.meta.featured?<span className="pill good">FEATURED</span>:null}</div>
           <strong>{plan.monthly?new Intl.NumberFormat("en-GB",{style:"currency",currency}).format(plan.monthly.amountMinor/100)+"/mo":"Paid plan"}</strong>
           <p>{limit}{channels.length?" · "+channels.map((channel)=>channel[0]+channel.slice(1).toLowerCase()).join(" + ")+" alerts":""}</p>
           <div className="billing-plan-actions">
