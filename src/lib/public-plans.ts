@@ -17,7 +17,8 @@ export type PublicPlan = {
     benefits: string[];
     featured: boolean;
   };
-  stripeReady: boolean;
+  monthlyStripeReady: boolean;
+  annualStripeReady: boolean;
   paymentMethods: string[];
 };
 
@@ -60,7 +61,8 @@ export function publicPlanFromRow(row: RawPlan): PublicPlan {
       benefits: benefits.length ? benefits : defaults,
       featured: m.featured === true
     },
-    stripeReady: Boolean(row.stripe_ready),
+    monthlyStripeReady: Boolean(row.monthly_stripe_ready),
+    annualStripeReady: Boolean(row.annual_stripe_ready),
     paymentMethods
   };
 }
@@ -72,7 +74,7 @@ export async function loadPublicPlans(): Promise<PublicPlan[]> {
     "p.marketing,p.payment_methods," +
     "CASE WHEN p.slug='free' THEN 0 ELSE monthly.amount_minor END AS monthly_minor," +
     "CASE WHEN p.slug='free' THEN 0 ELSE annual.amount_minor END AS annual_minor," +
-    "(monthly.stripe_price_id IS NOT NULL OR annual.stripe_price_id IS NOT NULL) AS stripe_ready " +
+    "(monthly.stripe_price_id IS NOT NULL) AS monthly_stripe_ready,(annual.stripe_price_id IS NOT NULL) AS annual_stripe_ready " +
     "FROM plans p " +
     "LEFT JOIN plan_prices monthly ON monthly.plan_id=p.id AND monthly.currency=p.billing_currency AND monthly.cadence='MONTHLY' AND monthly.active=true " +
     "LEFT JOIN plan_prices annual ON annual.plan_id=p.id AND annual.currency=p.billing_currency AND annual.cadence='ANNUAL' AND annual.active=true " +
