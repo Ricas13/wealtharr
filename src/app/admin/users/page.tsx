@@ -1,2 +1,26 @@
-import { sql } from "@/lib/db";
-export default async function UsersAdmin(){const rows=await sql.unsafe("SELECT u.email,u.country,u.role,p.display_name AS plan,s.status,(SELECT count(*) FROM strategy_instances i WHERE i.user_id=u.id AND i.status='ACTIVE')::int AS active_strategies,(SELECT count(*) FROM strategy_instances i WHERE i.user_id=u.id AND i.health_status<>'HEALTHY' AND i.status='ACTIVE')::int AS unhealthy FROM users u LEFT JOIN subscriptions s ON s.user_id=u.id LEFT JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL ORDER BY u.created_at DESC LIMIT 250");return <><div className="page-title"><div><div className="eyebrow">Admin · Users</div><h1>Entitlement & health view</h1><p>Operational account metadata without customer portfolio balances.</p></div></div><div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>User</th><th>Country</th><th>Plan</th><th>Status</th><th>Strategies</th><th>Needs attention</th></tr></thead><tbody>{rows.map((u:any)=><tr key={u.email}><td>{u.email}</td><td>{u.country}</td><td>{u.plan??"—"}</td><td>{u.status??"—"}</td><td>{u.active_strategies}</td><td>{u.unhealthy}</td></tr>)}</tbody></table></div></>;}
+import {sql} from "@/lib/db";
+import {UsersRound,Layers3,ShieldAlert} from "lucide-react";
+import {AdminCustomersTable} from "@/components/AdminCustomersTable";
+export const dynamic="force-dynamic";
+export default async function UsersAdmin(){
+ const [rows,summary]=await Promise.all([
+  sql.unsafe("SELECT u.email,u.country,u.role,p.display_name AS plan,s.status,(SELECT count(*) FROM strategy_instances i WHERE i.user_id=u.id AND i.status='ACTIVE')::int AS active_strategies,(SELECT count(*) FROM strategy_instances i WHERE i.user_id=u.id AND i.health_status<>'HEALTHY' AND i.status='ACTIVE')::int AS unhealthy FROM users u LEFT JOIN subscriptions s ON s.user_id=u.id LEFT JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL ORDER BY u.created_at DESC LIMIT 250"),
+  sql.unsafe("SELECT (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS users,(SELECT count(*)::int FROM strategy_instances WHERE status='ACTIVE') AS strategies,(SELECT count(*)::int FROM strategy_instances WHERE status='ACTIVE' AND health_status<>'HEALTHY') AS attention")
+ ]);
+ const metrics=[
+  {name:"Registered customers",value:Number(summary[0]?.users??0),Icon:UsersRound},
+  {name:"Active strategies",value:Number(summary[0]?.strategies??0),Icon:Layers3},
+  {name:"Strategies to review",value:Number(summary[0]?.attention??0),Icon:ShieldAlert}
+ ];
+ return <div>
+  <div className="admin-design-heading"><div><span className="admin-kicker">WORKSPACE / CUSTOMERS</span>
+   <h1>Customers</h1><p>Account and subscription health, without exposing portfolio balances.</p></div></div>
+  <div className="admin-overview-kpis admin-three-kpis">{metrics.map(({name,value,Icon})=><div className="admin-design-kpi" key={name}>
+    <span className="admin-design-kpi-title">{name}<Icon size={17} aria-hidden="true"/></span><strong>{new Intl.NumberFormat("en-GB").format(value)}</strong>
+    <span className="admin-design-kpi-detail">Current database records</span></div>)}</div>
+  <AdminCustomersTable rows={rows.map(u=>({
+   email:String(u.email),country:String(u.country??"—"),role:String(u.role??"USER"),plan:String(u.plan??"No subscription"),status:String(u.status??"Unassigned"),
+   active:Number(u.active_strategies??0),attention:Number(u.unhealthy??0)
+  }))}/>
+ </div>;
+}

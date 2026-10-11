@@ -2,10 +2,9 @@ import Link from "next/link";
 import {sql} from "@/lib/db";
 import {ensureSettings} from "@/lib/settings";
 import {masterSetupSignals} from "@/domain/master-setup";
+import {CheckCircle2,Circle,ArrowRight,ShieldCheck,LockKeyhole} from "lucide-react";
 
 export const dynamic="force-dynamic";
-
-/** The configuration screen never transmits credential values to the browser. */
 export default async function MasterConfigurationPage(){
   await ensureSettings(true);
   const [plans,strategies,mappings,cron,backup]=await Promise.all([
@@ -36,22 +35,59 @@ export default async function MasterConfigurationPage(){
       .every(k=>process.env[k]==="true"),now:new Date()
   });
   const ready=signals.filter(s=>s.status==="configured").length;
-  return <div className="stack">
-    <div className="page-title"><div><div className="eyebrow">Master Admin</div><h1>Set up Wealtharr</h1>
-      <p>Clone, deploy, create the first administrator, then configure your product here. No edits to strategy code or environment files for normal operator settings.</p></div></div>
-    <section className="card"><h2>{ready} of {signals.length} areas configured</h2>
-      <p className="help">Configuration status is not a commercial launch approval. Strategy calculations, regional equivalence, data licensing and legal sign-offs must be verified separately. Items marked “Verify evidence” never count as production-ready on their own.</p>
-      <p><Link href="/admin/settings">Integration settings</Link> · <Link href="/admin/operations">Connection tests and jobs</Link> · <Link href="/admin/launch">Launch checks</Link></p>
-    </section>
-    <div className="detail-grid">
-      {signals.map(signal=><section className="card" key={signal.id}>
-        <div className="why-row"><h3>{signal.title}</h3><span className="pill">{signal.status==="configured"?"Configured":signal.status==="requires-verification"?"Verify evidence":"Needs setup"}</span></div>
-        <p className="help">{signal.detail}</p>
-        <Link className="button" href={signal.href}>Configure or inspect</Link>
-      </section>)}
-    </div>
-    <section className="card"><h2>Docker Compose: bootstrap only</h2><p className="help">Configure the database URL and password, authentication/encryption keys, reverse proxy, shared scheduler secret, host ports, persistent storage and backup container settings in Docker Compose or its private deployment environment. These values cannot be safely changed in an app database they unlock. Everything else above is managed through the web UI.</p>
-      <p className="help">A green checkbox is never permission to trade from unverified instruments or enable paid checkout without independent sign-off.</p>
-    </section>
-  </div>;
+
+ const steps=[
+  {name:"Create Master Admin and secure MFA",keys:["security"],href:"/app/settings#security"},
+  {name:"Set platform identity, region and currency",keys:["site"],href:"/admin/settings#settings-general"},
+  {name:"Configure market data and brokerage providers",keys:["market"],href:"/admin/integrations"},
+  {name:"Configure subscription plans and payments",keys:["plans","stripe"],href:"/admin/plans"},
+  {name:"Review and publish verified strategies",keys:["catalogue","instruments"],href:"/admin/strategies"},
+  {name:"Test email and notification delivery",keys:["email","notifications"],href:"/admin/operations"},
+  {name:"Complete launch readiness checks",keys:["workers","backup","launch"],href:"/admin/launch"}
+ ];
+ const progress=steps.map(step=>{
+  const checks=step.keys.map(id=>signals.find(s=>s.id===id)).filter(s=>s!==undefined);
+  const complete=checks.length===step.keys.length&&checks.every(s=>s.status==="configured");
+  const review=!complete&&checks.some(s=>s.status==="requires-verification");
+  return {...step,complete,review};
+ });
+ const finished=progress.filter(s=>s.complete).length;
+ return <div className="admin-wizard">
+  <div className="admin-design-heading"><div><span className="admin-kicker">SETUP / GUIDED CONFIGURATION</span>
+   <h1>Set up Wealtharr</h1><p>Clone, deploy, then configure your product in the web GUI.</p></div>
+   <Link className="admin-design-button" href="/admin/launch"><ShieldCheck size={16}/> Launch review</Link>
+  </div>
+  <section className="admin-design-panel admin-setup-panel" aria-labelledby="admin-setup-title">
+   <div className="admin-setup-header"><div><h2 id="admin-setup-title">Platform setup</h2>
+    <p>Follow each step to configure and verify the production environment.</p></div>
+    <span className="admin-setup-fraction">{finished} of {steps.length} configured</span></div>
+   <div className="admin-setup-progress" role="progressbar" aria-valuenow={finished} aria-valuemin={0} aria-valuemax={steps.length} aria-label="Verified configuration progress">
+    <div style={{width:(100*finished/steps.length)+"%"}}/></div>
+   <ol className="admin-setup-steps">
+    {progress.map((step,i)=><li key={step.name}>
+     <span className={"admin-setup-step-icon"+(step.complete?" is-complete":"")} aria-hidden="true">{step.complete?<CheckCircle2 size={21}/>:<Circle size={21}/>}</span>
+     <Link href={step.href}><span className="admin-setup-step-number">STEP {String(i+1).padStart(2,"0")}</span>
+      <strong>{step.name}</strong></Link>
+     <span className={"admin-setup-step-state "+(step.complete?"is-complete":step.review?"is-review":"")}>{step.complete?"Configured":step.review?"Verify evidence":"Needs setup"}</span>
+     <Link href={step.href} className="admin-setup-step-arrow" aria-label={"Configure "+step.name}><ArrowRight size={18}/></Link>
+    </li>)}
+   </ol>
+   <p className="admin-setup-help"><LockKeyhole size={15} aria-hidden="true"/> Setup checkmarks verify saved configuration only. Methodology validation, actual transactions, provider licences, restores and regulatory approvals remain separate requirements.</p>
+  </section>
+  <details className="admin-advanced-workflow"><summary><span><strong>Full configuration checklist</strong>
+   <small>{ready} of {signals.length} component signals configured · inspect every verification item</small></span><span aria-hidden="true">⌄</span></summary>
+   <div className="admin-advanced-content">
+    {signals.map(s=><div className="admin-setup-detail" key={s.id}>
+     <div><strong>{s.title}</strong><p>{s.detail}</p></div>
+     <span>{s.status==="configured"?"Configured":s.status==="requires-verification"?"Verify evidence":"Needs setup"}</span>
+     <Link href={s.href} aria-label={"Configure "+s.title}><ArrowRight size={16}/></Link>
+    </div>)}
+   </div>
+  </details>
+  <section className="admin-design-panel admin-bootstrap-notice">
+   <div><h2>Docker Compose: infrastructure only</h2>
+    <p>Database URLs, session and encryption secrets, scheduler authentication, proxy networking, storage and persistent backups remain in private deployment configuration. All supported operational product settings live in Master Admin.</p></div>
+   <Link href="/admin/settings">Product settings <ArrowRight size={16}/></Link>
+  </section>
+ </div>;
 }

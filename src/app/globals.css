@@ -1683,3 +1683,446 @@ html[data-theme="light"] .admin-workspace-shell .field textarea{
   }
 }
 
+
+
+/* ===================================================================
+   MASTER ADMIN V2 — screenshot-fidelity tokens from agreed concept
+   Typography: Inter/system. 4px base rhythm; 12/14px operational copy,
+   32/36px KPI, 34–40px headings. 14–16px soft-corner cards. Single
+   indigo brand accent, mint only for verified positive states.
+   This stylesheet is scoped to /admin; customer and marketing untouched.
+   =================================================================== */
+.app-shell.admin-workspace-shell{
+ --ac-bg:#0b1525;--ac-side:#0b1424;--ac-surface:#141f31;
+ --ac-surface-2:#17253b;--ac-top:#0e1a2d;--ac-border:#2d4058;
+ --ac-text:#f2f6fd;--ac-muted:#c0cee1;--ac-subtle:#9cb2ce;
+ --ac-indigo:#91b2fa;--ac-primary-bg:#344fad;--ac-positive:#92edce;
+ --ac-warning:#e9bf83;--ac-danger:#ffa6a9;
+ --text:var(--ac-text);--muted:var(--ac-muted);--line:var(--ac-border);
+ --accent:var(--ac-indigo);--accent2:#91b2fa;
+ color:var(--ac-text);background:var(--ac-bg);
+ grid-template-columns:236px minmax(0,1fr);
+ font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+ font-size:14px;line-height:1.5;
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell{
+ --ac-bg:#f5f7fb;--ac-surface:#fff;--ac-surface-2:#f8faff;
+ --ac-top:#fff;--ac-border:#dae2ed;--ac-text:#1d2d45;
+ --ac-muted:#536680;--ac-subtle:#60758f;--ac-indigo:#3158ae;
+ --ac-positive:#13755b;--ac-warning:#875915;--ac-danger:#a92c41;
+ --text:var(--ac-text);--muted:var(--ac-muted);--line:var(--ac-border);
+ --accent:var(--ac-indigo);
+ background:var(--ac-bg);color:var(--ac-text);
+}
+.app-shell.admin-workspace-shell .admin-workspace-sidebar{
+ background:#0b1424!important;color:#f2f6fd;border-right:1px solid #283c55;
+ position:sticky;top:0;height:100vh;min-height:0;overflow-y:auto;
+ padding:0;z-index:20;box-shadow:none;backdrop-filter:none;
+}
+.app-shell.admin-workspace-shell .admin-nav-inner{
+ display:flex;flex-direction:column;min-height:100%;padding:25px 13px 19px;
+}
+.app-shell.admin-workspace-shell .admin-workspace-brand{
+ display:flex;align-items:center;gap:10px;padding:2px 11px 17px;margin:0;
+}
+.app-shell.admin-workspace-shell .admin-brand-glyph{
+ display:grid;place-items:center;width:34px;height:34px;flex:none;
+ border-radius:10px;background:#344fad;color:#fff;font-size:18px;
+ font-weight:900;box-shadow:none;
+}
+.app-shell.admin-workspace-shell .admin-workspace-brand strong{
+ display:block;font-size:17px;letter-spacing:-.035em;line-height:1.2;color:#f6f8ff;font-weight:850;
+}
+.app-shell.admin-workspace-shell .admin-workspace-brand small{
+ display:block;font-size:9px;letter-spacing:.13em;color:#b4c8e2;
+ font-weight:800;margin-top:3px;
+}
+.app-shell.admin-workspace-shell .admin-workspace-caption{
+ margin:8px 11px 18px;padding:12px 0;
+ display:flex;align-items:center;gap:9px;
+ border-top:1px solid #25374d;border-bottom:1px solid #25374d;
+ color:#b7c9e1;font-size:10px;font-weight:800;letter-spacing:.12em;
+}
+.admin-sidebar-pulse{display:block;width:7px;height:7px;border-radius:50%;background:#68d6b2}
+.app-shell.admin-workspace-shell .admin-workspace-navigation{display:block;overflow:visible}
+.app-shell.admin-workspace-shell .admin-nav-section{display:block;margin:0 0 20px}
+.app-shell.admin-workspace-shell .admin-nav-heading{
+ padding:0 11px;margin:0 0 7px;font-size:10px;color:#9db4d2;
+ font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+}
+.app-shell.admin-workspace-shell .admin-nav-item{
+ display:flex;align-items:center;gap:11px;border-radius:9px;
+ padding:10px 11px;min-height:41px;margin:2px 0;
+ border:1px solid transparent;color:#c3d1e4;
+ font-size:12.5px;font-weight:650;line-height:1.25;
+}
+.app-shell.admin-workspace-shell .admin-nav-item svg{color:#a4b8d3;flex:none}
+.app-shell.admin-workspace-shell .admin-nav-item:hover{background:#1b2e47;color:#fff}
+.app-shell.admin-workspace-shell .admin-nav-item.is-active{
+ background:#213453;border-color:#375079;color:#f0f5ff;
+}
+.app-shell.admin-workspace-shell .admin-nav-item.is-active svg{color:#94b6ff}
+.app-shell.admin-workspace-shell .admin-nav-active-dot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:#86b0ff}
+.app-shell.admin-workspace-shell .admin-nav-footer{
+ margin-top:auto;border-top:1px solid #293951;padding:18px 11px 5px;
+ display:grid;gap:10px;
+}
+.app-shell.admin-workspace-shell .admin-nav-footer a{
+ display:flex;align-items:center;gap:6px;color:#ccd8ea;font-weight:700;font-size:11px;
+}
+.app-shell.admin-workspace-shell .admin-nav-footer a:hover{color:#fff}
+.app-shell.admin-workspace-shell .admin-nav-footer small{color:#9aadc8;font-size:10px}
+.app-shell.admin-workspace-shell .admin-workspace-main{min-width:0}
+.app-shell.admin-workspace-shell .admin-workspace-topbar{
+ position:relative;display:flex;justify-content:space-between;align-items:center;gap:15px;
+ background:var(--ac-top);border-bottom:1px solid var(--ac-border);
+ padding:0 clamp(19px,3vw,38px);min-height:70px;
+}
+.admin-topbar-identity{display:grid;gap:0}
+.app-shell.admin-workspace-shell .admin-topbar-kicker{
+ font-size:9px;letter-spacing:.12em;font-weight:800;color:var(--ac-subtle)
+}
+.app-shell.admin-workspace-shell .admin-topbar-identity strong{
+ font-size:14px;letter-spacing:-.015em;font-weight:800;color:var(--ac-text)
+}
+.app-shell.admin-workspace-shell .admin-topbar-actions{display:flex;align-items:center;gap:12px}
+.admin-icon-link,.admin-topbar-avatar{
+ width:34px;height:34px;display:grid;place-items:center;
+ border:1px solid var(--ac-border);border-radius:9px;color:var(--ac-muted);
+ background:var(--ac-surface);
+}
+.admin-icon-link:hover,.admin-topbar-avatar:hover{border-color:var(--ac-indigo);color:var(--ac-indigo)}
+.admin-topbar-avatar{border-radius:50%;width:32px;height:32px}
+.app-shell.admin-workspace-shell .admin-environment-tag{
+ font-size:11px;font-weight:750;line-height:1.2;border-radius:999px;
+ padding:7px 11px;border:1px solid #806236;background:rgba(155,111,33,.12);color:#f1cd8f
+}
+.app-shell.admin-workspace-shell .admin-environment-tag.is-live{
+ color:#87e5c1;border-color:#37755f;background:rgba(40,146,109,.12)
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-environment-tag.is-locked{
+ color:#815319;border-color:#d9b98b;background:#fff7e9
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-environment-tag.is-live{
+ color:#13755b;border-color:#b1dbc8;background:#e8f8f0
+}
+.app-shell.admin-workspace-shell .app-content.admin-workspace-content{
+ width:min(1400px,calc(100% - clamp(36px,6vw,80px)));
+ margin:0 auto;padding:35px 0 76px;
+}
+.app-shell.admin-workspace-shell :is(h1,h2,h3){color:var(--ac-text);letter-spacing:-.028em}
+.app-shell.admin-workspace-shell .eyebrow,
+.app-shell.admin-workspace-shell .admin-kicker{
+ color:var(--ac-indigo);font-size:10px;line-height:1.5;
+ font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+}
+.app-shell.admin-workspace-shell .admin-design-heading{
+ display:flex;justify-content:space-between;align-items:center;gap:20px;margin:0 0 23px
+}
+.app-shell.admin-workspace-shell .admin-design-heading h1{
+ font-size:clamp(31px,3.4vw,40px);line-height:1.12;font-weight:800;
+ margin:4px 0 6px;letter-spacing:-.05em
+}
+.app-shell.admin-workspace-shell .admin-design-heading p{
+ margin:0;font-size:13px;line-height:1.55;color:var(--ac-muted);
+}
+.app-shell.admin-workspace-shell .admin-design-status{
+ border-radius:999px;padding:7px 12px;white-space:nowrap;font-size:11px;font-weight:750;
+ border:1px solid #8d6736;color:#efc991;background:rgba(143,95,25,.12)
+}
+.app-shell.admin-workspace-shell .admin-design-status.is-live{
+ color:var(--ac-positive);background:rgba(59,169,136,.10);border-color:rgba(62,146,115,.5)
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-status.is-prelaunch{
+ color:#825315;border-color:#e1c99f;background:#fff7ea;
+}
+.app-shell.admin-workspace-shell .admin-design-button{
+ display:inline-flex;align-items:center;justify-content:center;gap:8px;
+ border-radius:10px;background:#344fad;color:#fff;font-size:12px;font-weight:750;
+ border:1px solid #344fad;min-height:39px;padding:9px 14px;white-space:nowrap;
+}
+.app-shell.admin-workspace-shell .admin-design-button:hover{background:#4263ca;border-color:#4263ca}
+.app-shell.admin-workspace-shell .button{
+ border-radius:10px;padding:9px 13px;font-size:12px;
+ border-color:var(--ac-border);background:var(--ac-surface-2);color:var(--ac-text);box-shadow:none;
+}
+.app-shell.admin-workspace-shell .button.primary{
+ background:#344fad;border-color:#344fad;color:#fff;box-shadow:none
+}
+.app-shell.admin-workspace-shell .button:hover{background:var(--ac-surface-2);transform:none;border-color:var(--ac-indigo)}
+.app-shell.admin-workspace-shell .button.primary:hover{background:#4464c5;color:#fff}
+.app-shell.admin-workspace-shell :is(.card,.glass,.form-card){
+ background:var(--ac-surface);border:1px solid var(--ac-border);
+ color:var(--ac-text);border-radius:14px;box-shadow:none;backdrop-filter:none;
+}
+.app-shell.admin-workspace-shell .card p,
+.app-shell.admin-workspace-shell .help,
+.app-shell.admin-workspace-shell .form-card p{
+ color:var(--ac-muted);font-size:12px;line-height:1.65
+}
+.app-shell.admin-workspace-shell :is(.card,.glass,.form-card) :is(h2,h3){color:var(--ac-text)}
+.app-shell.admin-workspace-shell .page-title h1{font-size:clamp(28px,3vw,38px)}
+.app-shell.admin-workspace-shell .page-title p{font-size:13px;line-height:1.6;color:var(--ac-muted)}
+.app-shell.admin-workspace-shell :is(input,textarea,select){
+ background:var(--ac-surface-2);border:1px solid var(--ac-border);color:var(--ac-text);border-radius:9px
+}
+.app-shell.admin-workspace-shell :is(input,textarea,select):focus-visible{
+ outline:2px solid var(--ac-indigo);outline-offset:2px
+}
+.app-shell.admin-workspace-shell :is(a,button,summary):focus-visible{
+ outline:3px solid var(--ac-indigo);outline-offset:3px
+}
+/* Four KPI tiles: faithfully sized as the approved mock, with real data. */
+.admin-overview-kpis{
+ display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+ gap:13px;margin:0 0 17px;
+}
+.admin-design-kpi{
+ display:flex;flex-direction:column;min-width:0;min-height:132px;
+ padding:19px 20px 16px;background:var(--ac-surface);
+ border:1px solid var(--ac-border);border-radius:14px;
+}
+.admin-design-kpi:hover{border-color:var(--ac-indigo);background:var(--ac-surface-2)}
+.admin-design-kpi-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--ac-muted);font-weight:700}
+.admin-design-kpi-title svg{color:var(--ac-subtle)}
+.admin-design-kpi strong{display:block;font-size:clamp(26px,2.5vw,35px);font-weight:820;letter-spacing:-.045em;line-height:1.15;margin:12px 0 8px;overflow-wrap:anywhere}
+.admin-design-kpi-detail{font-size:10.5px;line-height:1.5;color:var(--ac-subtle)}
+/* Wide growth plot + compact action queue, stacked below 1020px. */
+.admin-design-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+.admin-design-grid-secondary{grid-template-columns:repeat(2,minmax(0,1fr))}
+.admin-design-panel{
+ border:1px solid var(--ac-border);border-radius:14px;
+ background:var(--ac-surface);padding:20px;min-width:0
+}
+.admin-design-panel-header{display:flex;justify-content:space-between;gap:13px;align-items:flex-start;margin:0 0 16px}
+.admin-design-panel-header h2{margin:0 0 4px;font-size:16px;font-weight:800}
+.admin-design-panel-header p{font-size:11px;color:var(--ac-muted);margin:0;line-height:1.5}
+.admin-design-panel-header>a{color:var(--ac-indigo)}
+.admin-chart-period{color:var(--ac-muted);border:1px solid var(--ac-border);border-radius:8px;padding:5px 9px;font-size:10px;white-space:nowrap}
+.admin-chart-legend{display:flex;gap:20px;align-items:center;margin:0 0 4px}
+.admin-chart-legend span{display:inline-flex;align-items:center;gap:7px;font-size:10px;color:var(--ac-muted)}
+.admin-legend-mark{display:inline-block;width:9px;height:9px;border-radius:50%}
+.admin-legend-mark.customers{background:#688fe8}
+.admin-legend-mark.strategies{background:#60c5b0}
+.admin-growth-svg{display:block;width:100%;height:auto;aspect-ratio:352/149;color:var(--ac-muted);overflow:visible}
+.admin-data-caveat{color:var(--ac-subtle);font-size:10px;line-height:1.65;margin:12px 0 0}
+.admin-design-issue{display:flex;align-items:center;gap:11px;min-width:0;padding:11px 0;border-bottom:1px solid var(--ac-border)}
+.admin-design-issue>span:nth-child(2){flex:1;min-width:0}
+.admin-design-issue strong{display:block;font-size:11.5px;line-height:1.4}
+.admin-design-issue small{display:block;margin-top:4px;font-size:10px;line-height:1.5;color:var(--ac-muted)}
+.admin-design-issue>svg{flex:none;color:var(--ac-subtle)}
+.admin-design-issue-symbol{display:grid;place-items:center;flex:none;width:31px;height:31px;border:1px solid var(--ac-border);border-radius:9px;color:var(--ac-warning);background:var(--ac-surface-2)}
+.admin-design-issue-symbol.is-critical{color:var(--ac-danger)}
+.admin-design-empty{display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px 0;color:var(--ac-positive)}
+.admin-design-empty strong{font-size:12px;color:var(--ac-text)}
+.admin-design-empty p{margin:0;font-size:11px;color:var(--ac-muted);line-height:1.6}
+.admin-panel-footer-link{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:var(--ac-indigo);padding-top:15px}
+.admin-panel-footer-link:hover{text-decoration:underline}
+.admin-design-info-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--ac-border);font-size:11.5px}
+.admin-design-info-row>span{color:var(--ac-muted)}
+.admin-design-info-row>span small{display:block;font-size:10px;color:var(--ac-subtle);margin-top:3px}
+.admin-design-info-row strong{font-weight:750}
+.admin-design-info-row .is-good{color:var(--ac-positive)}
+.admin-design-info-row .is-warning{color:var(--ac-warning)}
+.admin-design-quick-links{
+ display:flex;justify-content:space-between;align-items:center;gap:16px;
+ padding:17px 20px;margin:17px 0;background:var(--ac-surface);border:1px solid var(--ac-border);border-radius:14px;
+}
+.admin-design-quick-links h2{font-size:15px;margin:0 0 4px}
+.admin-design-quick-links p{color:var(--ac-muted);font-size:11px;margin:0}
+.admin-design-quick-links>div:last-child{display:flex;gap:8px;flex-wrap:wrap}
+.admin-design-quick-links a{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border:1px solid var(--ac-border);border-radius:9px;font-size:10.5px;font-weight:750}
+.admin-design-quick-links a:hover{border-color:var(--ac-indigo);color:var(--ac-indigo)}
+/* Strategy Studio as product management table, not decorative cards. */
+.admin-strategy-workspace .admin-page-head h1{font-size:36px}
+.admin-studio-table-wrap{width:100%;min-width:0;overflow-x:auto;outline-offset:3px}
+.admin-studio-table{border-collapse:collapse;width:100%;min-width:660px}
+.admin-studio-table th{padding:14px 13px;text-align:left;font-size:10px;letter-spacing:.08em;font-weight:800;color:var(--ac-subtle);border-bottom:1px solid var(--ac-border)}
+.admin-studio-table td{padding:16px 13px;font-size:12px;vertical-align:middle;border-bottom:1px solid var(--ac-border);color:var(--ac-text)}
+.admin-studio-table tbody tr:last-child td{border-bottom:0}
+.admin-studio-table tbody tr:hover{background:var(--ac-surface-2)}
+.admin-studio-table td strong{font-size:12.5px;font-weight:800}
+.admin-studio-table td small{display:block;margin-top:4px;color:var(--ac-muted);font-size:10.5px;line-height:1.5;max-width:330px}
+.admin-studio-engine{font-size:10px!important;color:var(--ac-muted)!important}
+.admin-studio-release-state{display:inline-block;color:var(--ac-warning);font-size:11px;font-weight:800}
+.admin-studio-release-state.is-live{color:var(--ac-positive)}
+.admin-studio-release-state.is-ready{color:var(--ac-indigo)}
+.admin-studio-action{font-size:11.5px;font-weight:800;color:var(--ac-indigo);white-space:nowrap}
+.admin-studio-table-wrap button{font-size:11px}
+.admin-catalogue-search-row{gap:12px}
+.app-shell.admin-workspace-shell .admin-search input{
+ background:var(--ac-surface);color:var(--ac-text);border-color:var(--ac-border)
+}
+.admin-catalogue-filters button{color:var(--ac-muted)}
+.admin-catalogue-filters button.selected{color:var(--ac-text);background:var(--ac-surface-2);border-color:var(--ac-border)}
+/* Setup wizard: progress/stepper aligned to the seven elements of the mock. */
+.admin-setup-panel{padding:26px}
+.admin-setup-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:17px}
+.admin-setup-header h2{font-size:19px;margin:0 0 5px}
+.admin-setup-header p{font-size:12px;color:var(--ac-muted);margin:0}
+.admin-setup-fraction{font-size:11px;font-weight:750;color:var(--ac-muted);white-space:nowrap}
+.admin-setup-progress{height:7px;overflow:hidden;border-radius:99px;background:var(--ac-surface-2);border:1px solid var(--ac-border);margin-bottom:12px}
+.admin-setup-progress>div{height:100%;background:#4778d9;transition:width .15s}
+.admin-setup-steps{list-style:none;padding:0;margin:0}
+.admin-setup-steps li{display:flex;align-items:center;gap:14px;padding:16px 2px;border-bottom:1px solid var(--ac-border)}
+.admin-setup-steps li:last-child{border:0}
+.admin-setup-step-icon{color:var(--ac-subtle);flex:none;width:22px;height:22px}
+.admin-setup-step-icon.is-complete{color:var(--ac-positive)}
+.admin-setup-steps li>a:nth-child(2){flex:1;display:grid;gap:3px;min-width:0}
+.admin-setup-step-number{font-size:9px;color:var(--ac-subtle);font-weight:800;letter-spacing:.10em}
+.admin-setup-steps strong{font-size:12.5px;font-weight:750}
+.admin-setup-step-state{font-size:10px;color:var(--ac-subtle);white-space:nowrap}
+.admin-setup-step-state.is-complete{color:var(--ac-positive)}
+.admin-setup-step-state.is-review{color:var(--ac-warning)}
+.admin-setup-step-arrow{color:var(--ac-indigo);flex:none}
+.admin-setup-help{display:flex;align-items:start;gap:8px;font-size:11px;line-height:1.6;color:var(--ac-muted);margin:13px 0 0}
+.admin-setup-help svg{flex:none;margin-top:1px}
+.admin-setup-detail{display:flex;align-items:center;gap:15px;padding:11px 0;border-bottom:1px solid var(--ac-border)}
+.admin-setup-detail:last-child{border:0}
+.admin-setup-detail>div{flex:1;min-width:0}
+.admin-setup-detail strong{font-size:12px}
+.admin-setup-detail p{font-size:11px;color:var(--ac-muted);margin:4px 0 0}
+.admin-setup-detail>span{color:var(--ac-subtle);font-size:10px;white-space:nowrap}
+.admin-setup-detail>a{color:var(--ac-indigo)}
+.admin-bootstrap-notice{margin-top:17px;display:flex;gap:16px;justify-content:space-between;align-items:center}
+.admin-bootstrap-notice h2{font-size:14px;margin:0 0 6px}
+.admin-bootstrap-notice p{font-size:11px;color:var(--ac-muted);margin:0;line-height:1.65}
+.admin-bootstrap-notice a{display:inline-flex;gap:8px;align-items:center;font-size:11px;color:var(--ac-indigo);font-weight:750;white-space:nowrap}
+/* Integrations are an orderly list with status & legitimate settings links. */
+.admin-integration-panel{padding:16px 23px}
+.admin-integration-row{display:flex;align-items:center;gap:14px;border-top:1px solid var(--ac-border);padding:18px 0}
+.admin-integration-icon,.admin-security-card-icon{width:43px;height:43px;border-radius:11px;display:grid;place-items:center;flex:none;background:var(--ac-surface-2);border:1px solid var(--ac-border);color:var(--ac-indigo)}
+.admin-integration-description{flex:1;min-width:0}
+.admin-integration-description h3{font-size:13px;margin:0 0 3px}
+.admin-integration-description p{font-size:11.5px;margin:0 0 5px;color:var(--ac-muted)}
+.admin-integration-description small{display:block;font-size:10px;color:var(--ac-subtle);line-height:1.5}
+.admin-integration-status{border:1px solid var(--ac-border);padding:5px 8px;border-radius:99px;font-size:10px;font-weight:750;color:var(--ac-muted);white-space:nowrap}
+.admin-integration-action{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--ac-border);border-radius:9px;color:var(--ac-indigo)}
+.admin-security-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.admin-security-grid h2{font-size:16px;margin:13px 0 8px}
+.admin-security-grid p{font-size:12px;color:var(--ac-muted);line-height:1.6}
+.admin-audit-panel .admin-studio-table{min-width:500px}
+.app-shell.admin-workspace-shell .admin-advanced-workflow{
+ background:var(--ac-surface);border:1px solid var(--ac-border);border-radius:13px;
+}
+.app-shell.admin-workspace-shell .admin-advanced-workflow>summary{
+ padding:18px 21px;color:var(--ac-text)
+}
+.app-shell.admin-workspace-shell .admin-advanced-workflow>summary small{color:var(--ac-muted)}
+.app-shell.admin-workspace-shell .admin-advanced-content{border-color:var(--ac-border)}
+.app-shell.admin-workspace-shell .admin-flag-grid>div{border-color:var(--ac-border)}
+.app-shell.admin-workspace-shell .admin-flag-grid strong{color:var(--ac-positive)}
+/* Responsive preservation of all controls; no mobile fixed bottom sidebar. */
+@media(max-width:1220px){
+ .app-shell.admin-workspace-shell{grid-template-columns:216px minmax(0,1fr)}
+ .admin-overview-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .admin-design-grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+}
+@media(max-width:980px){
+ .app-shell.admin-workspace-shell{display:block;padding-bottom:0}
+ .app-shell.admin-workspace-shell > .sidebar.admin-workspace-sidebar{
+  position:relative!important;top:auto;bottom:auto;left:auto;right:auto;
+  width:100%;height:auto;min-height:0;overflow:visible;padding:0;
+  border:0;border-bottom:1px solid #293b51;display:block;
+ }
+ .app-shell.admin-workspace-shell .admin-nav-inner{min-height:0;padding:9px 13px 0}
+ .app-shell.admin-workspace-shell .admin-workspace-brand{padding:7px 8px 9px}
+ .app-shell.admin-workspace-shell .admin-workspace-caption,
+ .app-shell.admin-workspace-shell .admin-nav-heading,
+ .app-shell.admin-workspace-shell .admin-nav-footer{display:none}
+ .app-shell.admin-workspace-shell .admin-workspace-navigation{
+  display:flex;gap:4px;overflow-x:auto;scrollbar-width:thin;align-items:center;
+ }
+ .app-shell.admin-workspace-shell .admin-nav-section{display:flex;gap:4px;margin:0;flex:none}
+ .app-shell.admin-workspace-shell .admin-nav-item{white-space:nowrap;margin:0;border-radius:9px 9px 0 0}
+ .app-shell.admin-workspace-shell .admin-nav-active-dot{display:none}
+ .admin-design-grid{grid-template-columns:1fr}
+ .admin-design-grid-secondary{grid-template-columns:1fr 1fr}
+}
+@media(max-width:700px){
+ .app-shell.admin-workspace-shell .admin-workspace-topbar{min-height:58px;padding:0 14px}
+ .app-shell.admin-workspace-shell .admin-topbar-actions{gap:6px}
+ .app-shell.admin-workspace-shell .admin-icon-link{width:30px;height:30px}
+ .app-shell.admin-workspace-shell .app-content.admin-workspace-content{
+  width:calc(100% - 28px);padding:23px 0 55px
+ }
+ .app-shell.admin-workspace-shell .admin-design-heading{align-items:flex-start;flex-direction:column;gap:12px}
+ .app-shell.admin-workspace-shell .admin-design-heading h1{font-size:31px}
+ .admin-overview-kpis{gap:9px}
+ .admin-design-kpi{padding:15px 12px;min-height:119px}
+ .admin-design-kpi strong{font-size:25px}
+ .admin-design-grid-secondary{grid-template-columns:1fr}
+ .admin-design-panel{padding:16px}
+ .admin-design-quick-links{align-items:stretch;flex-direction:column}
+ .admin-design-quick-links>div:last-child{display:grid;grid-template-columns:1fr 1fr}
+ .admin-setup-panel{padding:16px}
+ .admin-setup-header{flex-direction:column;gap:8px}
+ .admin-setup-steps li{gap:9px}
+ .admin-setup-steps strong{font-size:11px}
+ .admin-setup-step-state{font-size:9px;white-space:normal;max-width:70px}
+ .admin-setup-detail{align-items:flex-start}
+ .admin-bootstrap-notice{flex-direction:column;align-items:start}
+ .admin-integration-panel{padding:14px}
+ .admin-integration-row{flex-wrap:wrap}
+ .admin-integration-status{margin-left:57px}
+ .admin-security-grid{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+ .admin-setup-progress>div{transition:none}
+ .app-shell.admin-workspace-shell .admin-design-kpi{transition:none}
+}
+
+
+
+/* Shared finishing touches for legacy tabs and full-width commerce/customer pages. */
+.admin-three-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+.admin-customer-panel{margin-top:17px}
+.admin-customer-search{display:block;max-width:310px;flex:0 1 310px}
+.app-shell.admin-workspace-shell .admin-customer-search input{min-width:0;width:100%;padding:10px 12px;font-size:11.5px}
+.admin-commerce-prices,.admin-commerce-editor{margin-top:16px}
+.app-shell.admin-workspace-shell .admin-advanced-workflow.admin-commerce-editor{margin-top:17px}
+.app-shell.admin-workspace-shell .table-wrap{border-color:var(--ac-border);border-radius:13px;background:var(--ac-surface)}
+.app-shell.admin-workspace-shell table:not(.admin-studio-table){border-collapse:collapse;color:var(--ac-text);min-width:590px}
+.app-shell.admin-workspace-shell table:not(.admin-studio-table) th{
+ padding:13px 14px;background:var(--ac-surface-2);color:var(--ac-subtle);font-size:10px;letter-spacing:.06em;font-weight:800;
+}
+.app-shell.admin-workspace-shell table:not(.admin-studio-table) td{padding:13px 14px;border-color:var(--ac-border);font-size:12px;color:var(--ac-text)}
+.app-shell.admin-workspace-shell .why-row{border-color:var(--ac-border)}
+.app-shell.admin-workspace-shell .form-card .field label{font-size:12px;color:var(--ac-text)}
+.app-shell.admin-workspace-shell .pill{border-color:var(--ac-border);color:var(--ac-muted)}
+.app-shell.admin-workspace-shell .pill.good{color:var(--ac-positive)}
+.app-shell.admin-workspace-shell .pill.warn{color:var(--ac-warning)}
+.app-shell.admin-workspace-shell .pill.bad{color:var(--ac-danger)}
+@media(max-width:1000px){.admin-three-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.admin-three-kpis{grid-template-columns:1fr 1fr}.admin-customer-panel .admin-design-panel-header{flex-direction:column}.admin-customer-search{max-width:none;width:100%;flex:auto}}
+
+
+/* Remove global page-entry fade: financial values must remain fully legible. */
+.app-shell.admin-workspace-shell .app-content.admin-workspace-content > *{animation:none!important;opacity:1!important;transform:none!important}
+/* Light theme WCAG AA readability in old and new admin components. */
+html[data-theme="light"] .app-shell.admin-workspace-shell{
+ --ac-muted:#394c66;--ac-subtle:#435772;--ac-indigo:#244b98;
+ --text:var(--ac-text);--muted:var(--ac-muted);--accent:var(--ac-indigo);
+}
+html[data-theme="light"] .app-shell.admin-workspace-shell :is(.card,.glass,.form-card) :is(p,.help,small){color:var(--ac-muted)!important}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-panel p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-heading p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .page-title p,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-setup-help{color:var(--ac-muted)!important}
+.app-shell.admin-workspace-shell .admin-stats-strip{background:var(--ac-surface)!important;border-color:var(--ac-border)!important;color:var(--ac-text)}
+.app-shell.admin-workspace-shell .admin-stats-strip>div{border-color:var(--ac-border);color:var(--ac-text)}
+.app-shell.admin-workspace-shell .admin-stats-strip strong{color:var(--ac-text)!important}
+.app-shell.admin-workspace-shell .admin-stats-strip span,
+.app-shell.admin-workspace-shell .admin-stats-strip small{color:var(--ac-muted)!important}
+.app-shell.admin-workspace-shell .admin-catalogue-toolbar p,
+.app-shell.admin-workspace-shell .admin-tile-meta,
+.app-shell.admin-workspace-shell .admin-tile-reason,
+.app-shell.admin-workspace-shell .admin-tile-footer span{color:var(--ac-muted)!important}
+.app-shell.admin-workspace-shell .admin-studio-table th{color:var(--ac-subtle)!important}
+.app-shell.admin-workspace-shell .admin-release-banner{background:var(--ac-surface);border-color:var(--ac-border)}
+.app-shell.admin-workspace-shell .admin-release-banner p{color:var(--ac-muted)}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-design-button{color:#fff;background:#344fad;border-color:#344fad}
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-setup-step-number,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-setup-detail>span,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-integration-description small,
+html[data-theme="light"] .app-shell.admin-workspace-shell .admin-integration-status{color:var(--ac-muted)}
