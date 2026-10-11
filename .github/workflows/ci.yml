@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Mirror of the official Postgres image. Avoid Docker Hub unauthenticated rate limits
-        # on ephemeral GitHub runners (toomanyrequests before tests even start).
+        # Docker Hub public images are not pull-rate-limited on GitHub-hosted runners.
+        # Keep the same official image for the role-verification pg_dump below.
         image: postgres:16
         env:
           POSTGRES_USER: strategyos
@@ -61,7 +61,7 @@ jobs:
           npm run db:provision-roles
           npm run db:verify-roles
           # Exercise actual pg_dump under the backup-only credentials, not the owner.
-          # Reuse the already-pulled service image; a second ECR tag often hits 429.
+          # Reuse the already-pulled service image instead of fetching a second tag.
           docker run --rm --network host --env "PGPASSWORD=$BACKUP_DB_PASSWORD" \
             postgres:16 \
             pg_dump -h 127.0.0.1 -U wealtharr_backup -d strategyos_test \
