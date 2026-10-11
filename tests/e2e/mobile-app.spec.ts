@@ -117,3 +117,40 @@ test.describe("inside the Android / iOS app",()=>{
     expect((await response.json()).error).toMatch(/website/i);
   });
 });
+
+
+test.describe("approved customer dashboard visual contract",()=>{
+  test("desktop keeps the 195px rail, 61px topbar and active navigation",async({page},testInfo)=>{
+    test.skip(testInfo.project.name!=="desktop-chromium","desktop visual contract");
+    await signIn(page,await createUser(testInfo));
+    const shell=page.locator(".customer-workspace-shell");
+    await expect(shell).toBeVisible();
+    const sidebar=shell.locator(":scope > .sidebar");
+    const topbar=shell.locator(".app-topbar");
+    expect(await sidebar.evaluate(node=>Math.round(node.getBoundingClientRect().width))).toBe(195);
+    expect(await topbar.evaluate(node=>Math.round(node.getBoundingClientRect().height))).toBe(61);
+    // Both user-selectable themes retain their approved colour tokens.
+    await page.evaluate(()=>document.documentElement.setAttribute("data-theme","dark"));
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#78f3c6");
+    await page.evaluate(()=>document.documentElement.setAttribute("data-theme","light"));
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#08795d");
+    await expect(sidebar.locator('.nav-link[aria-current="page"]')).toHaveText("Main");
+    await expect(page.getByRole("heading",{name:"Start with one simple decision."})).toBeVisible();
+    await page.getByRole("link",{name:"Strategies",exact:true}).click();
+    await expect(sidebar.locator('.nav-link[aria-current="page"]')).toHaveText("Strategies");
+  });
+
+  test("phone keeps the accessible bottom navigation without horizontal overflow",async({page},testInfo)=>{
+    test.skip(testInfo.project.name!=="mobile-chromium","phone visual contract");
+    await signIn(page,await createUser(testInfo));
+    const shell=page.locator(".customer-workspace-shell");
+    const sidebar=shell.locator(":scope > .sidebar");
+    await expect(sidebar).toBeVisible();
+    expect(await sidebar.evaluate(node=>getComputedStyle(node).position)).toBe("fixed");
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    for(const link of await sidebar.locator(".nav-link").all()){
+      const box=await link.boundingBox();
+      expect(box?.height??0).toBeGreaterThanOrEqual(43.5);
+    }
+  });
+});

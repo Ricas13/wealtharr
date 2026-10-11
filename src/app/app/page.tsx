@@ -103,7 +103,7 @@ export default async function OverviewPage(){
     </section>;
   }
 
-  return <>
+  return <div className="home-dashboard">
     <div className="dashboard-heading">
       <div>
         <div className="eyebrow">Home</div>
@@ -123,6 +123,10 @@ export default async function OverviewPage(){
           <span>{portfolioValueContext??contributionContext}</span>
         </div>
         {portfolioValueContext&&portfolioFullyValued&&<div className="portfolio-context secondary-context"><span>{contributionContext} contributed</span></div>}
+        {combinedSummary&&combined&&portfolioFullyValued&&<div className={"portfolio-growth"+(Number(combinedSummary.profitSinceStart)<0?" loss":"")}>
+          {Number(combinedSummary.profitSinceStart)>0?"Portfolio up ":Number(combinedSummary.profitSinceStart)<0?"Portfolio down ":"Portfolio unchanged at "}
+          {Number(combinedSummary.profitSinceStart)!==0?money(Math.abs(Number(combinedSummary.profitSinceStart)),combined.currency):money(0,combined.currency)} since tracking began
+        </div>}
       </div>
 
       <div className={"today-card "+(primaryAction?"needs-action":"all-clear")}>
@@ -150,10 +154,10 @@ export default async function OverviewPage(){
           <p>Compare your active and paused strategies on the same dates. Deposits and withdrawals are not counted as gains.</p></div>
       </div>
       <div className="analytics-stats">
-        <div className="kpi"><span>Profit since first tracked value</span><strong>{profitText}</strong></div>
-        <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong>{formatPct(combinedSummary?.flowAdjustedReturnPct)}</strong></div>
-        <div className="kpi"><span>Observed maximum drawdown</span><strong>{formatPct(combinedSummary?.observedMaxDrawdownPct)}</strong></div>
-        <div className="kpi"><span>Last observed session P/L</span><strong>{combinedSummary?.lastObservedSessionPnl!=null&&combined?money(Number(combinedSummary.lastObservedSessionPnl),combined.currency):"—"}</strong></div>
+        <div className="kpi"><span>Profit since first tracked value</span><strong className={combinedSummary?(Number(combinedSummary.profitSinceStart)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{profitText}</strong></div>
+        <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong className={combinedSummary?.flowAdjustedReturnPct!=null?(Number(combinedSummary.flowAdjustedReturnPct)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{formatPct(combinedSummary?.flowAdjustedReturnPct)}</strong></div>
+        <div className="kpi"><span>Observed maximum drawdown</span><strong className={combinedSummary?.observedMaxDrawdownPct!=null?"portfolio-negative":undefined}>{formatPct(combinedSummary?.observedMaxDrawdownPct)}</strong></div>
+        <div className="kpi"><span>Last observed session P/L</span><strong className={combinedSummary?.lastObservedSessionPnl!=null?(Number(combinedSummary.lastObservedSessionPnl)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{combinedSummary?.lastObservedSessionPnl!=null&&combined?money(Number(combinedSummary.lastObservedSessionPnl),combined.currency):"—"}</strong></div>
       </div>
       {overallChart.length>=2?<div className="chart-card">
         <PerformanceChart data={overallChart} comparisons={overallComparisons} actualLabel="All strategies" indexed fullControls/>
@@ -195,5 +199,5 @@ export default async function OverviewPage(){
       <summary>{actions.length-1} more {actions.length-1===1?"action":"actions"} waiting</summary>
       <div className="secondary-actions-list">{actions.slice(1).map((a:any)=><Link className="secondary-action-row" href={"/app/strategies/"+a.strategy_instance_id} key={a.id}><div><strong>{a.instance_name}</strong><span>{a.title}</span></div><ArrowRight size={16}/></Link>)}</div>
     </details>}
-  </>;
+  </div>;
 }
