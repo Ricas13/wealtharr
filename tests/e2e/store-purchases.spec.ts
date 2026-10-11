@@ -35,7 +35,11 @@ async function signIn(page:import("@playwright/test").Page,email:string){
 test("in the iOS app a free user sees the in-app purchase area, never website checkout; website users billed by Apple are pointed to the store",async({page,browser},testInfo)=>{
   test.skip(testInfo.project.name!=="desktop-chromium","settings and prices are global; one project mutates them");
   const sql=db();
+  const priorProVisibility=await sql.unsafe("SELECT visible FROM plans WHERE slug='pro'");
   try{
+    // Fresh installations intentionally publish zero plans; make this test plan
+    // explicitly available to verify the actual native checkout path.
+    await sql.unsafe("UPDATE plans SET visible=true WHERE slug='pro'");
     // Operator: save the iOS public SDK key in the admin screen and map a store product to a price.
     const adminEmail=await makeUser("admin","ADMIN");
     await signIn(page,adminEmail);
@@ -69,6 +73,7 @@ test("in the iOS app a free user sees the in-app purchase area, never website ch
   }finally{
     await sql.unsafe("DELETE FROM app_settings WHERE key='REVENUECAT_APPLE_PUBLIC_KEY'");
     await sql.unsafe("UPDATE plan_prices SET apple_product_id=NULL WHERE apple_product_id=$1",[PRODUCT]);
+    await sql.unsafe("UPDATE plans SET visible=$1 WHERE slug='pro'",[Boolean(priorProVisibility[0]?.visible)]);
     await sql.end();
   }
 });
