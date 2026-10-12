@@ -1,7 +1,9 @@
 import "server-only";
+import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
 import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
+import type { Sql } from "postgres";
 import { assertLedgerEvent, foldLedger } from "@/domain/ledger";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
@@ -40,10 +42,10 @@ type CalculationScenario={
   resetTimeline?:boolean;
 };
 
-async function buildActionCalculation(strategyInstanceId:string,scenario?:CalculationScenario){
-  const rows=await sql.unsafe("SELECT i.id,i.user_id,i.account_id,i.strategy_definition_id,i.strategy_version_id,i.started_at,i.onboarding_mode,i.last_reconciled_at,v.effective_from AS version_effective_from,v.engine_key AS engine,v.config,i.settings,i.execution_constraints,a.name AS primary_account_name,a.country,a.wrapper,a.currency,a.broker_name,s.state,u.timezone AS user_timezone FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id JOIN strategy_versions v ON v.id=i.strategy_version_id JOIN accounts a ON a.id=i.account_id JOIN users u ON u.id=i.user_id JOIN strategy_states s ON s.strategy_instance_id=i.id WHERE i.id=$1 AND i.status='ACTIVE' LIMIT 1",[strategyInstanceId]);
+async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:string,scenario?:CalculationScenario){
+  const rows=await db.unsafe("SELECT i.id,i.user_id,i.account_id,i.strategy_definition_id,i.strategy_version_id,i.started_at,i.onboarding_mode,i.last_reconciled_at,v.effective_from AS version_effective_from,v.engine_key AS engine,v.config,i.settings,i.execution_constraints,a.name AS primary_account_name,a.country,a.wrapper,a.currency,a.broker_name,s.state,u.timezone AS user_timezone FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id JOIN strategy_versions v ON v.id=i.strategy_version_id JOIN accounts a ON a.id=i.account_id JOIN users u ON u.id=i.user_id JOIN strategy_states s ON s.strategy_instance_id=i.id WHERE i.id=$1 AND i.status='ACTIVE' LIMIT 1",[strategyInstanceId]);
   const instance=rows[0];if(!instance)throw new Error("STRATEGY_INSTANCE_NOT_FOUND");
-  const linkedAccounts=await sql.unsafe(
+  const linkedAccounts=await db.unsafe(
     "SELECT a.id,a.name,a.country,a.wrapper,a.currency,a.broker_name,sa.role FROM strategy_accounts sa JOIN accounts a ON a.id=sa.account_id WHERE sa.strategy_instance_id=$1 ORDER BY CASE WHEN sa.role='PRIMARY' THEN 0 ELSE 1 END,a.created_at,a.name",
     [strategyInstanceId]
   );
@@ -61,7 +63,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const baseCurrency=String(instance.currency).toUpperCase();
   const accountCurrencies=new Set(accounts.map((account)=>String(account.currency).toUpperCase()));
   const primaryAccountId=String(instance.account_id);
-  const ledgerRows=await sql.unsafe("SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity,occurred_at,created_at FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",[strategyInstanceId]);
+  const ledgerRows=await db.unsafe("SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity,occurred_at,created_at FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",[strategyInstanceId]);
   const asLedgerEvent=(r:any)=>({eventType:String(r.event_type),currency:String(r.currency),cashAmount:String(r.cash_amount),feeAmount:String(r.fee_amount),instrumentId:r.instrument_id?String(r.instrument_id):null,quantity:String(r.quantity)});
   const folded=foldLedger(ledgerRows.map(asLedgerEvent),baseCurrency);
   const accountPositions=new Map<string,ReturnType<typeof foldLedger>>();
@@ -79,12 +81,12 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const settings=scenario?.versionOverride?.settings??((instance.settings??{}) as Record<string,unknown>);
   const state={...(scenario?.stateOverride??((instance.state??{}) as Record<string,unknown>))};
   if(scenario?.forceReview)state.forceReview=true;
-  const requiredRelease=await sql.unsafe(
+  const requiredRelease=await db.unsafe(
     "SELECT id,version FROM strategy_versions WHERE strategy_definition_id=$1 AND lifecycle_status='PUBLISHED' AND upgrade_policy='REQUIRED' AND effective_from>$2 AND effective_from<=current_date AND (effective_to IS NULL OR effective_to>=current_date) ORDER BY effective_from DESC,published_at DESC NULLS LAST LIMIT 1",
     [calculationDefinitionId,calculationEffectiveFrom]
   );
   if(calculationDefinitionId===String(instance.strategy_definition_id)){
-    const targetOverride=await sql.unsafe("SELECT manual_value FROM overrides WHERE strategy_instance_id=$1 AND field_key='strategy_state.targetValue' AND active=true ORDER BY created_at DESC LIMIT 1",[strategyInstanceId]);
+    const targetOverride=await db.unsafe("SELECT manual_value FROM overrides WHERE strategy_instance_id=$1 AND field_key='strategy_state.targetValue' AND active=true ORDER BY created_at DESC LIMIT 1",[strategyInstanceId]);
     if(targetOverride[0]?.manual_value!=null){
       const candidate=new Decimal(String(targetOverride[0].manual_value));
       if(!candidate.isFinite()||candidate.lt(0)||candidate.gt("999999999999"))throw new Error("INVALID_TARGET_OVERRIDE");
@@ -109,7 +111,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     if(!position)continue;
     for(const [instrumentId,quantity] of position.quantities.entries()){
       if(quantity.eq(0))continue;
-      const market=await sql.unsafe(
+      const market=await db.unsafe(
         "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id "+
         "FROM instruments i LEFT JOIN LATERAL ("+
         " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,o.price,o.observed_at,o.currency AS observation_currency"+
@@ -120,7 +122,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
         [instrumentId,accountCurrency]
       );
       const m=market[0];
-      const priceOverride=await sql.unsafe("SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[strategyInstanceId,"market_price:"+instrumentId]);
+      const priceOverride=await db.unsafe("SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[strategyInstanceId,"market_price:"+instrumentId]);
       const priceCurrency=String(m?.observation_currency??m?.trading_currency??"").toUpperCase();
       if(priceCurrency&&priceCurrency!==accountCurrency){
         dataStatus="MISSING";
@@ -167,7 +169,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const reviewDue=Boolean(state.forceReview)||new Date()>=dueAt;
   const contributionRows=scenario?.resetTimeline
     ?[{amount:"0"}]
-    :await sql.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview]);
+    :await db.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview]);
   const contributionsSinceReview=new Decimal(String(contributionRows[0]?.amount??0)).plus(new Decimal(scenario?.contributionDelta??0));
   const engine=getStrategyEngine(calculationEngineKey);
   const fullyEligibleAccountIds=new Set<string>();
@@ -175,7 +177,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   // UK ISA), while another mandatory leg has no faithful equivalent (TMF duration).
   // Only complete verified implementations are eligible for action instructions.
   if(dataStatus==="CURRENT"){
-    const candidateMappings=verifiedCandidates(await sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL));
+    const candidateMappings=verifiedCandidates(await db.unsafe(VERIFIED_MARKET_MAPPINGS_SQL));
     const market=assessLinkedMarkets(calculationEngineKey,config,candidateMappings,
       accounts.map(account=>({
         country:String(account.country),wrapper:String(account.wrapper),
@@ -194,7 +196,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   // Momentum research engines read licensed price history; every other engine ignores it.
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
-  const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12):undefined;
+  const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
   let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
 
   let tradingLineId:string|null=null;
@@ -226,7 +228,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       let mappedAccount:typeof accounts[number]|null=null;
       for(const candidateAccount of rankedAccounts){
         const account=candidateAccount.account;
-        const mappingRows=await sql.unsafe(
+        const mappingRows=await db.unsafe(
           "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
           [proposal.economicExposure,String(account.country),String(account.wrapper)]
         );
@@ -273,14 +275,14 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     }
 
     if(tradingLineId&&["BUY","SELL"].includes(proposal.actionType)&&proposal.amount){
-      const quoteRows=await sql.unsafe(
+      const quoteRows=await db.unsafe(
         "SELECT tl.ticker,tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
         [tradingLineId]
       );
       const quote=quoteRows[0];
       executionTicker=quote?.ticker?String(quote.ticker):null;
       const executionOverride=quote?.instrument_id
-        ?await sql.unsafe(
+        ?await db.unsafe(
           "SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",
           [strategyInstanceId,"market_price:"+String(quote.instrument_id)]
         ):[]; 
@@ -353,7 +355,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   }).sort().join(",");
   // Corrections restore the earlier cash and holdings exactly, so those alone cannot tell a corrected
   // review from the one that was already executed. The append-only ledger length can.
-  const ledgerRevision=String((await sql.unsafe("SELECT count(*)::int AS n FROM ledger_events WHERE strategy_instance_id=$1",[strategyInstanceId]))[0]?.n??0);
+  const ledgerRevision=String((await db.unsafe("SELECT count(*)::int AS n FROM ledger_events WHERE strategy_instance_id=$1",[strategyInstanceId]))[0]?.n??0);
   const material=actionFingerprintMaterial({
     strategyInstanceId,
     strategyVersionId:calculationVersionId,
@@ -395,7 +397,7 @@ export async function previewCashScenario(
   const amount=new Decimal(input.amount);
   if(!amount.isFinite()||amount.lte(0))throw new Error("INVALID_PREVIEW_AMOUNT");
   const contribution=input.type==="CONTRIBUTION"?amount:new Decimal(0);
-  const calculation=await buildActionCalculation(strategyInstanceId,{
+  const calculation=await buildActionCalculation(sql,strategyInstanceId,{
     cashDelta:input.type==="CONTRIBUTION"?amount:amount.neg(),
     contributionDelta:contribution
   });
@@ -434,6 +436,7 @@ export async function previewStrategySwitchScenario(
   const target=targets[0];
   if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
   await assertDisabledStrategyPreviewGates(sql,target);
+  await assertUserStrategyAccessWith(sql,userId,String(target.definition_id));
   if(allowedStrategyKeys&&!allowedStrategyKeys.has(String(target.key)))throw new Error("STRATEGY_NOT_IN_PLAN");
 
   const ownership=await sql.unsafe(
@@ -465,7 +468,7 @@ export async function previewStrategySwitchScenario(
   engine.validateConfig(config);
   const settings=validateInstanceSettings(parseInputSchema(target.input_schema),suppliedSettings);
 
-  const calculation=await buildActionCalculation(strategyInstanceId,{
+  const calculation=await buildActionCalculation(sql,strategyInstanceId,{
     forceReview:true,
     resetTimeline:true,
     stateOverride:{forceReview:true},
@@ -522,7 +525,7 @@ export async function previewStrategyVersionScenario(
   const mergedSettings={...((target.settings??{}) as Record<string,unknown>),...(suppliedSettings??{})};
   const settings=validateInstanceSettings(parseInputSchema(target.input_schema),mergedSettings);
 
-  const calculation=await buildActionCalculation(strategyInstanceId,{
+  const calculation=await buildActionCalculation(sql,strategyInstanceId,{
     forceReview:true,
     versionOverride:{
       strategyVersionId:String(target.target_version_id),
@@ -556,7 +559,7 @@ export async function previewExecutionConstraintsScenario(
   const owner=await sql.unsafe("SELECT id FROM strategy_instances WHERE id=$1 AND user_id=$2 LIMIT 1",[strategyInstanceId,userId]);
   if(!owner[0])throw new Error("STRATEGY_INSTANCE_NOT_FOUND");
   const normalized=normalizeExecutionConstraints(executionConstraints);
-  const calculation=await buildActionCalculation(strategyInstanceId,{executionConstraints:{
+  const calculation=await buildActionCalculation(sql,strategyInstanceId,{executionConstraints:{
     fractionalShares:normalized.fractionalShares,
     minimumTradeAmount:normalized.minimumTradeAmount.toString(),
     cashBufferAmount:normalized.cashBufferAmount.toString(),
@@ -604,7 +607,7 @@ export async function isStoredActionCurrent(strategyInstanceId:string,actionId:s
       [actionId,strategyInstanceId]
     );
     if(!rows[0])return false;
-    return (await buildActionCalculation(strategyInstanceId)).fingerprint===String(rows[0].fingerprint);
+    return (await buildActionCalculation(sql,strategyInstanceId)).fingerprint===String(rows[0].fingerprint);
   }catch{return false;}
 }
 
@@ -617,7 +620,7 @@ export async function calculateAction(strategyInstanceId:string){
     if(!locked[0])throw new Error("STRATEGY_INSTANCE_NOT_FOUND");
     await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[strategyInstanceId]);
 
-    const calculation=await buildActionCalculation(strategyInstanceId);
+    const calculation=await buildActionCalculation(tx,strategyInstanceId);
     const {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker}=calculation;
     if(dataStatus==="CURRENT")await tx.unsafe("INSERT INTO performance_series (strategy_instance_id,series_type,date,value,metadata) VALUES ($1,'USER_VALUE',current_date,$2,$3::jsonb) ON CONFLICT (strategy_instance_id,series_type,date) DO UPDATE SET value=EXCLUDED.value,metadata=EXCLUDED.metadata",[strategyInstanceId,totalValue.toString(),JSON.stringify({source:"ledger+market"})]);
     const existing=await tx.unsafe(
@@ -751,7 +754,7 @@ export async function executeAction(
     // or changed settings. Rebuild under the same strategy lock before a fill
     // or HOLD can advance the review. Already-completed broker fills can still
     // be recorded through the historical import/reconciliation path.
-    const current=await buildActionCalculation(String(strategy.id));
+    const current=await buildActionCalculation(tx,String(strategy.id));
     if(current.fingerprint!==String(action.fingerprint))throw new Error("ACTION_STALE_INPUTS");
 
     let partial=false;
