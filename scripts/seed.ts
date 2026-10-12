@@ -1,5 +1,6 @@
 import {STRATEGY_PLUGINS,curatedRelease} from "../src/domain/strategy/catalog/index";
 import postgres from "postgres";
+import {isDisposableStrategyTestSeed,seedableStrategies} from "../src/domain/strategy/seed-policy";
 
 async function main(){
   const url=process.env.DATABASE_URL;
@@ -21,10 +22,12 @@ async function main(){
     await seedPlan("investor","Investor",999,9900,1742,3,{features:["history","reconciliation","resume","community","analytics","comparisons"],notificationChannels:["EMAIL","DISCORD","TELEGRAM"]},10);
     await seedPlan("pro","Pro",2999,29900,1692,null,{features:["history","reconciliation","resume","community","analytics","comparisons","what_if","advanced_imports","multi_account"],notificationChannels:["EMAIL","DISCORD","TELEGRAM"]},20);
 
+    const disposableTestDb=isDisposableStrategyTestSeed(process.env,url);
+    const seedable=seedableStrategies(STRATEGY_PLUGINS,disposableTestDb);
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
-    for(const plugin of STRATEGY_PLUGINS){
+    for(const plugin of seedable){
       const definition=plugin.seedDefinition;
       if(!definition)continue;
       const key=plugin.key;
@@ -62,19 +65,7 @@ async function main(){
       );
     }
 
-    // Persist *all* research names for admin inventory without exposing any as an executable release.
-    // Published versions and engine validation remain separate review and code gates.
-    for(const plugin of STRATEGY_PLUGINS){
-      const research=plugin.profile;
-      if(!research)continue;
-      await sql.unsafe(
-        "INSERT INTO strategy_definitions (key,name,family,description,engine,enabled,proprietary,supported_regions,supported_wrappers) "+
-        "VALUES ($1,$2,'RESEARCH', $3,$4,false,false,'[]'::jsonb,'[]'::jsonb) ON CONFLICT (key) DO NOTHING",
-        [research.key,research.name,research.rules,research.engine]
-      );
-    }
-
-    await sql.unsafe("INSERT INTO benchmarks (key,name,economic_exposure,description) VALUES ('global-equity','Global Equity','GLOBAL_EQUITY','Broad global equity benchmark') ON CONFLICT (key) DO NOTHING");
+    // Unfinished research definitions are never seeded in an ordinary installation.\n    // Existing rows, versions, holdings and ledger events are never deleted by seed.\n\n    await sql.unsafe("INSERT INTO benchmarks (key,name,economic_exposure,description) VALUES ('global-equity','Global Equity','GLOBAL_EQUITY','Broad global equity benchmark') ON CONFLICT (key) DO NOTHING");
     // Names only, never fake index history. Market comparisons require licensed total-return series.
     for(const [ticker,name] of [["vti","Vanguard Total Stock Market ETF"],["spy","SPDR S&P 500 ETF Trust"],["qqq","Invesco QQQ Trust"]]){
       await sql.unsafe("INSERT INTO benchmarks (key,name,economic_exposure,description) VALUES ($1,$2,$3,'Requires licensed total-return and FX-normalised history') ON CONFLICT (key) DO NOTHING",[ticker,name,"BENCHMARK_"+ticker.toUpperCase()]);
