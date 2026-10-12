@@ -286,22 +286,22 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
 
 export function StrategyLifecycleControls({ id, status }: { id: string; status: string }) {
   const router = useRouter();
-  const status = useMessage();
+  const feedback = useMessage();
   const [busy, setBusy] = useState(false);
   const [confirmClose,setConfirmClose]=useState(false);
 
   async function change(next: "ACTIVE" | "PAUSED" | "CLOSED") {
     setBusy(true);
-    status.clear();
+    feedback.clear();
     try {
       const result = await requestJson("/api/strategies/" + id + "/status", {
         method: "PATCH",
         body: { status: next },
         fallbackError: "Could not update status."
       });
-      if (!result.ok) { status.error(result.errorText); return; }
-      if (result.data.recalculationPending) status.warning("Strategy status updated. Recalculation needs attention.");
-      else status.success("Strategy status updated.");
+      if (!result.ok) { feedback.error(result.errorText); return; }
+      if (result.data.recalculationPending) feedback.warning("Strategy status updated. Recalculation needs attention.");
+      else feedback.success("Strategy status updated.");
       setConfirmClose(false);
       router.refresh();
     } finally {
@@ -322,7 +322,7 @@ export function StrategyLifecycleControls({ id, status }: { id: string; status: 
         <button className="button quiet" disabled={busy} onClick={()=>setConfirmClose(false)}>Keep strategy</button>
       </div>
     </div>}
-    <MessageView message={status.message} as="span"/>
+    <MessageView message={feedback.message} as="span"/>
   </div>;
 }
 
