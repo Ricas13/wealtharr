@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import Link from "next/link";
 import { isUuid } from "@/domain/uuid";
 import { notFound } from "next/navigation";
@@ -100,7 +101,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
       inputSchema:Array.isArray(strategy.input_schema)?strategy.input_schema:[]
     }));
 
-  const actionRows=await sql.unsafe("SELECT a.id,a.action_type,a.status,a.title,a.instruction,a.amount,a.currency,a.explanation,a.confidence,a.due_at,a.created_at,acc.name AS account_name,acc.wrapper AS account_wrapper FROM actions a LEFT JOIN accounts acc ON acc.id=a.account_id WHERE a.strategy_instance_id=$1 AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') ORDER BY a.created_at DESC LIMIT 1",[id]);
+  const actionRows=await sql.unsafe("SELECT a.id,a.action_type,a.status,a.title,a.instruction,a.amount,a.currency,a.explanation,a.confidence,a.due_at,a.created_at,acc.name AS account_name,acc.wrapper AS account_wrapper FROM actions a LEFT JOIN accounts acc ON acc.id=a.account_id WHERE a.strategy_instance_id=$1 AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") ORDER BY a.created_at DESC LIMIT 1",[id]);
   const storedAction=actionRows[0];
   const action=storedAction&&!(await isStoredActionCurrent(id,String(storedAction.id)))
     ?{...storedAction,...STALE_ACTION_DISPLAY}:storedAction;

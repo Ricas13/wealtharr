@@ -14,7 +14,10 @@ async function handle(request: Request) {
   try {
     const result = await runOpsCheck();
     const critical = result.alerts.some((a) => a.severity === "critical");
-    return Response.json({ ok: !critical, ...result }, { status: critical ? 503 : 200, headers: { "cache-control": "no-store" } });
+    // Detail for operators only (this endpoint is bearer-authenticated; the public /api/health is not):
+    // Yahoo needs no credentials and is not licensed for commercial use, so say so here.
+    const marketDataProvider = process.env.MARKET_DATA_PROVIDER === "yahoo" ? "yahoo: configured (unlicensed)" : undefined;
+    return Response.json({ ok: !critical, ...result, ...(marketDataProvider ? { marketDataProvider } : {}) }, { status: critical ? 503 : 200, headers: { "cache-control": "no-store" } });
   } catch {
     return Response.json({ ok: false, error: "check failed" }, { status: 500, headers: { "cache-control": "no-store" } });
   }

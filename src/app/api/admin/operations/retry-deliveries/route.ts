@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import {z} from "zod";
 import {requireAdmin} from "@/lib/session";
 import {assertSameOrigin} from "@/lib/security";
@@ -19,7 +20,7 @@ export async function POST(request:Request){
     "LEFT JOIN actions a ON a.id=n.action_id "+
     "WHERE ((d.status='PENDING' AND d.last_error_code IN ('DELIVERY_FAILED','ACTION_REVALIDATION_FAILED')) OR ($3::boolean AND d.status='DEAD_LETTER')) "+
     "AND ($1::text IS NULL OR d.channel=$1) "+
-    "AND (n.action_id IS NULL OR (a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
+    "AND (n.action_id IS NULL OR (a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") "+
     "AND n.id=(SELECT newest.id FROM notifications newest WHERE newest.action_id=n.action_id ORDER BY newest.created_at DESC,newest.id DESC LIMIT 1))) "+
     "ORDER BY d.created_at FOR UPDATE OF d SKIP LOCKED LIMIT $2",
     [p.channel??null,p.limit,p.includeDeadLetter]);

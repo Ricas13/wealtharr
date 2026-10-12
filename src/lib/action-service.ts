@@ -11,7 +11,7 @@ import { assertExecutionCurrencyMatch, normalizeExecutionConstraints, planPracti
 import { nextReviewDueAt } from "@/domain/schedule";
 import { classifyFreshness } from "@/domain/market-freshness";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
-import { actionRecalculationDisposition, type ActionStatus } from "@/domain/actions";
+import { EXECUTABLE_ACTION_STATUS_SQL, actionRecalculationDisposition, isExecutableActionStatus, type ActionStatus } from "@/domain/actions";
 import { actionFingerprintMaterial } from "@/domain/action-fingerprint";
 import { validatedEffectivePrice } from "@/domain/manual-override";
 import { loadTrustedHistory } from "@/lib/trusted-history-loader";
@@ -602,7 +602,7 @@ export async function isStoredActionCurrent(strategyInstanceId:string,actionId:s
   try{
     const rows=await sql.unsafe(
       "SELECT a.fingerprint FROM actions a WHERE a.id=$1 AND a.strategy_instance_id=$2 "+
-      "AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
+      "AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") "+
       "AND NOT EXISTS (SELECT 1 FROM ledger_events l WHERE l.strategy_instance_id=$2 AND l.created_at>a.calculated_at)",
       [actionId,strategyInstanceId]
     );
@@ -649,7 +649,7 @@ export async function calculateAction(strategyInstanceId:string){
       actionId=String(inserted[0].id);
       shouldNotify=true;
     }
-    await tx.unsafe("UPDATE actions SET status='SUPERSEDED',superseded_by_action_id=$1,updated_at=now() WHERE strategy_instance_id=$2 AND id<>$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') AND action_type<>'NO_ACTION'",[actionId,strategyInstanceId]);
+    await tx.unsafe("UPDATE actions SET status='SUPERSEDED',superseded_by_action_id=$1,updated_at=now() WHERE strategy_instance_id=$2 AND id<>$1 AND status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") AND action_type<>'NO_ACTION'",[actionId,strategyInstanceId]);
     const healthy=dataStatus==="CURRENT"&&proposal.actionType!=="DATA_REQUIRED";
     await tx.unsafe("UPDATE strategy_instances SET health_status=$1,updated_at=now() WHERE id=$2",[healthy?"HEALTHY":"NEEDS_ATTENTION",strategyInstanceId]);
     if(shouldNotify&&proposal.actionType!=="NO_ACTION"){
@@ -735,7 +735,7 @@ export async function executeAction(
     );
     const action=actionRows[0];
     if(!action)throw new Error("ACTION_NOT_FOUND");
-    if(!["CALCULATED","NOTIFIED","ACKNOWLEDGED"].includes(String(action.status)))throw new Error("ACTION_NOT_EXECUTABLE");
+    if(!isExecutableActionStatus(String(action.status)))throw new Error("ACTION_NOT_EXECUTABLE");
 
     // A deposit, withdrawal, corrected trade or imported fill can invalidate an old
     // instruction if asynchronous recalculation failed. Never let an executable

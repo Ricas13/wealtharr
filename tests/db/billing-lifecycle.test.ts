@@ -329,8 +329,14 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
         stripeState.subscriptions.set(stripeId,subscription(stripeId,id,{customer,status:"canceled"}));
       }
       const {reconcileStripeSubscriptions}=await import("@/lib/billing-reconciliation");
-      expect(await reconcileStripeSubscriptions({limit:1})).toMatchObject({checked:1,hasMore:true});
-      expect(await reconcileStripeSubscriptions({limit:1})).toMatchObject({checked:1,hasMore:false});
+      const first=await reconcileStripeSubscriptions({limit:1});
+      expect(first).toMatchObject({checked:1,hasMore:true});
+      // The recheck interval grows with the queue (here: more subscriptions than one run covers), and the
+      // report says how far behind the oldest waiting one is, so the worker can tell backlog from failure.
+      expect(first.recheckHours).toBeGreaterThanOrEqual(2);
+      expect(first.overdueMs).not.toBeNull();
+      expect(first.overdueMs).toBeGreaterThanOrEqual(0);
+      expect(await reconcileStripeSubscriptions({limit:1})).toMatchObject({checked:1,hasMore:false,overdueMs:0});
       const ended=await sql!.unsafe("SELECT status FROM subscriptions WHERE user_id=ANY($1::uuid[])",[added]);
       expect(ended.map(s=>s.status)).toEqual(["FREE","FREE"]);
     }finally{

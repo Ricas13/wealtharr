@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
 import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
 import Decimal from "decimal.js";
@@ -255,7 +256,7 @@ export async function migrateStrategyVersion(
     delete after.lastCalculatedAt;
 
     await tx.unsafe(
-      "UPDATE actions SET status='SUPERSEDED',cancelled_at=COALESCE(cancelled_at,now()),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",
+      "UPDATE actions SET status='SUPERSEDED',cancelled_at=COALESCE(cancelled_at,now()),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ("+EXECUTABLE_ACTION_STATUS_SQL+")",
       [instanceId]
     );
     await tx.unsafe("UPDATE strategy_instances SET strategy_version_id=$1,settings=$2::jsonb,health_status='NEEDS_ATTENTION',updated_at=now() WHERE id=$3",[targetVersionId,JSON.stringify(settings),instanceId]);
@@ -306,10 +307,10 @@ export async function changeStrategyStatus(
       await tx.unsafe("UPDATE strategy_states SET state=jsonb_set(state,'{forceReview}','true'::jsonb,true),calculated_at=now() WHERE strategy_instance_id=$1",[instanceId]);
     } else if (target === "PAUSED") {
       await tx.unsafe("UPDATE strategy_instances SET status='PAUSED',paused_at=now(),updated_at=now() WHERE id=$1",[instanceId]);
-      await tx.unsafe("UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",[instanceId]);
+      await tx.unsafe("UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ("+EXECUTABLE_ACTION_STATUS_SQL+")",[instanceId]);
     } else {
       await tx.unsafe("UPDATE strategy_instances SET status='CLOSED',closed_at=now(),paused_at=NULL,updated_at=now() WHERE id=$1",[instanceId]);
-      await tx.unsafe("UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",[instanceId]);
+      await tx.unsafe("UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ("+EXECUTABLE_ACTION_STATUS_SQL+")",[instanceId]);
     }
     await tx.unsafe(
       "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'strategy.status-changed','strategy_instance',$2,$3::jsonb)",

@@ -4,6 +4,7 @@ import { decryptSecret } from "@/lib/crypto";
 import { getEmailProvider } from "@/lib/email";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { DELIVERY_MAX_ATTEMPTS,retryDelaySeconds } from "@/domain/delivery-retry";
+import { EXECUTABLE_ACTION_STATUS_SQL,isExecutableActionStatus } from "@/domain/actions";
 import { telegramCall } from "@/lib/telegram";
 import { calculateAction } from "@/lib/action-service";
 import { reminderStillCurrentSql } from "@/lib/review-reminder-sql";
@@ -18,13 +19,14 @@ async function refreshActionNotification(notificationId:string,userId:string){
   // Re-run the existing market, mapping, reconciliation and ledger gates just
   // before delivery. A queued indicative order must not outlive its inputs.
   await calculateAction(String(owner[0].id));
+  // notification_action_unique (migration 0003) allows one notification per action, so there is no
+  // "newer notification for this action" to compare against here.
   const current=await sql.unsafe(
     "SELECT n.title,n.body FROM notifications n JOIN actions a ON a.id=n.action_id "+
     "JOIN strategy_instances i ON i.id=a.strategy_instance_id JOIN users u ON u.id=n.user_id "+
     "WHERE n.id=$1 AND i.status='ACTIVE' AND u.deleted_at IS NULL "+
-    "AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
-    "AND NOT EXISTS (SELECT 1 FROM ledger_events l WHERE l.strategy_instance_id=i.id AND l.created_at>a.calculated_at) "+
-    "AND n.id=(SELECT newer.id FROM notifications newer WHERE newer.action_id=a.id ORDER BY newer.created_at DESC,newer.id DESC LIMIT 1)",
+    "AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") "+
+    "AND NOT EXISTS (SELECT 1 FROM ledger_events l WHERE l.strategy_instance_id=i.id AND l.created_at>a.calculated_at)",
     [notificationId]
   );
   return current[0]??null;
@@ -65,10 +67,30 @@ export async function createDeliveriesForNotification(notificationId: string) {
   });
 }
 
-// Creates deliveries for notifications that have not been through the worker yet, oldest first.
+// A notification whose delivery creation failed is not retried again within this window, so one that
+// always fails cannot be picked up repeatedly by the same run (and a batch drains instead of spinning).
+const CREATION_RETRY_MINUTES=15;
+
+// Creates deliveries for notifications that have not been through the worker yet. Never-attempted ones
+// first (then least recently attempted, then oldest). Each notification is isolated: one that throws is
+// stamped and left for a later run, and never prevents the others from being handled. Returns the number
+// of notifications attempted.
 export async function createPendingDeliveries(limit=200){
-  const rows=await sql.unsafe("SELECT id FROM notifications WHERE deliveries_created_at IS NULL ORDER BY created_at LIMIT $1",[limit]);
-  for(const row of rows)await createDeliveriesForNotification(String(row.id));
+  const rows=await sql.unsafe(
+    "SELECT id FROM notifications WHERE deliveries_created_at IS NULL "+
+    "AND (delivery_attempted_at IS NULL OR delivery_attempted_at<now()-($2::int*interval '1 minute')) "+
+    "ORDER BY delivery_attempted_at ASC NULLS FIRST,created_at,id LIMIT $1",
+    [limit,CREATION_RETRY_MINUTES]
+  );
+  for(const row of rows){
+    const id=String(row.id);
+    try{
+      await sql.unsafe("UPDATE notifications SET delivery_attempted_at=now() WHERE id=$1",[id]);
+      await createDeliveriesForNotification(id);
+    }catch{
+      // Stays unprocessed (deliveries_created_at is NULL); retried after the window, behind fresh ones.
+    }
+  }
   return rows.length;
 }
 
@@ -96,11 +118,23 @@ export async function processDeliveryBacklog(options:{budgetMs:number;batch?:num
 
 const CHANNEL_BREAKER_FAILURES=3;
 
+// A claim is a 10-minute lease. A worker that crashed (or lost its connection) between claiming and
+// settling leaves the row SENDING; each re-claim consumes an attempt, so once the budget is spent the
+// row is dead-lettered rather than retried without limit.
+async function deadLetterExhaustedClaims(){
+  await sql.unsafe(
+    "UPDATE notification_deliveries SET status='DEAD_LETTER',last_error_code='MAX_ATTEMPTS_REACHED',updated_at=now() "+
+    "WHERE status IN ('PENDING','SENDING') AND next_attempt_at<=now() AND attempt_count>=$1",
+    [DELIVERY_MAX_ATTEMPTS]
+  );
+}
+
 async function processDeliveryBatch(limit:number,deadline:number){
+  await deadLetterExhaustedClaims().catch(()=>{});
   const deliveries=await sql.unsafe(
     "WITH picked AS ("+
     " SELECT id FROM notification_deliveries"+
-    " WHERE (status='PENDING' OR (status='SENDING' AND next_attempt_at<=now())) AND next_attempt_at<=now()"+
+    " WHERE (status='PENDING' OR (status='SENDING' AND next_attempt_at<=now())) AND next_attempt_at<=now() AND attempt_count<$2"+
     " ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $1"+
     "), claimed AS ("+
     " UPDATE notification_deliveries d SET status='SENDING',attempt_count=d.attempt_count+1,next_attempt_at=now()+interval '10 minutes',updated_at=now()"+
@@ -110,16 +144,36 @@ async function processDeliveryBatch(limit:number,deadline:number){
     "   SELECT newer.id FROM notifications newer WHERE newer.action_id=n.action_id ORDER BY newer.created_at DESC,newer.id DESC LIMIT 1"+
     " ) END AS latest_action_notification"+
     " FROM claimed c JOIN notifications n ON n.id=c.notification_id JOIN users u ON u.id=n.user_id LEFT JOIN actions a ON a.id=n.action_id",
-    [limit]
+    [limit,DELIVERY_MAX_ATTEMPTS]
   );
+  type Claimed=(typeof deliveries)[number];
   let sent=0;
   let heldBack=0;
   const claimed=deliveries.length;
   const entitlementCache=new Map<string,Set<string>>();
+  // Revalidation (a full recalculation) is per notification, not per channel: a notification queued on
+  // email and Telegram is checked once per batch, and a failure is remembered so the second channel does
+  // not repeat it. The outcome, including an error, is replayed to every channel of that notification.
+  type Revalidation={ok:true;current:Record<string,unknown>|null}|{ok:false;error:unknown};
+  const revalidations=new Map<string,Revalidation>();
+  const revalidate=async(notificationId:string,userId:string)=>{
+    let entry:Revalidation;
+    const cached=revalidations.get(notificationId);
+    if(cached)entry=cached;
+    else{
+      try{entry={ok:true,current:await refreshActionNotification(notificationId,userId)};}
+      catch(error){entry={ok:false,error};}
+      revalidations.set(notificationId,entry);
+    }
+    if(!entry.ok)throw entry.error;
+    return entry.current;
+  };
   // Per-channel circuit breaker. Deliveries are sent one after another, so a provider that is down or
   // timing out (10 s each) would otherwise use the whole time budget on its own queue and starve every
   // other channel behind it. After a few consecutive failures the rest of that channel's batch is put
-  // back untouched (no attempt consumed) and retried later, while other channels carry on.
+  // back untouched (no attempt consumed) and retried later, while other channels carry on. Only
+  // provider/transport failures count: a failed revalidation is a problem with one user's strategy and
+  // says nothing about whether the channel works.
   const consecutiveFailures=new Map<string,number>();
   const tripped=new Set<string>();
   const releaseUnattempted=async(index:number)=>{
@@ -130,6 +184,25 @@ async function processDeliveryBatch(limit:number,deadline:number){
     );
     return {sent,claimed,deferred:deliveries.length-index,heldBack};
   };
+  // The attempt was already counted by the claim: retry with backoff while budget remains, else dead-letter.
+  const retryOrDeadLetter=async(d:Claimed,failureCode:string,retryAfterSeconds:number|null)=>{
+    if(Number(d.attempt_count)>=DELIVERY_MAX_ATTEMPTS){
+      await sql.unsafe(
+        "UPDATE notification_deliveries SET status='DEAD_LETTER',last_error_code='MAX_ATTEMPTS_REACHED',updated_at=now() "+
+        "WHERE id=$1 AND status='SENDING'",[d.id]
+      );
+    }else{
+      const delay=retryDelaySeconds(Number(d.attempt_count),String(d.id),retryAfterSeconds);
+      await sql.unsafe(
+        "UPDATE notification_deliveries SET status='PENDING',next_attempt_at=now()+($2::int*interval '1 second'),"+
+        "last_error_code=$3,updated_at=now() WHERE id=$1 AND status='SENDING'",
+        [d.id,delay,failureCode]
+      );
+    }
+  };
+  const markSent=async(d:Claimed)=>{
+    await sql.unsafe("UPDATE notification_deliveries SET status='SENT',sent_at=now(),updated_at=now(),last_error_code=NULL WHERE id=$1 AND status='SENDING'",[d.id]);
+  };
   for(let index=0;index<deliveries.length;index++){
     if(Date.now()>=deadline){
       // No provider call was made for these claims. Return them immediately
@@ -137,6 +210,13 @@ async function processDeliveryBatch(limit:number,deadline:number){
       return releaseUnattempted(index);
     }
     const d=deliveries[index];
+    // True once the provider accepted the message. If settling the row then fails, it is retried as SENT
+    // rather than sent again.
+    let delivered=false;
+    // Everything for one delivery is isolated: an unexpected error (database, entitlement lookup, ...)
+    // sends only this delivery down the retry/dead-letter path instead of aborting the whole run and
+    // leaving every remaining claim SENDING for ten minutes.
+    try{
     if(d.user_deleted_at){
       await sql.unsafe(
         "UPDATE notification_deliveries SET status='CANCELLED',last_error_code='ACCOUNT_DELETED',updated_at=now() WHERE id=$1 AND status='SENDING'",
@@ -151,7 +231,7 @@ async function processDeliveryBatch(limit:number,deadline:number){
       );
       continue;
     }
-    if(d.action_id&&!["CALCULATED","NOTIFIED","ACKNOWLEDGED"].includes(String(d.action_status??""))){
+    if(d.action_id&&!isExecutableActionStatus(String(d.action_status??""))){
       await sql.unsafe(
         "UPDATE notification_deliveries SET status='CANCELLED',last_error_code='ACTION_NO_LONGER_ACTIVE',updated_at=now() WHERE id=$1 AND status='SENDING'",
         [d.id]
@@ -207,7 +287,7 @@ async function processDeliveryBatch(limit:number,deadline:number){
     try{
       if(d.action_id){
         failureCode="ACTION_REVALIDATION_FAILED";
-        const current=await refreshActionNotification(String(d.notification_id),userId);
+        const current=await revalidate(String(d.notification_id),userId);
         if(!current){
           await sql.unsafe("UPDATE notification_deliveries SET status='CANCELLED',last_error_code='ACTION_NO_LONGER_CURRENT',updated_at=now() WHERE id=$1 AND status='SENDING'",[d.id]);
           continue;
@@ -246,24 +326,25 @@ async function processDeliveryBatch(limit:number,deadline:number){
       }
     }catch{ok=false;}
     if(ok){
-      await sql.unsafe("UPDATE notification_deliveries SET status='SENT',sent_at=now(),updated_at=now(),last_error_code=NULL WHERE id=$1 AND status='SENDING'",[d.id]);sent+=1;
+      delivered=true;
+      await markSent(d);sent+=1;
       consecutiveFailures.set(String(d.channel),0);
     }else{
-      const failures=(consecutiveFailures.get(String(d.channel))??0)+1;
-      consecutiveFailures.set(String(d.channel),failures);
-      if(failures>=CHANNEL_BREAKER_FAILURES)tripped.add(String(d.channel));
-      if(Number(d.attempt_count)>=DELIVERY_MAX_ATTEMPTS){
-        await sql.unsafe(
-          "UPDATE notification_deliveries SET status='DEAD_LETTER',last_error_code='MAX_ATTEMPTS_REACHED',updated_at=now() "+
-          "WHERE id=$1 AND status='SENDING'",[d.id]
-        );
-      }else{
-        const delay=retryDelaySeconds(Number(d.attempt_count),String(d.id),retryAfterSeconds);
-        await sql.unsafe(
-          "UPDATE notification_deliveries SET status='PENDING',next_attempt_at=now()+($2::int*interval '1 second'),"+
-          "last_error_code=$3,updated_at=now() WHERE id=$1 AND status='SENDING'",
-          [d.id,delay,failureCode]
-        );
+      // A failed revalidation (failureCode still ACTION_REVALIDATION_FAILED) is not a channel failure.
+      if(failureCode==="DELIVERY_FAILED"){
+        const failures=(consecutiveFailures.get(String(d.channel))??0)+1;
+        consecutiveFailures.set(String(d.channel),failures);
+        if(failures>=CHANNEL_BREAKER_FAILURES)tripped.add(String(d.channel));
+      }
+      await retryOrDeadLetter(d,failureCode,retryAfterSeconds);
+    }
+    }catch{
+      try{
+        if(delivered)await markSent(d);
+        else await retryOrDeadLetter(d,"DELIVERY_FAILED",null);
+      }catch{
+        // The database itself is failing. The claim lease expires on its own and the attempt it consumed
+        // is what eventually dead-letters a row that can never be settled.
       }
     }
   }

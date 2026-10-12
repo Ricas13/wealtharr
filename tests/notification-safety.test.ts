@@ -33,8 +33,11 @@ describe("notification delivery entitlement safety",()=>{
 
   it("cancels queued action notifications after the action stops being executable",()=>{
     expect(source).toContain("ACTION_NO_LONGER_ACTIVE");
-    expect(source).toContain('!["CALCULATED","NOTIFIED","ACKNOWLEDGED"].includes');
-    const actionCheck=source.indexOf('!["CALCULATED","NOTIFIED","ACKNOWLEDGED"].includes');
+    // The live statuses come from one shared definition, which must still be exactly these three.
+    expect(source).toContain('!isExecutableActionStatus(String(d.action_status??""))');
+    const actions=readFileSync(new URL("../src/domain/actions.ts",import.meta.url),"utf8");
+    expect(actions).toContain('EXECUTABLE_ACTION_STATUSES=["CALCULATED","NOTIFIED","ACKNOWLEDGED"]');
+    const actionCheck=source.indexOf('!isExecutableActionStatus(String(d.action_status??""))');
     const emailSend=source.indexOf('if(d.channel==="EMAIL")');
     expect(actionCheck).toBeGreaterThanOrEqual(0);
     expect(emailSend).toBeGreaterThan(actionCheck);
@@ -47,5 +50,14 @@ describe("notification delivery entitlement safety",()=>{
     const emailSend=source.indexOf('if(d.channel==="EMAIL")');
     expect(latestCheck).toBeGreaterThanOrEqual(0);
     expect(emailSend).toBeGreaterThan(latestCheck);
+  });
+
+  it("caps attempts in the claim and only lets provider failures trip the channel breaker",()=>{
+    expect(source).toContain("attempt_count<$2");
+    expect(source).toContain("[limit,DELIVERY_MAX_ATTEMPTS]");
+    // A failed revalidation (failureCode still ACTION_REVALIDATION_FAILED) must not count.
+    expect(source).toContain('if(failureCode==="DELIVERY_FAILED"){');
+    const breaker=source.indexOf("CHANNEL_BREAKER_FAILURES)tripped.add");
+    expect(breaker).toBeGreaterThan(source.indexOf('if(failureCode==="DELIVERY_FAILED"){'));
   });
 });

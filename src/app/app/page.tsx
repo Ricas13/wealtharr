@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, Plus, Sparkles } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
@@ -25,7 +26,7 @@ function money(value:number,currency:string){
 export default async function OverviewPage(){
   const user=await requirePageUser();
   const strategies=await listUserStrategies(user.id);
-  const actions=await sql.unsafe("SELECT a.id,a.strategy_instance_id,a.action_type,a.title,a.instruction,a.due_at,a.confidence,i.name AS instance_name,acc.name AS account_name,acc.wrapper AS account_wrapper FROM actions a JOIN strategy_instances i ON i.id=a.strategy_instance_id LEFT JOIN accounts acc ON acc.id=a.account_id WHERE i.user_id=$1 AND i.status='ACTIVE' AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') AND a.action_type<>'NO_ACTION' ORDER BY COALESCE(a.due_at,a.created_at),a.created_at LIMIT 12",[user.id]);
+  const actions=await sql.unsafe("SELECT a.id,a.strategy_instance_id,a.action_type,a.title,a.instruction,a.due_at,a.confidence,i.name AS instance_name,acc.name AS account_name,acc.wrapper AS account_wrapper FROM actions a JOIN strategy_instances i ON i.id=a.strategy_instance_id LEFT JOIN accounts acc ON acc.id=a.account_id WHERE i.user_id=$1 AND i.status='ACTIVE' AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") AND a.action_type<>'NO_ACTION' ORDER BY COALESCE(a.due_at,a.created_at),a.created_at LIMIT 12",[user.id]);
   for(const action of actions){
     if(!(await isStoredActionCurrent(String(action.strategy_instance_id),String(action.id))))
       Object.assign(action,STALE_ACTION_DISPLAY);

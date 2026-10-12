@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   mfaRecoveryHashes: text("mfa_recovery_hashes").array().notNull().default(sql`'{}'::text[]`),
   sessionVersion: integer("session_version").notNull().default(0),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletionAttemptedAt: timestamp("deletion_attempted_at", { withTimezone: true }),
+  entitlementCheckedAt: timestamp("entitlement_checked_at", { withTimezone: true }),
   ...timestamps
 });
 
@@ -240,6 +242,7 @@ export const tradingLines = pgTable("trading_lines", {
   currency: text("currency").notNull(),
   exchangeTimezone: text("exchange_timezone").notNull(),
   providerSymbol: text("provider_symbol"),
+  quoteAttemptedAt: timestamp("quote_attempted_at", { withTimezone: true }),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
   ...timestamps
@@ -380,6 +383,7 @@ export const notifications = pgTable("notifications", {
   body: text("body").notNull(),
   readAt: timestamp("read_at", { withTimezone: true }),
   deliveriesCreatedAt: timestamp("deliveries_created_at", { withTimezone: true }),
+  deliveryAttemptedAt: timestamp("delivery_attempted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => [index("notification_user_idx").on(t.userId, t.readAt, t.createdAt), index("notifications_strategy_instance_idx").on(t.strategyInstanceId).where(sql`${t.strategyInstanceId} IS NOT NULL`), uniqueIndex("notification_action_unique").on(t.actionId), uniqueIndex("notification_review_key_unique").on(t.reviewKey).where(sql`${t.reviewKey} IS NOT NULL`)]);
 

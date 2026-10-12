@@ -10,6 +10,10 @@ const REFRESH_MS = 15_000;
 const originalEnv = new Map<string, string | undefined>();
 let lastLoad = 0;
 let inflight: Promise<void> | null = null;
+// Committed writes invalidate older in-flight snapshots. Concurrent callers of one revision share a load.
+let settingsWriteRevision = 0;
+let inflightRevision = -1;
+export function markSettingsSaved(){settingsWriteRevision += 1;lastLoad = 0;}
 
 function applyToEnvironment(rows: Array<{ key: string; value: string }>) {
   const stored = new Map(rows.map((r) => [r.key, r.value]));
@@ -42,19 +46,34 @@ async function loadRows() {
 
 /** Refreshes the in-process view of the saved settings at most every few seconds. Never throws. */
 export async function ensureSettings(force = false): Promise<void> {
-  if (!force && Date.now() - lastLoad < REFRESH_MS) return;
-  if (inflight) return inflight;
-  inflight = (async () => {
-    try {
-      applyToEnvironment(await loadRows());
-      lastLoad = Date.now();
-    } catch {
-      // Database unavailable: keep serving with what is already applied.
-    } finally {
-      inflight = null;
-    }
-  })();
-  return inflight;
+  if (!force) {
+    if (Date.now() - lastLoad < REFRESH_MS) return;
+    if (inflight) return inflight;
+    return startLoad();
+  }
+  for(;;){
+    if(inflight&&inflightRevision===settingsWriteRevision)return inflight;
+    if(inflight){await inflight;continue;}
+    return startLoad();
+  }
+}
+
+async function loadOnce(): Promise<void> {
+  try {
+    applyToEnvironment(await loadRows());
+    lastLoad = Date.now();
+  } catch {
+    // Database unavailable: keep serving with what is already applied.
+  }
+}
+
+function startLoad(): Promise<void> {
+  inflightRevision=settingsWriteRevision;
+  const run: Promise<void> = loadOnce().then(() => {
+    if (inflight === run) inflight = null;
+  });
+  inflight = run;
+  return run;
 }
 
 export type SettingView = {
@@ -166,6 +185,7 @@ export async function saveSettings(adminId: string, changes: SettingChange[]): P
       [adminId, JSON.stringify({ set: clean.filter((c) => c.value !== null).map((c) => c.key), cleared: clean.filter((c) => c.value === null).map((c) => c.key) })]
     );
   });
+  markSettingsSaved();
   await ensureSettings(true);
   const withdrawnSecrets = endpointChanged.filter((c) => c.clearedSecret).map((c) => c.secretKey);
   return { ok: true, changed: [...clean.map((c) => c.key), ...withdrawnSecrets] };

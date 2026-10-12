@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
 import { sql } from "@/lib/db";
 import {
@@ -48,7 +49,7 @@ export async function createReviewReminders(now: Date = new Date(), deadline: nu
       "FROM strategy_instances i JOIN users u ON u.id=i.user_id "+
       "JOIN LATERAL (SELECT x.action_type,x.status,x.due_at,x.calculated_at FROM actions x WHERE x.strategy_instance_id=i.id ORDER BY x.calculated_at DESC,x.created_at DESC LIMIT 1) a ON true "+
       "WHERE i.status='ACTIVE' AND u.deleted_at IS NULL "+
-      "AND a.action_type='NO_ACTION' AND a.status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED') "+
+      "AND a.action_type='NO_ACTION' AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") "+
       "AND a.due_at>$1::timestamptz AND a.due_at<=$1::timestamptz+($2::int*interval '1 day') "+
       "AND a.calculated_at>$1::timestamptz-($3::int*interval '1 day') "+
       "AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.strategy_instance_id=i.id AND n.type=$4 "+
