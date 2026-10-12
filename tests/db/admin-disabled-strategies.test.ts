@@ -15,8 +15,12 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
   const users:string[]=[];
   const definitions:string[]=[];
   const instruments:string[]=[];
-  const keys={published:"adm-dis-pub-"+run,draft:"adm-dis-draft-"+run,customer:"adm-dis-cust-"+run};
-  const ids={published:"",draft:"",customer:""};
+  // The disabled-but-startable strategy is the real, attested catalogue release "9sig" temporarily disabled,
+  // because admin preview now requires the same gates as enabling (curated rules + attestation).
+  const keys={published:"9sig",draft:"adm-dis-draft-"+run,customer:"adm-dis-cust-"+run,unattested:"adm-dis-unatt-"+run};
+  const ids={published:"",draft:"",customer:"",unattested:""};
+  let originalEnabled=true;
+  let insertedAttestationFor:string|null=null;
 
   async function definition(key:string,enabled:boolean,lifecycle:"PUBLISHED"|"DRAFT"){
     const rows=await sql!.unsafe(
@@ -51,13 +55,24 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
     instruments.push(instrumentId);
     const line=await sql!.unsafe("INSERT INTO trading_lines (instrument_id,ticker,exchange,currency,exchange_timezone,effective_from) VALUES ($1,$2,'LSE','GBP','Europe/London','2026-01-01') RETURNING id",[instrumentId,"D"+run.toUpperCase()]);
     await sql!.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,direction,country,wrapper,trading_line_id,fidelity,effective_from,enabled) VALUES ('NASDAQ_100_3X_LONG',3,'LONG','GB','ISA',$1,'EXACT','2026-01-01',true)",[line[0].id]);
-    ids.published=await definition(keys.published,false,"PUBLISHED");
+    const real=await sql!.unsafe("SELECT d.id,d.enabled,v.id AS version_id FROM strategy_definitions d JOIN strategy_versions v ON v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' WHERE d.key='9sig' ORDER BY v.published_at DESC NULLS LAST LIMIT 1");
+    ids.published=String(real[0].id);
+    originalEnabled=real[0].enabled===true;
+    await sql!.unsafe("UPDATE strategy_definitions SET enabled=false WHERE id=$1",[ids.published]);
+    const had=await sql!.unsafe("SELECT 1 FROM strategy_version_attestations WHERE strategy_version_id=$1",[real[0].version_id]);
+    if(!had[0]){
+      await sql!.unsafe("INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by) VALUES ($1,'docs/strategy-specs/test.md','tests/value-target.test.ts','test fixture',$2)",[real[0].version_id,await user("attestor","ADMIN")]);
+      insertedAttestationFor=String(real[0].version_id);
+    }
+    ids.unattested=await definition(keys.unattested,false,"PUBLISHED");
     ids.draft=await definition(keys.draft,false,"DRAFT");
     ids.customer=await definition(keys.customer,true,"PUBLISHED");
   });
 
   afterAll(async()=>{
     if(!sql)return;
+    if(ids.published)await sql.unsafe("UPDATE strategy_definitions SET enabled=$2 WHERE id=$1",[ids.published,originalEnabled]);
+    if(insertedAttestationFor)await sql.unsafe("DELETE FROM strategy_version_attestations WHERE strategy_version_id=$1",[insertedAttestationFor]);
     await sql.unsafe("DELETE FROM users WHERE id=ANY($1::uuid[])",[users]);
     if(definitions.length){
       await sql.unsafe("DELETE FROM strategy_versions WHERE strategy_definition_id=ANY($1::uuid[])",[definitions]);
@@ -100,6 +115,13 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
     await expect(createStrategy(customer,"GB",input(keys.published,"Nope"))).rejects.toThrow("STRATEGY_NOT_AVAILABLE");
     const counts=await sql!.unsafe("SELECT (SELECT count(*)::int FROM strategy_instances WHERE user_id=$1) AS instances,(SELECT count(*)::int FROM accounts WHERE user_id=$1) AS accounts",[customer]);
     expect(counts[0]).toMatchObject({instances:0,accounts:0});
+  });
+
+  it("refuses a disabled PUBLISHED version that fails the enable gates (not curated, not attested), even for an admin",async()=>{
+    const admin=await user("unattested","ADMIN");
+    await expect(createStrategy(admin,"GB",input(keys.unattested,"Unattested admin"))).rejects.toThrow(/CURATED_STRATEGY_NOT_VERIFIED|STRATEGY_NOT_AVAILABLE/);
+    const rows=await sql!.unsafe("SELECT count(*)::int AS n FROM strategy_instances WHERE user_id=$1",[admin]);
+    expect(rows[0].n).toBe(0);
   });
 
   it("refuses a definition that only has a DRAFT version, for admin and customer alike",async()=>{

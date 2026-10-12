@@ -10,6 +10,7 @@ import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/s
 import { requiredPositions } from "@/domain/strategy/market-eligibility";
 import { switchPositionDiscrepancies } from "@/domain/strategy/switch-position-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
+import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
 export async function switchStrategy(
   userId:string,
@@ -45,6 +46,7 @@ export async function switchStrategy(
     );
     const target=targets[0];
     if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
+    await assertDisabledStrategyPreviewGates(tx,target);
     if(String(target.definition_id)===String(current.strategy_definition_id))throw new Error("STRATEGY_ALREADY_SELECTED");
 
     const activeRows=await tx.unsafe(

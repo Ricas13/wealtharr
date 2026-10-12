@@ -116,3 +116,21 @@ describe("admin may start disabled strategies (server-derived only)",()=>{
     expect(enforce).not.toContain("JOIN plans");
   });
 });
+
+describe("admin preview applies the same gates as enabling a strategy",()=>{
+  const gates=read("src/lib/admin-preview-gates.ts");
+  it("requires a publishable engine, the curated rules and an attestation for a disabled definition",()=>{
+    expect(gates).toContain("assertCustomerPublishableEngine");
+    expect(gates).toContain("assertCuratedRules");
+    expect(gates).toContain("strategy_version_attestations");
+    expect(gates).toMatch(/definition\.enabled === true\) return/);
+  });
+  it("is applied on create, switch and switch preview, after the target lookup",()=>{
+    for(const path of ["src/lib/strategy-service.ts","src/lib/strategy-switch-service.ts","src/lib/action-service.ts"]){
+      expect(read(path),path).toContain("assertDisabledStrategyPreviewGates(");
+    }
+  });
+  it("maps a refused resume to 409 rather than 500",()=>{
+    expect(read("src/app/api/strategies/[id]/status/route.ts")).toMatch(/STRATEGY_NOT_AVAILABLE[\s\S]{0,160}status:\s*409/);
+  });
+});

@@ -20,6 +20,7 @@ import { buildStrategyAlert } from "@/domain/strategy-alert";
 import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
 import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
+import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
 type CalculationScenario={
@@ -422,7 +423,7 @@ export async function previewStrategySwitchScenario(
   includeDisabled:boolean=false
 ){
   const targets=await sql.unsafe(
-    "SELECT d.id AS definition_id,d.key,d.name,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.effective_from,v.engine_key,v.config,v.input_schema "+
+    "SELECT d.id AS definition_id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.effective_from,v.engine_key,v.config,v.input_schema "+
     "FROM strategy_definitions d JOIN LATERAL ("+
     " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' "+
     " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
@@ -432,6 +433,7 @@ export async function previewStrategySwitchScenario(
   );
   const target=targets[0];
   if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
+  await assertDisabledStrategyPreviewGates(sql,target);
   if(allowedStrategyKeys&&!allowedStrategyKeys.has(String(target.key)))throw new Error("STRATEGY_NOT_IN_PLAN");
 
   const ownership=await sql.unsafe(

@@ -9,6 +9,7 @@ import { serializeExecutionConstraints } from "@/domain/execution";
 import { normalizeContributionPlan } from "@/domain/contribution-plan";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
+import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
 export type CreateStrategyInput = {
   requestKey?: string;
@@ -117,6 +118,8 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     );
     const definition = definitions[0];
     if (!definition) throw new Error("STRATEGY_NOT_AVAILABLE");
+    // A disabled definition is startable by admins only, and only if its release passes the enable gates.
+    await assertDisabledStrategyPreviewGates(tx,definition);
 
     const regions=Array.isArray(definition.supported_regions)?definition.supported_regions.map(String):[];
     const wrappers=Array.isArray(definition.supported_wrappers)?definition.supported_wrappers.map(String):[];
