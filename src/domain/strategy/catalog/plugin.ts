@@ -41,8 +41,9 @@ export const LEVERAGE_DISCLOSURE =
 
 /**
  * What `scripts/seed.ts` inserts for this strategy on a fresh install. The seed is insert-only:
- * it never updates an existing definition or version, so editing these values does not change an
- * installed database.
+ * it never updates an existing definition or version (the one guarded exception is the
+ * research-only realignment for coffeehouse, core-four and swensen: see `realignsResearchOnlyDefinition`),
+ * so editing these values does not change an installed database.
  */
 export type SeedDefinition = {
   name: string;

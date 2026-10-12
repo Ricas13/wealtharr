@@ -1,13 +1,27 @@
 import "server-only";
+import type { Sql } from "postgres";
 import { sql } from "@/lib/db";
-import { assertCanCreateStrategy, assertStrategyFeatureAccess, buildEntitlementSnapshot, type EntitlementSnapshot } from "@/domain/entitlements";
+import { adminEntitlementSnapshot, assertCanCreateStrategy, assertStrategyFeatureAccess, buildEntitlementSnapshot, type EntitlementSnapshot } from "@/domain/entitlements";
 
-export async function loadEntitlements(userId: string) {
-  let rows = await sql.unsafe(
-    "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') LIMIT 1",
+// Anything that can run `unsafe`: the shared client or an open transaction handle.
+export type EntitlementDb = Pick<Sql, "unsafe">;
+
+/**
+ * Resolves a user's entitlements on `db`. A live (not soft-deleted) ADMIN is an entitlement
+ * super-user; everyone else gets their plan. `lockSubscription` keeps the subscription row lock
+ * that downgrade-race protection relies on (non-admins only: admins have no limit to race).
+ */
+export async function loadEntitlementsWith(db: EntitlementDb, userId: string, options: { lockSubscription?: boolean } = {}) {
+  const roles = await db.unsafe("SELECT role FROM users WHERE id=$1 AND deleted_at IS NULL LIMIT 1", [userId]);
+  if (roles[0] && String(roles[0].role) === "ADMIN") return adminEntitlementSnapshot();
+  let rows = await db.unsafe(
+    "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys FROM subscriptions s JOIN plans p ON p.id=s.plan_id "+
+    "WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') "+
+    "ORDER BY CASE s.status WHEN 'ACTIVE' THEN 0 WHEN 'TRIALING' THEN 1 WHEN 'PAST_DUE' THEN 2 ELSE 3 END "+
+    "LIMIT 1"+(options.lockSubscription ? " FOR UPDATE OF s" : ""),
     [userId]
   );
-  if (!rows[0]) rows = await sql.unsafe("SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1");
+  if (!rows[0]) rows = await db.unsafe("SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1");
   if (!rows[0]) throw new Error("FREE_PLAN_MISSING");
   return buildEntitlementSnapshot({
     slug: String(rows[0].slug),
@@ -15,6 +29,10 @@ export async function loadEntitlements(userId: string) {
     entitlements: rows[0].entitlements,
     availableStrategyKeys: rows[0].available_strategy_keys
   });
+}
+
+export async function loadEntitlements(userId: string) {
+  return loadEntitlementsWith(sql, userId);
 }
 
 export async function assertStrategyCreationAllowed(userId: string, strategyKey: string) {

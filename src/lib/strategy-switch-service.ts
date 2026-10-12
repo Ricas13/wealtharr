@@ -3,7 +3,8 @@ import { sql } from "@/lib/db";
 import { foldLedger } from "@/domain/ledger";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
-import { assertCanCreateStrategy, assertStrategyFeatureAccess, buildEntitlementSnapshot } from "@/domain/entitlements";
+import { assertCanCreateStrategy, assertStrategyFeatureAccess } from "@/domain/entitlements";
+import { loadEntitlementsWith } from "@/lib/entitlement-service";
 import { recalculateAfterMutation } from "@/lib/action-service";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { requiredPositions } from "@/domain/strategy/market-eligibility";
@@ -43,21 +44,7 @@ export async function switchStrategy(
     if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
     if(String(target.definition_id)===String(current.strategy_definition_id))throw new Error("STRATEGY_ALREADY_SELECTED");
 
-    let planRows=await tx.unsafe(
-      "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys FROM subscriptions s JOIN plans p ON p.id=s.plan_id "+
-      "WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') "+
-      "ORDER BY CASE s.status WHEN 'ACTIVE' THEN 0 WHEN 'TRIALING' THEN 1 WHEN 'PAST_DUE' THEN 2 ELSE 3 END "+
-      "LIMIT 1 FOR UPDATE OF s",
-      [userId]
-    );
-    if(!planRows[0])planRows=await tx.unsafe("SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1");
-    if(!planRows[0])throw new Error("FREE_PLAN_MISSING");
-    const entitlements=buildEntitlementSnapshot({
-      slug:String(planRows[0].slug),
-      maxActiveStrategies:planRows[0].max_active_strategies==null?null:Number(planRows[0].max_active_strategies),
-      entitlements:planRows[0].entitlements,
-      availableStrategyKeys:planRows[0].available_strategy_keys
-    });
+    const entitlements=await loadEntitlementsWith(tx,userId,{lockSubscription:true});
     const activeRows=await tx.unsafe(
       "SELECT count(*)::int AS count FROM strategy_instances WHERE user_id=$1 AND status='ACTIVE' AND id<>$2",
       [userId,strategyInstanceId]

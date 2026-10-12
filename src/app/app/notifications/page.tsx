@@ -1,6 +1,7 @@
 import { Bell, CheckCircle2 } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
 import { sql } from "@/lib/db";
+import { MarkAllReadButton } from "@/components/MarkAllReadButton";
 
 export default async function NotificationsPage(){
   const user=await requirePageUser();
@@ -12,8 +13,10 @@ export default async function NotificationsPage(){
     ") latest ORDER BY created_at DESC LIMIT 100",
     [user.id]
   );
+  const unread=await sql.unsafe("SELECT count(*)::int AS c FROM notifications WHERE user_id=$1 AND read_at IS NULL",[user.id]);
+  const unreadTotal=Number(unread[0]?.c??0);
   return <>
-    <div className="page-title"><div><div className="eyebrow">Activity</div><h1>What changed.</h1><p>Important updates from your strategies, in one quiet timeline.</p></div></div>
+    <div className="page-title"><div><div className="eyebrow">Activity</div><h1>What changed.</h1><p>Important updates from your strategies, in one quiet timeline.</p></div>{unreadTotal>0&&<MarkAllReadButton/>}</div>
     <section className="glass activity-timeline">
       {rows.length?rows.map((n:any)=><div className="activity-item" key={n.id}>
         <div className="activity-icon"><Bell size={15}/></div>
