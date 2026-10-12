@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { assertSameOrigin } from "@/lib/security";
 import { previewCashScenario, previewExecutionConstraintsScenario, previewStrategySwitchScenario } from "@/lib/action-service";
@@ -35,6 +36,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const entitlements=await loadEntitlements(user.id);
     const input=schema.parse(await request.json());
     if(input.type!=="STRATEGY_SWITCH"&&!entitlements.features.has("what_if")){

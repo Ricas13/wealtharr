@@ -83,7 +83,7 @@ src/lib/market-data.ts defines the provider interface. The built-in production a
 
 Build the Docker image after migrations have been applied. Run db:migrate and db:seed as controlled release steps before switching application traffic. Configure the hourly /api/cron/actions worker with Authorization: Bearer CRON_SECRET.
 
-The container health check calls `/api/health`. Core readiness requires a reachable database plus a valid application URL, Auth.js secret, cron secret and 32-byte encryption key. Billing, email and licensed market data are reported separately as capabilities so infrastructure can distinguish “the app is unhealthy” from “an optional/commercial integration is not configured.” The cron endpoint returns HTTP 503 when any strategy calculation unexpectedly fails, allowing monitoring to distinguish a degraded worker run from a successful pass.
+The container health check calls `/api/health`, which publicly answers only `{"status":"ready"|"degraded"|"unavailable"}` (HTTP 200 or 503); the capability and database detail is returned only to a request carrying the cron bearer secret. Core readiness requires a reachable database plus a valid application URL, Auth.js secret, cron secret and 32-byte encryption key. Billing, email and licensed market data are reported separately as capabilities so infrastructure can distinguish “the app is unhealthy” from “an optional/commercial integration is not configured.” The cron endpoint returns HTTP 503 when any strategy calculation unexpectedly fails, allowing monitoring to distinguish a degraded worker run from a successful pass.
 
 ## Security and regulatory posture
 

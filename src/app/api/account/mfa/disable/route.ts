@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     }
     await disableMfa(user.id);
     await notifySecurityEvent(user.id, "MFA_DISABLED");
-    return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ ok: true, signInAgain: true }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const denied = authFailure(error);
     if (denied) return denied;

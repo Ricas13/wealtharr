@@ -11,6 +11,8 @@ import { headers } from "next/headers";
 export default async function SettingsPage(){
   const user=await requirePageUser();
   const [mfaEnabled,entitlements]=await Promise.all([isMfaEnabled(user.id),loadEntitlements(user.id)]);
+  const passwordRows=await sql.unsafe("SELECT password_hash IS NOT NULL AS has_password FROM users WHERE id=$1",[user.id]);
+  const hasPassword=Boolean(passwordRows[0]?.has_password);
   const userAgent=(await headers()).get("user-agent");
   const canPurchase=purchasesAllowedFor(userAgent);
   const platform=platformFromUserAgent(userAgent);
@@ -73,6 +75,6 @@ export default async function SettingsPage(){
     </div>
     <section className="card privacy-card"><div className="eyebrow">Account</div><h3>Signed in as {user.email}</h3><p className="help">Sign out of Wealtharr on this device.</p><SignOutButton/></section>
     <section id="security" className="card privacy-card"><div className="eyebrow">Security</div><h3>Two-step sign-in</h3><SecurityControls enabled={mfaEnabled}/></section>
-    <section className="card privacy-card"><div className="eyebrow">Privacy</div><h3>Your data, your choice.</h3><p className="help">Anonymous community aggregates use privacy-thresholded derived data only. You can opt out, export your data, or close the account.</p><PrivacyControls optIn={user.anonymousAggregateOptIn}/></section>
+    <section className="card privacy-card"><div className="eyebrow">Privacy</div><h3>Your data, your choice.</h3><p className="help">Anonymous community aggregates use privacy-thresholded derived data only. You can opt out, export your data, or close the account.</p><PrivacyControls optIn={user.anonymousAggregateOptIn} hasPassword={hasPassword} mfaEnabled={mfaEnabled}/></section>
   </>;
 }

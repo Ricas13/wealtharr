@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { ensureSettings } from "@/lib/settings";
+import { cronAuthorized } from "@/lib/cron-auth";
 
 export const dynamic="force-dynamic";
 
@@ -18,8 +19,12 @@ function validEncryptionKey(value:string|undefined){
   try{return Buffer.from(value,"base64").length===32;}catch{return false;}
 }
 
-export async function GET(){
+// The public answer is only the readiness status (the HTTP code carries it too), which is all a load
+// balancer or container health check needs. Which integrations are configured is operational detail
+// for the operator, so it needs the cron bearer secret (as /api/cron/health does).
+export async function GET(request: Request){
   await ensureSettings();
+  const detailed=cronAuthorized(request);
   const headers={"cache-control":"no-store"};
   try{
     await sql.unsafe("SELECT 1 AS ok");
@@ -42,12 +47,14 @@ export async function GET(){
     };
 
     return Response.json(
-      {ok:coreReady,status:coreReady?"ready":"degraded",database:"ok",capabilities},
+      detailed
+        ?{ok:coreReady,status:coreReady?"ready":"degraded",database:"ok",capabilities}
+        :{status:coreReady?"ready":"degraded"},
       {status:coreReady?200:503,headers}
     );
   }catch{
     return Response.json(
-      {ok:false,status:"unavailable",database:"unavailable"},
+      detailed?{ok:false,status:"unavailable",database:"unavailable"}:{status:"unavailable"},
       {status:503,headers}
     );
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { changeStrategyStatus } from "@/lib/strategy-service";
 import { recalculateAfterMutation } from "@/lib/action-service";
@@ -12,6 +13,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     assertSameOrigin(request);
     const user = await requireUser();
     const { id } = await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const input = schema.parse(await request.json());
     const result = await changeStrategyStatus(user.id, id, input.status);
 

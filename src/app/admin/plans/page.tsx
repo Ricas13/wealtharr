@@ -1,4 +1,5 @@
 import {sql} from "@/lib/db";
+import {requireAdminPage} from "@/lib/session";
 import {PlanPriceEditor} from "@/components/AdminEditors";
 import {StripePriceSync} from "@/components/StripePriceSync";
 import {SimplePlanEditor} from "@/components/SimplePlanEditor";
@@ -6,6 +7,7 @@ import {CreditCard,UsersRound,Layers3} from "lucide-react";
 
 export const dynamic="force-dynamic";
 export default async function PlansAdmin(){
+ await requireAdminPage();
  const [rows,definitions,prices,active]=await Promise.all([
   sql.unsafe("SELECT slug,display_name,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,trial_days,visible,archived,entitlements,description,available_strategy_keys,sort_order,stripe_monthly_price_id,stripe_annual_price_id FROM plans ORDER BY sort_order"),
   sql.unsafe("SELECT key,name,enabled FROM strategy_definitions ORDER BY name"),

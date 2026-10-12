@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {requireAdminPage} from "@/lib/session";
 import {CreditCard,ChartNoAxesCombined,Mail,Clock3,Landmark,ArrowRight,PlugZap,ShieldCheck} from "lucide-react";
 import {ensureSettings} from "@/lib/settings";
 import {listSettings} from "@/lib/settings";
@@ -6,6 +7,7 @@ import {listSettings} from "@/lib/settings";
 export const dynamic="force-dynamic";
 
 export default async function IntegrationsPage(){
+ await requireAdminPage();
  await ensureSettings(true);
  const settings=await listSettings();
  const configured=(...keys:string[])=>keys.every(key=>settings.some(s=>s.key===key&&s.source!=="unset"));

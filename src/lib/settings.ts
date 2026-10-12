@@ -1,7 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
-import { SETTINGS, SETTING_KEYS, isSecretKind, settingByKey, validateSetting, type SettingDefinition } from "@/domain/settings-registry";
+import { ENDPOINT_SECRET_PAIRS, SETTINGS, SETTING_KEYS, isSecretKind, settingByKey, validateSetting, type SettingDefinition } from "@/domain/settings-registry";
 
 // Settings saved in the admin screen are copied over the matching environment variables so the rest
 // of the code keeps reading process.env unchanged. The environment value that was there before is
@@ -75,8 +75,11 @@ export async function listSettings(): Promise<SettingView[]> {
   return SETTINGS.map((def) => {
     const fromDb = rows.get(def.key);
     const fromEnv = originalEnv.has(def.key) ? originalEnv.get(def.key) : process.env[def.key];
-    const source = fromDb !== undefined ? "database" : fromEnv ? "environment" : "unset";
-    const effective = fromDb ?? fromEnv ?? null;
+    // An empty stored value is the marker left when a token was withdrawn together with its address
+    // (see saveSettings): it hides the environment fallback and reads as "not set".
+    const withdrawn = fromDb === "";
+    const source = withdrawn ? "unset" : fromDb !== undefined ? "database" : fromEnv ? "environment" : "unset";
+    const effective = withdrawn ? null : (fromDb ?? fromEnv ?? null);
     return {
       key: def.key, label: def.label, group: def.group, kind: def.kind, help: def.help, options: def.options,
       source, value: isSecretKind(def.kind) ? null : effective
@@ -104,7 +107,44 @@ export async function saveSettings(adminId: string, changes: SettingChange[]): P
   }
   if (Object.keys(errors).length) return { ok: false, errors };
 
+  // Makes sure the environment values that were in place before any saved setting are recorded.
+  await ensureSettings();
+  const present = new Set(clean.map((c) => c.key));
+  const endpointChanged: Array<{ key: string; secretKey: string; clearedSecret: boolean }> = [];
+
   await sql.begin(async (tx) => {
+    // A saved address and its bearer token travel together. When the address changes, the token is
+    // withdrawn unless a new one is in the same save, so an admin cannot point a stored token at a
+    // host of their choosing (the connection test and the senders would send it there).
+    for (const change of clean) {
+      if (!Object.prototype.hasOwnProperty.call(ENDPOINT_SECRET_PAIRS, change.key)) continue;
+      const secretKey = ENDPOINT_SECRET_PAIRS[change.key];
+      const stored = await tx.unsafe("SELECT value_encrypted FROM app_settings WHERE key=$1", [change.key]);
+      let before: string | undefined;
+      try {
+        before = stored[0] ? decryptSecret(String(stored[0].value_encrypted)) : undefined;
+      } catch {
+        before = "\u0000unreadable"; // cannot be compared, so treat it as changed (fail closed)
+      }
+      const fallback = originalEnv.get(change.key) ?? "";
+      if ((before ?? fallback) === (change.value ?? fallback)) continue;
+      const tokenRow = await tx.unsafe("SELECT 1 FROM app_settings WHERE key=$1", [secretKey]);
+      const hasToken = tokenRow.length > 0 || Boolean(originalEnv.get(secretKey));
+      endpointChanged.push({ key: change.key, secretKey, clearedSecret: hasToken && !present.has(secretKey) });
+    }
+    for (const item of endpointChanged) {
+      if (!item.clearedSecret) continue;
+      // Where the token also exists in the environment, an empty stored value hides it; otherwise the
+      // saved row is simply removed.
+      if (originalEnv.get(item.secretKey)) {
+        await tx.unsafe(
+          "INSERT INTO app_settings (key,value_encrypted,updated_by) VALUES ($1,$2,$3) ON CONFLICT (key) DO UPDATE SET value_encrypted=EXCLUDED.value_encrypted,updated_by=EXCLUDED.updated_by,updated_at=now()",
+          [item.secretKey, encryptSecret(""), adminId]
+        );
+      } else {
+        await tx.unsafe("DELETE FROM app_settings WHERE key=$1", [item.secretKey]);
+      }
+    }
     for (const change of clean) {
       if (change.value === null) await tx.unsafe("DELETE FROM app_settings WHERE key=$1", [change.key]);
       else {
@@ -115,11 +155,18 @@ export async function saveSettings(adminId: string, changes: SettingChange[]): P
       }
     }
     // The audit trail names what changed and by whom, never the values.
+    for (const item of endpointChanged) {
+      await tx.unsafe(
+        "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1::uuid,'settings.endpoint-changed','settings',NULL,$2::jsonb)",
+        [adminId, JSON.stringify({ key: item.key, secretCleared: item.clearedSecret ? item.secretKey : null })]
+      );
+    }
     await tx.unsafe(
       "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1::uuid,'settings.changed','settings',NULL,$2::jsonb)",
       [adminId, JSON.stringify({ set: clean.filter((c) => c.value !== null).map((c) => c.key), cleared: clean.filter((c) => c.value === null).map((c) => c.key) })]
     );
   });
   await ensureSettings(true);
-  return { ok: true, changed: clean.map((c) => c.key) };
+  const withdrawnSecrets = endpointChanged.filter((c) => c.clearedSecret).map((c) => c.secretKey);
+  return { ok: true, changed: [...clean.map((c) => c.key), ...withdrawnSecrets] };
 }

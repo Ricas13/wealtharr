@@ -1,10 +1,12 @@
 import {sql} from "@/lib/db";
+import {requireAdminPage} from "@/lib/session";
 import {RESEARCH_STRATEGIES} from "@/domain/strategy/research-catalog";
 import {strategyReadiness,type StrategyReleaseEvidence} from "@/domain/strategy/release-readiness";
 import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-market-mappings";
 
 export const dynamic="force-dynamic";
 export default async function ResearchCatalogPage(){
+ await requireAdminPage();
  const [versions,mappings]=await Promise.all([
   sql.unsafe(
    "SELECT d.key,d.enabled,v.version,v.engine_key,v.lifecycle_status,v.config,v.input_schema,"+

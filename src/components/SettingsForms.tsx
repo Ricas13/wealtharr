@@ -97,52 +97,46 @@ export function BillingButtons({
       })}
     </div>
     {currentPlanSlug==="free"&&<p className="help">Your Free plan keeps working if you do nothing. Upgrading only changes the limits and features available to your account. Nothing changes until checkout completes successfully.</p>}
-    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
+    {error&&<div className="error">{error}</div>}
   </div>;
 }
 
-export function PrivacyControls({optIn}:{optIn:boolean}){
+export function PrivacyControls({optIn,hasPassword,mfaEnabled}:{optIn:boolean;hasPassword:boolean;mfaEnabled:boolean}){
   const[state,setState]=useState(optIn);
-  const status=useMessage();
+  const[message,setMessage]=useState("");
+  const[confirming,setConfirming]=useState(false);
+  const[error,setError]=useState("");
   const[busy,setBusy]=useState(false);
-  const[confirmDelete,setConfirmDelete]=useState(false);
-  async function toggle(){
-    const next=!state;
-    setBusy(true);status.clear();
+  async function toggle(){const next=!state;const r=await fetch("/api/account/privacy",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({anonymousAggregateOptIn:next})});if(r.ok){setState(next);setMessage("Privacy preference updated.");}else setMessage("Could not update preference.");}
+  // Deleting is irreversible, so it asks again who is at the keyboard: the password, a current code
+  // when two-step sign-in is on, or (for accounts that only use Google or Apple) the account email.
+  async function remove(e:React.FormEvent<HTMLFormElement>){
+    e.preventDefault();
+    const f=new FormData(e.currentTarget);
+    setBusy(true);setError("");
     try{
-      const result=await requestJson("/api/account/privacy",{method:"PATCH",body:{anonymousAggregateOptIn:next},fallbackError:"Could not update preference."});
-      if(result.ok){setState(next);status.success("Privacy preference updated.");}
-      else status.error(result.errorText);
-    }finally{
-      setBusy(false);
-    }
-  }
-  async function remove(){
-    setBusy(true);status.clear();
-    try{
-      const result=await requestJson("/api/account/delete",{method:"DELETE",fallbackError:"Could not delete account."});
-      if(result.ok)await signOut({callbackUrl:"/"});
-      else{status.error(result.errorText);setConfirmDelete(false);}
-    }finally{
-      setBusy(false);
-    }
+      const r=await fetch("/api/account/delete",{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({password:f.get("password")||undefined,code:f.get("code")||undefined,confirmEmail:f.get("confirmEmail")||undefined})});
+      const b=await r.json().catch(()=>({} as {error?:string}));
+      if(r.ok||r.status===202){await signOut({callbackUrl:"/"});return;}
+      setError(b.error??"Could not delete account.");
+    }catch{setError("Could not reach the server. Please try again.");}
+    finally{setBusy(false);}
   }
   return <div className="stack">
-    <div className="inline">
-      <button className="button" type="button" disabled={busy} onClick={toggle}>{state?"Opt out of anonymous aggregates":"Opt in to anonymous aggregates"}</button>
-      <a className="button" href="/api/account/export">Export my data</a>
-    </div>
-    {!confirmDelete&&<button className="button danger" type="button" disabled={busy} onClick={()=>setConfirmDelete(true)}>Delete account</button>}
-    {confirmDelete&&<div className="close-confirmation" role="group" aria-label="Confirm account deletion">
-      <div><strong>Permanently delete your account?</strong><span>Your account and financial history are removed from the application. This cannot be undone.</span></div>
-      <div className="inline">
-        <button className="button danger" type="button" disabled={busy} onClick={remove}>{busy?"Deleting…":"Yes, delete my account"}</button>
-        <button className="button quiet" type="button" disabled={busy} autoFocus onClick={()=>setConfirmDelete(false)}>Keep my account</button>
-      </div>
-    </div>}
-    <MessageView message={status.message}/>
+    <div className="inline"><button className="button" onClick={toggle}>{state?"Opt out of anonymous aggregates":"Opt in to anonymous aggregates"}</button><a className="button" href="/api/account/export">Export my data</a></div>
+    {!confirming&&<button className="button danger" onClick={()=>{setConfirming(true);setError("");}}>Delete account</button>}
+    {confirming&&<form className="stack" onSubmit={remove}>
+      <p className="help">This permanently deletes your account and financial history from the application. It cannot be undone.{hasPassword?" Enter your password to confirm.":" You sign in with Google or Apple, so confirm by typing your account email. You must have signed in within the last 15 minutes; if not, sign out and sign in again first."}</p>
+      {hasPassword&&<div className="field"><label htmlFor="delete-password">Password</label><input id="delete-password" name="password" type="password" autoComplete="current-password" required/></div>}
+      {!hasPassword&&<div className="field"><label htmlFor="delete-email">Your account email</label><input id="delete-email" name="confirmEmail" type="email" autoComplete="email" required/></div>}
+      {mfaEnabled&&<div className="field"><label htmlFor="delete-code">Authenticator or recovery code</label><input id="delete-code" name="code" autoComplete="one-time-code" required/></div>}
+      <div className="inline"><button className="button danger" disabled={busy}>Permanently delete my account</button><button className="button" type="button" disabled={busy} onClick={()=>{setConfirming(false);setError("");}}>Cancel</button></div>
+      {error&&<div className="error" role="alert">{error}</div>}
+    </form>}
+    {message&&<div className={message.startsWith("Privacy")?"success":"error"} role="status">{message}</div>}
   </div>;
 }
+
 
 
 export function SecurityControls({enabled}:{enabled:boolean}){
@@ -155,37 +149,43 @@ export function SecurityControls({enabled}:{enabled:boolean}){
   async function call(path:string,body?:unknown){
     setBusy(true);setError("");setMessage("");
     try{
-      const result=await postJson(path,body,{fallbackError:"Something went wrong. Please try again."});
-      if(!result.ok){setError(result.errorText);return null;}
-      return result.data;
-    }finally{setBusy(false);}
+      const r=await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:body?JSON.stringify(body):undefined});
+      const b=await r.json().catch(()=>({} as {error?:string}));
+      if(!r.ok){setError(b.error??"Something went wrong. Please try again.");return null;}
+      return b;
+    }catch{setError("Could not reach the server. Please try again.");return null;}
+    finally{setBusy(false);}
   }
-  if(on&&!recovery)return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const b=await call("/api/account/mfa/disable",{password:f.get("password"),code:f.get("code")});if(b){setOn(false);setSetup(null);setMessage("Two-step sign-in is off.");}}}>
-    <p className="help">Two-step sign-in is on. To turn it off, confirm your password and a current code (or a recovery code).</p>
+  // Changing two-step sign-in ends every session, this one included, so the next step is signing in again.
+  const signInAgain=()=>signOut({callbackUrl:"/login"});
+  if(on&&!recovery)return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const b=await call("/api/account/mfa/disable",{password:f.get("password"),code:f.get("code")});if(b){setOn(false);setSetup(null);setMessage("Two-step sign-in is off. Sign in again to continue.");await signInAgain();}}}>
+    <p className="help">Two-step sign-in is on. To turn it off, confirm your password and a current code (or a recovery code). You will be signed out and asked to sign in again.</p>
     <div className="form-grid"><div className="field"><label htmlFor="mfa-off-password">Password</label><input id="mfa-off-password" name="password" type="password" autoComplete="current-password" required/></div>
     <div className="field"><label htmlFor="mfa-off-code">Code</label><input id="mfa-off-code" name="code" autoComplete="one-time-code" required/></div></div>
     <button className="button danger" disabled={busy}>Turn off two-step sign-in</button>
-    {error&&<InlineMessage tone="error">{error}</InlineMessage>}{message&&<InlineMessage tone="success">{message}</InlineMessage>}
+    {error&&<div className="error" role="alert">{error}</div>}{message&&<div className="success" role="status">{message}</div>}
   </form>;
   if(recovery)return <div className="stack">
-    <InlineMessage tone="success">Two-step sign-in is on.</InlineMessage>
-    <p className="help">Save these recovery codes somewhere safe. Each works once if you lose your authenticator. They will not be shown again.</p>
+    <div className="success" role="status">Two-step sign-in is on.</div>
+    <p className="help">Save these recovery codes somewhere safe. Each works once if you lose your authenticator. They will not be shown again. When you continue you will be signed out; sign in again with your password and a code.</p>
     <pre style={{fontFamily:"monospace",whiteSpace:"pre-wrap"}}>{recovery.join("\n")}</pre>
-    <button className="button primary" onClick={()=>{setRecovery(null);setSetup(null);}}>I have saved them</button>
+    <button className="button primary" onClick={async()=>{setRecovery(null);setSetup(null);await signInAgain();}}>I have saved them</button>
   </div>;
-  if(setup)return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const b=await call("/api/account/mfa/enable",{code:f.get("code")});if(b){setOn(true);setRecovery(b.recoveryCodes);}}}>
+  if(setup)return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const b=await call("/api/account/mfa/enable",{code:f.get("code"),password:f.get("password")});if(b){setOn(true);setRecovery(b.recoveryCodes);}}}>
     <p className="help">Add this account to your authenticator app by entering the key below (or opening the link on a device that has the app), then type the 6-digit code it shows.</p>
     <div className="field"><label htmlFor="mfa-secret">Key</label><input id="mfa-secret" readOnly value={setup.secret} onFocus={(e)=>e.currentTarget.select()}/></div>
     <a className="button" href={setup.otpauthUri}>Open in authenticator app</a>
     <div className="field"><label htmlFor="mfa-code">Code from the app</label><input id="mfa-code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} required/></div>
+    <div className="field"><label htmlFor="mfa-on-password">Password</label><input id="mfa-on-password" name="password" type="password" autoComplete="current-password" required/></div>
     <button className="button primary" disabled={busy}>Confirm and turn on</button>
-    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
+    {error&&<div className="error" role="alert">{error}</div>}
   </form>;
-  return <div className="stack">
-    <p className="help">Ask for a code from an authenticator app when you sign in, on top of your password.</p>
-    <button className="button" disabled={busy} onClick={async()=>{const b=await call("/api/account/mfa/setup");if(b)setSetup(b);}}>Set up two-step sign-in</button>
-    {error&&<InlineMessage tone="error">{error}</InlineMessage>}{message&&<InlineMessage tone="success">{message}</InlineMessage>}
-  </div>;
+  return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const b=await call("/api/account/mfa/setup",{password:f.get("password")});if(b)setSetup(b);}}>
+    <p className="help">Ask for a code from an authenticator app when you sign in, on top of your password. Enter your password to start.</p>
+    <div className="field"><label htmlFor="mfa-start-password">Password</label><input id="mfa-start-password" name="password" type="password" autoComplete="current-password" required/></div>
+    <button className="button" disabled={busy}>Set up two-step sign-in</button>
+    {error&&<div className="error" role="alert">{error}</div>}{message&&<div className="success" role="status">{message}</div>}
+  </form>;
 }
 
 /** A one-time deep link verifies the user controls the private Telegram chat. */

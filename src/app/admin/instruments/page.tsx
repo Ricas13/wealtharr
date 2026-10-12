@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import {requireAdminPage} from "@/lib/session";
 import { sql } from "@/lib/db";
 import { InstrumentEditor,TradingLineEditor } from "@/components/AdminEditors";
 import { InstrumentCandidates,type CandidateView } from "@/components/AdminInstrumentCandidates";
@@ -8,6 +9,7 @@ import { RESEARCH_STRATEGIES } from "@/domain/strategy/research-catalog";
 const plainLeverage=(value:unknown)=>{try{return new Decimal(String(value)).toString();}catch{return String(value);}};
 
 export default async function InstrumentsAdmin(){
+ await requireAdminPage();
   const rows=await sql.unsafe("SELECT i.id,i.isin,i.name,i.economic_exposure,i.leverage,tl.id AS trading_line_id,tl.ticker,tl.exchange,tl.currency FROM instruments i LEFT JOIN trading_lines tl ON tl.instrument_id=i.id AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) ORDER BY i.name,tl.exchange");
   const candidateRows=await sql.unsafe("SELECT m.id::text AS id,m.economic_exposure,m.leverage::text AS leverage,m.direction,m.country,m.wrapper,m.trading_line_id::text AS trading_line_id,tl.ticker,tl.exchange,tl.currency,tl.provider_symbol,i.isin,i.name FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id WHERE m.fidelity='CANDIDATE' ORDER BY m.country,m.wrapper,m.economic_exposure,tl.ticker");
   const candidates:CandidateView[]=candidateRows.map((r:any)=>({id:r.id,economicExposure:r.economic_exposure,leverage:plainLeverage(r.leverage),direction:r.direction,country:r.country,wrapper:r.wrapper,tradingLineId:r.trading_line_id,ticker:r.ticker,exchange:r.exchange,currency:r.currency,isin:r.isin??null,instrumentName:r.name,providerSymbol:r.provider_symbol??null}));

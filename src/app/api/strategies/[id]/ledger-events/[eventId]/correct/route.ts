@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { invalidPathId } from "@/lib/route-params";
 import { z } from "zod";
 import { requireUser } from "@/lib/session";
 import { recalculateAfterMutation } from "@/lib/action-service";
@@ -14,6 +15,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string;ev
     assertSameOrigin(request);
     const user=await requireUser();
     const {id,eventId}=await context.params;
+    const badId = invalidPathId(id, eventId); if (badId) return badId;
     const input=schema.parse(await request.json());
 
     const corrected=await sql.begin(async(tx)=>{

@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/session";
+import { invalidPathId } from "@/lib/route-params";
 import { getStrategyForUser } from "@/lib/strategy-service";
 import { calculateAction } from "@/lib/action-service";
 import { assertSameOrigin } from "@/lib/security";
@@ -9,6 +10,7 @@ export async function POST(request: Request, context: { params: Promise<{id:stri
     assertSameOrigin(request);
     const user = await requireUser();
     const {id} = await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const strategy = await getStrategyForUser(user.id,id);
     if (!strategy) return Response.json({error:"Not found."},{status:404});
     const result = await calculateAction(id);

@@ -35,9 +35,16 @@ test("health endpoint reports core readiness without exposing secrets",async({re
   const response=await request.get("/api/health");
   expect(response.status()).toBe(200);
   const body=await response.json();
-  expect(body).toMatchObject({ok:true,status:"ready",database:"ok"});
-  expect(body).toHaveProperty("capabilities");
+  // The public answer is the readiness status only: no configuration detail without the cron secret.
+  expect(body).toEqual({status:"ready"});
   const text=JSON.stringify(body);
   expect(text).not.toContain("ci-only");
   expect(text).not.toContain("strategyos:");
+  const secret=process.env.CRON_SECRET;
+  if(secret){
+    const detailed=await (await request.get("/api/health",{headers:{authorization:"Bearer "+secret}})).json();
+    expect(detailed).toMatchObject({ok:true,status:"ready",database:"ok"});
+    expect(detailed).toHaveProperty("capabilities");
+    expect(JSON.stringify(detailed)).not.toContain("ci-only");
+  }
 });

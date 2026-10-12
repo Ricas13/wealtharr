@@ -1,4 +1,5 @@
 import type Decimal from "decimal.js";
+import { invalidPathId } from "@/lib/route-params";
 import {LedgerDecimal} from "@/domain/ledger-decimal";
 import {z} from "zod";
 import {requireUser} from "@/lib/session";
@@ -34,6 +35,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const user=await requireUser();
     await consumeRateLimit("broker-trade:"+user.id,20,60);
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const strategy=await getStrategyForUser(user.id,id);
     if(!strategy)return Response.json({error:"Strategy not found."},{status:404});
     const input=inputSchema.parse(await request.json());

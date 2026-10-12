@@ -54,7 +54,10 @@ describe.skipIf(!url)("two-step sign-in",()=>{
 
   it("a half-finished setup does not turn protection on",async()=>{
     const { verifySecondFactor }=await import("@/lib/mfa");
-    const setup=await post("setup");
+    expect((await post("setup")).status).toBe(400);
+    expect((await post("setup",{password:"wrong password!!"})).status).toBe(400);
+    expect((await sql!.unsafe("SELECT mfa_secret_encrypted FROM users WHERE id=$1",[userId]))[0].mfa_secret_encrypted).toBeNull();
+    const setup=await post("setup",{password});
     expect(setup.status).toBe(200);
     expect(setup.json.secret).toMatch(/^[A-Z2-7]{32}$/);
     expect(setup.json.otpauthUri).toContain("otpauth://totp/");
@@ -65,9 +68,17 @@ describe.skipIf(!url)("two-step sign-in",()=>{
   });
 
   it("refuses a wrong confirmation code, then enables with the right one and returns recovery codes",async()=>{
-    expect((await post("enable",{code:"000000"})).status).toBe(400);
+    expect((await post("enable",{code:"000000",password})).status).toBe(400);
     const secret=await storedSecret();
-    const enabled=await post("enable",{code:totpAt(secret,currentStep(new Date()))});
+    const validCode=totpAt(secret,currentStep(new Date()));
+    // A valid code alone is not enough: the password is checked too, and the code is not spent.
+    expect((await post("enable",{code:validCode})).status).toBe(400);
+    expect((await post("enable",{code:validCode,password:"wrong password!!"})).status).toBe(400);
+    expect((await sql!.unsafe("SELECT mfa_enabled_at FROM users WHERE id=$1",[userId]))[0].mfa_enabled_at).toBeNull();
+    const versionBefore=Number((await sql!.unsafe("SELECT session_version FROM users WHERE id=$1",[userId]))[0].session_version);
+    const enabled=await post("enable",{code:validCode,password});
+    // Turning it on ends every existing session so none predates the second factor.
+    expect(Number((await sql!.unsafe("SELECT session_version FROM users WHERE id=$1",[userId]))[0].session_version)).toBe(versionBefore+1);
     expect(enabled.status).toBe(200);
     recoveryCodes=enabled.json.recoveryCodes;
     expect(recoveryCodes).toHaveLength(10);
@@ -75,7 +86,7 @@ describe.skipIf(!url)("two-step sign-in",()=>{
     expect(stored[0].mfa_enabled_at).not.toBeNull();
     // Only hashes are stored.
     expect(JSON.stringify(stored[0].mfa_recovery_hashes)).not.toContain(recoveryCodes[0]);
-    expect((await post("setup")).status).toBe(409);
+    expect((await post("setup",{password})).status).toBe(409);
   });
 
   it("accepts a fresh code once and refuses its replay",async()=>{
@@ -109,6 +120,8 @@ describe.skipIf(!url)("two-step sign-in",()=>{
     expect(row.mfa_enabled_at).toBeNull();
     expect(row.mfa_secret_encrypted).toBeNull();
     expect(row.n).toBe(0);
+    // Turning it off also ends every existing session.
+    expect(Number((await sql!.unsafe("SELECT session_version FROM users WHERE id=$1",[userId]))[0].session_version)).toBe(2);
   });
 
   it("records enabling, recovery use and disabling in the audit log",async()=>{
