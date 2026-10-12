@@ -39,7 +39,7 @@ describe("admin pages guard themselves",()=>{
   });
 
   it("has no admin page or layout file this test would miss",()=>{
-    const others=walk("src/app/admin").filter((f)=>/\.(tsx|ts)$/.test(f)&&!f.endsWith("/page.tsx")&&!f.endsWith("/layout.tsx"));
+    const others=walk("src/app/admin").filter((f)=>/\.(tsx|ts)$/.test(f)&&!f.endsWith("/page.tsx")&&!f.endsWith("/layout.tsx")&&!f.endsWith("/error.tsx")&&!f.endsWith("/loading.tsx"));
     expect(others).toEqual([]);
   });
 

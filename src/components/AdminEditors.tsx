@@ -1,32 +1,34 @@
 "use client";
 import { Field } from "@/components/Field";
-import { useState } from "react";
+import { MessageView, useMessage } from "@/components/InlineMessage";
+import { requestJson } from "@/lib/http";
 import { useRouter } from "next/navigation";
 
+// One outcome per form, carried as {tone,text}: a validation failure (`fail`) and a server failure are
+// errors, a saved change is a success. The tone is state, never inferred from the message text.
 function useAdminSubmit(url:string,method:"PUT"|"POST"|"PATCH"="PUT"){
-  const router=useRouter();const[message,setMessage]=useState("");
+  const router=useRouter();const outcome=useMessage();
   async function submit(payload:unknown){
-    setMessage("");
-    const response=await fetch(url,{method,headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
-    const body=await response.json().catch(()=>({}));
-    if(!response.ok){setMessage(body.error??"Update failed.");return false;}
-    setMessage("Saved.");router.refresh();return true;
+    outcome.clear();
+    const result=await requestJson(url,{method,body:payload,fallbackError:"Update failed."});
+    if(!result.ok){outcome.error(result.errorText);return false;}
+    outcome.success("Saved.");router.refresh();return true;
   }
-  return {submit,message};
+  return {submit,status:outcome.message,fail:outcome.error,clear:outcome.clear};
 }
 function json(value:string,fallback:unknown){try{return value.trim()?JSON.parse(value):fallback;}catch{throw new Error("INVALID_JSON");}}
 
 export function PlanEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/plans");
-  const[error,setError]=useState("");
-  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();setError("");const f=new FormData(e.currentTarget);try{await submit({
+  const {submit,status,fail,clear}=useAdminSubmit("/api/admin/plans");
+  
+  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();clear();const f=new FormData(e.currentTarget);try{await submit({
     slug:f.get("slug"),displayName:f.get("displayName"),description:f.get("description")??"",
     monthlyPriceMinor:Math.round(Number(f.get("monthly"))*100),annualPriceMinor:Math.round(Number(f.get("annual"))*100),annualDiscountBps:Math.round(Number(f.get("annualDiscount")||0)*100),
     currency:f.get("currency"),supportedBillingCurrencies:String(f.get("currencies")).split(",").map(x=>x.trim()).filter(Boolean),
     maxActiveStrategies:f.get("max")===""?null:Number(f.get("max")),availableStrategyKeys:String(f.get("strategies")).split(",").map(x=>x.trim()).filter(Boolean),
     stripeMonthlyPriceId:f.get("stripeMonthly")||null,stripeAnnualPriceId:f.get("stripeAnnual")||null,
     entitlements:json(String(f.get("entitlements")),{}),trialDays:Number(f.get("trial")||0),visible:Boolean(f.get("visible")),archived:Boolean(f.get("archived")),sortOrder:Number(f.get("sort")||0)
-  });}catch{setError("Entitlements must be valid JSON.");}}}>
+  });}catch{fail("Entitlements must be valid JSON.");}}}>
     <h3>Upsert plan</h3><div className="form-grid">
       <Field label="Slug"><input name="slug" required placeholder="investor"/></Field>
       <Field label="Display name"><input name="displayName" required placeholder="Investor"/></Field>
@@ -44,18 +46,18 @@ export function PlanEditor(){
       <div className="field"><label><input name="visible" type="checkbox" defaultChecked/> Visible</label></div>
       <div className="field"><label><input name="archived" type="checkbox"/> Archived</label></div>
       <Field label="Sort order"><input name="sort" type="number" defaultValue="0"/></Field>
-    </div><button className="button primary" style={{marginTop:16}}>Save plan</button>{(error||message)&&<div className={error?"error":"success"}>{error||message}</div>}
+    </div><button className="button primary" style={{marginTop:16}}>Save plan</button><MessageView message={status}/>
   </form>;
 }
 
 export function StrategyDefinitionEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/strategies","PUT");const[error,setError]=useState("");
-  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();setError("");const f=new FormData(e.currentTarget);try{await submit({
+  const {submit,status,fail,clear}=useAdminSubmit("/api/admin/strategies","PUT");
+  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();clear();const f=new FormData(e.currentTarget);try{await submit({
     key:f.get("key"),name:f.get("name"),family:f.get("family"),description:f.get("description")??"",engine:f.get("engine"),
     enabled:Boolean(f.get("enabled")),proprietary:Boolean(f.get("proprietary")),defaultBenchmarkKey:f.get("benchmark")||null,
     supportedRegions:String(f.get("regions")).split(",").map(x=>x.trim()).filter(Boolean),supportedWrappers:String(f.get("wrappers")).split(",").map(x=>x.trim()).filter(Boolean),
     requiredInputs:json(String(f.get("inputs")) ,[])
-  });}catch{setError("Required inputs must be valid JSON.");}}}>
+  });}catch{fail("Required inputs must be valid JSON.");}}}>
     <h3>Upsert strategy definition</h3><div className="form-grid">
       <Field label="Key"><input name="key" required/></Field><Field label="Name"><input name="name" required/></Field>
       <Field label="Family"><input name="family" required/></Field><Field label="Engine"><select name="engine"><option>VALUE_TARGET</option><option>FIXED_ALLOCATION</option></select></Field>
@@ -63,18 +65,18 @@ export function StrategyDefinitionEditor(){
       <Field label="Regions"><input name="regions" defaultValue="GB,US,EU"/></Field><Field label="Wrappers"><input name="wrappers" defaultValue="ISA,SIPP,TAXABLE"/></Field>
       <Field label="Benchmark key"><input name="benchmark"/></Field><Field label="Required inputs JSON"><input name="inputs" defaultValue="[]"/></Field>
       <div className="field"><label><input type="checkbox" name="enabled"/> Enabled</label></div><div className="field"><label><input type="checkbox" name="proprietary"/> Proprietary</label></div>
-    </div><button className="button primary" style={{marginTop:16}}>Save definition</button>{(error||message)&&<div className={error?"error":"success"}>{error||message}</div>}
+    </div><button className="button primary" style={{marginTop:16}}>Save definition</button><MessageView message={status}/>
   </form>;
 }
 
 export function StrategyVersionEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/strategies","POST");const[error,setError]=useState("");
-  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();setError("");const f=new FormData(e.currentTarget);try{await submit({
+  const {submit,status,fail,clear}=useAdminSubmit("/api/admin/strategies","POST");
+  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();clear();const f=new FormData(e.currentTarget);try{await submit({
     strategyKey:f.get("strategyKey"),version:f.get("version"),effectiveFrom:f.get("effectiveFrom"),effectiveTo:f.get("effectiveTo")||null,
     engineKey:f.get("engineKey")||undefined,upgradePolicy:f.get("upgradePolicy"),
     inputSchema:json(String(f.get("inputSchema")),[]),config:json(String(f.get("config")),{}),
     disclosure:f.get("disclosure")??"",releaseNotes:f.get("releaseNotes")??""
-  });}catch{setError("Configuration and input schema must be valid JSON.");}}}>
+  });}catch{fail("Configuration and input schema must be valid JSON.");}}}>
     <h3>Create strategy release draft</h3><div className="form-grid">
       <Field label="Strategy key"><input name="strategyKey" required/></Field>
       <Field label="Version"><input name="version" placeholder="1.1" required/></Field>
@@ -86,13 +88,13 @@ export function StrategyVersionEditor(){
       <Field className="field full" label="Config JSON"><textarea name="config" rows={7} defaultValue="{}"/></Field>
       <Field className="field full" label="Release notes"><textarea name="releaseNotes" rows={3}/></Field>
       <Field className="field full" label="Disclosure"><textarea name="disclosure" rows={3}/></Field>
-    </div><button className="button primary" style={{marginTop:16}}>Create draft</button>{(error||message)&&<div className={error?"error":"success"}>{error||message}</div>}
+    </div><button className="button primary" style={{marginTop:16}}>Create draft</button><MessageView message={status}/>
   </form>;
 }
 
 export function StrategyVersionManager(){
-  const {submit,message}=useAdminSubmit("/api/admin/strategies","PATCH");const[error,setError]=useState("");
-  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();setError("");const f=new FormData(e.currentTarget);const action=String(f.get("action"));try{
+  const {submit,status,fail,clear}=useAdminSubmit("/api/admin/strategies","PATCH");
+  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();clear();const f=new FormData(e.currentTarget);const action=String(f.get("action"));try{
     if(action==="UPDATE_DRAFT")await submit({
       action,versionId:f.get("versionId"),effectiveFrom:f.get("effectiveFrom")||undefined,effectiveTo:f.get("effectiveTo")||undefined,
       engineKey:f.get("engineKey")||undefined,upgradePolicy:f.get("upgradePolicy")||undefined,
@@ -104,7 +106,7 @@ export function StrategyVersionManager(){
       action,versionId:f.get("versionId"),specCard:String(f.get("specCard")),goldenTests:String(f.get("goldenTests")),notes:String(f.get("attestNotes")||"")
     });
     else await submit({action,versionId:f.get("versionId")});
-  }catch{setError("Draft configuration must be valid JSON.");}}}>
+  }catch{fail("Draft configuration must be valid JSON.");}}}>
     <h3>Manage strategy release</h3><div className="form-grid">
       <Field className="field full" label="Version UUID"><input name="versionId" required/></Field>
       <Field label="Action"><select name="action"><option>UPDATE_DRAFT</option><option>ATTEST</option><option>PUBLISH</option><option>RETIRE</option></select></Field>
@@ -119,29 +121,29 @@ export function StrategyVersionManager(){
       <Field label="Signed-off spec card (attest only)"><input name="specCard" placeholder="docs/strategy-specs/hfea.md"/></Field>
       <Field label="Golden tests (attest only)"><input name="goldenTests" placeholder="tests/golden/hfea.test.ts"/></Field>
       <Field className="field full" label="Attestation notes (attest only)"><textarea name="attestNotes" rows={2}/></Field>
-    </div><button className="button primary" style={{marginTop:16}}>Apply release action</button>{(error||message)&&<div className={error?"error":"success"}>{error||message}</div>}
+    </div><button className="button primary" style={{marginTop:16}}>Apply release action</button><MessageView message={status}/>
   </form>;
 }
 
 export function InstrumentEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/instruments");
+  const {submit,status}=useAdminSubmit("/api/admin/instruments");
   return <div className="detail-grid"><form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({kind:"instrument",isin:f.get("isin")||null,providerInstrumentId:f.get("providerId")||null,name:f.get("name"),economicExposure:f.get("exposure"),leverage:String(f.get("leverage")),direction:"LONG",fundCurrency:f.get("fundCurrency")||null});}}><h3>Add instrument</h3><div className="stack"><Field label="Name"><input name="name" required/></Field><Field label="ISIN"><input name="isin"/></Field><Field label="Provider instrument ID"><input name="providerId"/></Field><Field label="Economic exposure"><input name="exposure" required/></Field><Field label="Leverage"><input name="leverage" defaultValue="1.000000" required/></Field><Field label="Fund currency"><input name="fundCurrency"/></Field><button className="button primary">Add instrument</button></div></form>
-  <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({kind:"mapping",economicExposure:f.get("exposure"),leverage:String(f.get("leverage")),direction:"LONG",country:f.get("country"),wrapper:f.get("wrapper"),broker:f.get("broker")||null,preferredCurrency:f.get("currency")||null,tradingLineId:f.get("tradingLineId"),fidelity:"CANDIDATE",effectiveFrom:f.get("effectiveFrom"),effectiveTo:f.get("effectiveTo")||null});}}><h3>Add candidate mapping</h3><p>Candidates are ignored by every calculation until verified and promoted below.</p><div className="stack"><Field label="Exposure"><input name="exposure" required/></Field><Field label="Leverage"><input name="leverage" defaultValue="1.000000" required/></Field><Field label="Country"><input name="country" defaultValue="GB" maxLength={2} required/></Field><Field label="Wrapper"><input name="wrapper" defaultValue="ISA" required/></Field><Field label="Broker (optional)"><input name="broker"/></Field><Field label="Preferred currency"><input name="currency" defaultValue="GBP"/></Field><Field label="Trading line UUID"><input name="tradingLineId" required/></Field><Field label="Effective from"><input name="effectiveFrom" type="date" required/></Field><Field label="Effective to"><input name="effectiveTo" type="date"/></Field><button className="button primary">Add candidate</button></div></form>{message&&<div className="success">{message}</div>}</div>;
+  <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({kind:"mapping",economicExposure:f.get("exposure"),leverage:String(f.get("leverage")),direction:"LONG",country:f.get("country"),wrapper:f.get("wrapper"),broker:f.get("broker")||null,preferredCurrency:f.get("currency")||null,tradingLineId:f.get("tradingLineId"),fidelity:"CANDIDATE",effectiveFrom:f.get("effectiveFrom"),effectiveTo:f.get("effectiveTo")||null});}}><h3>Add candidate mapping</h3><p>Candidates are ignored by every calculation until verified and promoted below.</p><div className="stack"><Field label="Exposure"><input name="exposure" required/></Field><Field label="Leverage"><input name="leverage" defaultValue="1.000000" required/></Field><Field label="Country"><input name="country" defaultValue="GB" maxLength={2} required/></Field><Field label="Wrapper"><input name="wrapper" defaultValue="ISA" required/></Field><Field label="Broker (optional)"><input name="broker"/></Field><Field label="Preferred currency"><input name="currency" defaultValue="GBP"/></Field><Field label="Trading line UUID"><input name="tradingLineId" required/></Field><Field label="Effective from"><input name="effectiveFrom" type="date" required/></Field><Field label="Effective to"><input name="effectiveTo" type="date"/></Field><button className="button primary">Add candidate</button></div></form><MessageView message={status}/></div>;
 }
 
 export function TradingLineEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/instruments");
-  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({kind:"tradingLine",instrumentId:f.get("instrumentId"),ticker:f.get("ticker"),exchange:f.get("exchange"),currency:f.get("currency"),exchangeTimezone:f.get("timezone"),providerSymbol:f.get("providerSymbol")||null,effectiveFrom:f.get("effectiveFrom"),effectiveTo:f.get("effectiveTo")||null});}}><h3>Add / update trading line</h3><div className="form-grid"><Field label="Instrument UUID"><input name="instrumentId" required/></Field><Field label="Ticker"><input name="ticker" required/></Field><Field label="Exchange"><input name="exchange" required/></Field><Field label="Currency"><input name="currency" defaultValue="GBP" required/></Field><Field label="Exchange timezone"><input name="timezone" defaultValue="Europe/London" required/></Field><Field label="Provider symbol"><input name="providerSymbol"/></Field><Field label="Effective from"><input name="effectiveFrom" type="date" required/></Field><Field label="Effective to"><input name="effectiveTo" type="date"/></Field></div><button className="button primary" style={{marginTop:16}}>Save trading line</button>{message&&<div className="success">{message}</div>}</form>;
+  const {submit,status}=useAdminSubmit("/api/admin/instruments");
+  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({kind:"tradingLine",instrumentId:f.get("instrumentId"),ticker:f.get("ticker"),exchange:f.get("exchange"),currency:f.get("currency"),exchangeTimezone:f.get("timezone"),providerSymbol:f.get("providerSymbol")||null,effectiveFrom:f.get("effectiveFrom"),effectiveTo:f.get("effectiveTo")||null});}}><h3>Add / update trading line</h3><div className="form-grid"><Field label="Instrument UUID"><input name="instrumentId" required/></Field><Field label="Ticker"><input name="ticker" required/></Field><Field label="Exchange"><input name="exchange" required/></Field><Field label="Currency"><input name="currency" defaultValue="GBP" required/></Field><Field label="Exchange timezone"><input name="timezone" defaultValue="Europe/London" required/></Field><Field label="Provider symbol"><input name="providerSymbol"/></Field><Field label="Effective from"><input name="effectiveFrom" type="date" required/></Field><Field label="Effective to"><input name="effectiveTo" type="date"/></Field></div><button className="button primary" style={{marginTop:16}}>Save trading line</button><MessageView message={status}/></form>;
 }
 
 export function FeatureFlagEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/feature-flags");const[error,setError]=useState("");
-  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();setError("");const f=new FormData(e.currentTarget);try{await submit({key:f.get("key"),enabled:Boolean(f.get("enabled")),config:json(String(f.get("config")),{})});}catch{setError("Config must be valid JSON.");}}}><h3>Feature flag</h3><div className="form-grid"><Field label="Key"><input name="key" required/></Field><div className="field"><label><input name="enabled" type="checkbox"/> Enabled</label></div><Field className="field full" label="Config JSON"><input name="config" defaultValue="{}"/></Field></div><button className="button primary" style={{marginTop:16}}>Save flag</button>{(error||message)&&<div className={error?"error":"success"}>{error||message}</div>}</form>;
+  const {submit,status,fail,clear}=useAdminSubmit("/api/admin/feature-flags");
+  return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();clear();const f=new FormData(e.currentTarget);try{await submit({key:f.get("key"),enabled:Boolean(f.get("enabled")),config:json(String(f.get("config")),{})});}catch{fail("Config must be valid JSON.");}}}><h3>Feature flag</h3><div className="form-grid"><Field label="Key"><input name="key" required/></Field><div className="field"><label><input name="enabled" type="checkbox"/> Enabled</label></div><Field className="field full" label="Config JSON"><input name="config" defaultValue="{}"/></Field></div><button className="button primary" style={{marginTop:16}}>Save flag</button><MessageView message={status}/></form>;
 }
 
 
 export function PlanPriceEditor(){
-  const {submit,message}=useAdminSubmit("/api/admin/plan-prices");
+  const {submit,status}=useAdminSubmit("/api/admin/plan-prices");
   return <form className="glass form-card" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await submit({
     planSlug:f.get("planSlug"),currency:String(f.get("currency")).toUpperCase(),cadence:f.get("cadence"),
     amountMinor:Math.round(Number(f.get("amount"))*100),stripePriceId:f.get("stripePriceId")||null,appleProductId:f.get("appleProductId")||null,googleProductId:f.get("googleProductId")||null,active:Boolean(f.get("active"))
@@ -155,18 +157,17 @@ export function PlanPriceEditor(){
       <Field label="App Store product ID"><input name="appleProductId" placeholder="com.example.pro.monthly"/></Field>
       <Field label="Google Play product ID"><input name="googleProductId" placeholder="pro_monthly"/></Field>
       <div className="field"><label><input name="active" type="checkbox" defaultChecked/> Active</label></div>
-    </div><button className="button primary" style={{marginTop:16}}>Save price</button>{message&&<div className="success">{message}</div>}
+    </div><button className="button primary" style={{marginTop:16}}>Save price</button><MessageView message={status}/>
   </form>;
 }
 
 
 export function ModelPerformanceEditor() {
-  const { submit, message } = useAdminSubmit("/api/admin/model-performance");
-  const [error, setError] = useState("");
-
+  const { submit, status, fail, clear } = useAdminSubmit("/api/admin/model-performance");
+  
   return <form className="glass form-card" onSubmit={async (e) => {
     e.preventDefault();
-    setError("");
+    clear();
     const f = new FormData(e.currentTarget);
     try {
       const points = json(String(f.get("points")), []);
@@ -179,7 +180,7 @@ export function ModelPerformanceEditor() {
         benchmarks
       });
     } catch {
-      setError("Model points and benchmark series must be valid JSON arrays.");
+      fail("Model points and benchmark series must be valid JSON arrays.");
     }
   }}>
     <h3>Canonical model / benchmark history</h3>
@@ -190,7 +191,7 @@ export function ModelPerformanceEditor() {
       <Field label={<>Comparison benchmark series JSON <span className="optional">optional</span></>}><textarea name="benchmarks" rows={10} defaultValue={'[{"key":"qqq","name":"QQQ","economicExposure":"NASDAQ_100_1X_LONG","label":"QQQ","sortOrder":10,"defaultVisible":false,"points":[{"date":"2026-01-02","value":"100"}]},{"key":"3qqq","name":"3QQQ","economicExposure":"NASDAQ_100_3X_LONG","label":"3QQQ","sortOrder":20,"defaultVisible":false,"points":[{"date":"2026-01-02","value":"100"}]}]'} /></Field>
       <button className="button primary">Upload model & comparisons</button>
       <div className="help">Only licensed total-return benchmark histories with verified currency/FX metadata may appear on the Main dashboard. For VTI/SPY/QQQ imports add currency, provider, totalReturnAdjusted, commercialLicenceConfirmed, fxConversionVerified, and the canonical BENCHMARK_* exposure. Untagged uploads remain unavailable. Each comparison has its own independent index history. The customer chart replays the user&apos;s real deposits and withdrawals against every series, so DCA is compared like-for-like. Benchmark mappings are strategy-version specific rather than hard-coded to 9Sig.</div>
-      {(error || message) && <div className={error ? "error" : "success"}>{error || message}</div>}
+      <MessageView message={status} />
     </div>
   </form>;
 }

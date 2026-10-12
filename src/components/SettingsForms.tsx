@@ -1,9 +1,22 @@
 "use client";
 import { Field } from "@/components/Field";
+import { InlineMessage, MessageView, useMessage } from "@/components/InlineMessage";
+import { postJson, requestJson } from "@/lib/http";
 import { useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
 
-export function DiscordForm(){const[message,setMessage]=useState("");return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const r=await fetch("/api/settings/discord",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({webhook:f.get("webhook")})});const b=await r.json();setMessage(r.ok?"Discord webhook saved.":b.error);}}><Field label="Discord webhook"><input name="webhook" type="url" placeholder="https://discord.com/api/webhooks/..." required/></Field><button className="button">Save Discord webhook</button>{message&&<div className={message.startsWith("Discord webhook saved")?"success":"error"}>{message}</div>}</form>;}
+export function DiscordForm(){
+  const status=useMessage();const[busy,setBusy]=useState(false);
+  return <form className="stack" onSubmit={async(e)=>{
+    e.preventDefault();setBusy(true);status.clear();const f=new FormData(e.currentTarget);
+    try{
+      const result=await postJson("/api/settings/discord",{webhook:f.get("webhook")},{fallbackError:"Could not save the Discord webhook."});
+      if(result.ok)status.success("Discord webhook saved.");else status.error(result.errorText);
+    }finally{
+      setBusy(false);
+    }
+  }}><Field label="Discord webhook"><input name="webhook" type="url" placeholder="https://discord.com/api/webhooks/..." required/></Field><button className="button" disabled={busy}>Save Discord webhook</button><MessageView message={status.message}/></form>;
+}
 
 type BillingPrice={
   planSlug:string;planName:string;currency:string;cadence:"MONTHLY"|"ANNUAL";amountMinor:number;
@@ -30,17 +43,22 @@ export function BillingButtons({
   const[busy,setBusy]=useState("");
   const[error,setError]=useState("");
 
-  async function checkout(planSlug:string,cadence:"monthly"|"annual"){
-    setBusy(planSlug+cadence);setError("");
-    const r=await fetch("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planSlug,cadence,currency})});
-    const b=await r.json();setBusy("");
-    if(b.url)window.location.assign(b.url);else setError(b.error);
+  async function redirectTo(path:string,body:unknown,busyKey:string,fallbackError:string){
+    setBusy(busyKey);setError("");
+    try{
+      const result=await postJson(path,body,{fallbackError});
+      const url=result.ok?result.data.url:undefined;
+      if(typeof url==="string"&&url)window.location.assign(url);
+      else setError(result.errorText||fallbackError);
+    }finally{
+      setBusy("");
+    }
   }
-  async function portal(){
-    setBusy("portal");setError("");
-    const r=await fetch("/api/billing/portal",{method:"POST"});
-    const b=await r.json();setBusy("");
-    if(b.url)window.location.assign(b.url);else setError(b.error);
+  function checkout(planSlug:string,cadence:"monthly"|"annual"){
+    return redirectTo("/api/billing/checkout",{planSlug,cadence,currency},planSlug+cadence,"Could not open checkout. Please try again.");
+  }
+  function portal(){
+    return redirectTo("/api/billing/portal",undefined,"portal","Could not open the billing portal. Please try again.");
   }
 
   if(paidSubscription)return <div className="billing-current">
@@ -54,7 +72,7 @@ export function BillingButtons({
       <span>If the new plan allows fewer active strategies — or removes a feature an active strategy depends on, such as multiple linked accounts — affected strategies are paused automatically. Their history is preserved and can be resumed later when your plan allows it.</span>
     </div>
     <button className="button primary" disabled={Boolean(busy)} onClick={portal}>{busy==="portal"?"Opening…":"Manage billing"}</button>
-    {error&&<div className="error" role="alert">{error}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
   </div>;
 
   const slugs=[...new Set(prices.map((price)=>price.planSlug))];
@@ -85,11 +103,17 @@ export function BillingButtons({
 
 export function PrivacyControls({optIn,hasPassword,mfaEnabled}:{optIn:boolean;hasPassword:boolean;mfaEnabled:boolean}){
   const[state,setState]=useState(optIn);
-  const[message,setMessage]=useState("");
+  const privacyStatus=useMessage();
   const[confirming,setConfirming]=useState(false);
   const[error,setError]=useState("");
   const[busy,setBusy]=useState(false);
-  async function toggle(){const next=!state;const r=await fetch("/api/account/privacy",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({anonymousAggregateOptIn:next})});if(r.ok){setState(next);setMessage("Privacy preference updated.");}else setMessage("Could not update preference.");}
+  async function toggle(){
+    const next=!state;
+    privacyStatus.clear();
+    const result=await requestJson("/api/account/privacy",{method:"PATCH",body:{anonymousAggregateOptIn:next},fallbackError:"Could not update preference."});
+    if(result.ok){setState(next);privacyStatus.success("Privacy preference updated.");}
+    else privacyStatus.error(result.errorText);
+  }
   // Deleting is irreversible, so it asks again who is at the keyboard: the password, a current code
   // when two-step sign-in is on, or (for accounts that only use Google or Apple) the account email.
   async function remove(e:React.FormEvent<HTMLFormElement>){
@@ -115,7 +139,7 @@ export function PrivacyControls({optIn,hasPassword,mfaEnabled}:{optIn:boolean;ha
       <div className="inline"><button className="button danger" disabled={busy}>Permanently delete my account</button><button className="button" type="button" disabled={busy} onClick={()=>{setConfirming(false);setError("");}}>Cancel</button></div>
       {error&&<div className="error" role="alert">{error}</div>}
     </form>}
-    {message&&<div className={message.startsWith("Privacy")?"success":"error"} role="status">{message}</div>}
+    <MessageView message={privacyStatus.message}/>
   </div>;
 }
 
@@ -174,24 +198,23 @@ export function SecurityControls({enabled}:{enabled:boolean}){
 export function TelegramForm({connected,allowed}:{connected:boolean;allowed:boolean}){
   const[linked,setLinked]=useState(connected);
   const[url,setUrl]=useState("");
-  const[message,setMessage]=useState("");
+  const status=useMessage();
   const[busy,setBusy]=useState(false);
-  async function connect(){setBusy(true);setMessage("");setUrl("");try{
-    const r=await fetch("/api/settings/telegram",{method:"POST"});
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(data.error||"Could not start Telegram connection.");
-    setUrl(String(data.url));setMessage("Open the link and press Start in the Telegram bot, then refresh this page.");
-  }catch(e){setMessage(e instanceof Error?e.message:"Telegram connection failed.");}finally{setBusy(false);}}
-  async function disconnect(){setBusy(true);setMessage("");try{
-    const r=await fetch("/api/settings/telegram",{method:"DELETE"});
-    if(!r.ok)throw new Error("Could not disconnect Telegram.");
-    setLinked(false);setUrl("");setMessage("Telegram disconnected.");
-  }catch(e){setMessage(e instanceof Error?e.message:"Could not disconnect.");}finally{setBusy(false);}}
+  async function connect(){setBusy(true);status.clear();setUrl("");try{
+    const result=await postJson("/api/settings/telegram",undefined,{fallbackError:"Could not start Telegram connection."});
+    if(!result.ok){status.error(result.errorText);return;}
+    setUrl(String(result.data.url));status.info("Open the link and press Start in the Telegram bot, then refresh this page.");
+  }finally{setBusy(false);}}
+  async function disconnect(){setBusy(true);status.clear();try{
+    const result=await requestJson("/api/settings/telegram",{method:"DELETE",fallbackError:"Could not disconnect Telegram."});
+    if(!result.ok){status.error(result.errorText);return;}
+    setLinked(false);setUrl("");status.success("Telegram disconnected.");
+  }finally{setBusy(false);}}
   return <div className="stack">
     <p className="help">{!allowed?"Telegram alerts are not included in your current plan.":linked?"Telegram is connected. Your plan controls whether alerts are delivered.":"Telegram is not connected."}</p>
     <div className="inline">{linked?<button className="button" type="button" disabled={busy} onClick={disconnect}>Disconnect Telegram</button>:<button className="button" type="button" disabled={busy||!allowed} onClick={connect}>Connect Telegram</button>}
       {url&&<a className="button primary" href={url} target="_blank" rel="noopener noreferrer">Open Telegram bot</a>}</div>
-    {message&&<p className="help" role="status">{message}</p>}
+    <MessageView message={status.message} as="p"/>
   </div>;
 }
 
