@@ -53,7 +53,6 @@ export default async function ExplorePage() {
       definitionEnabled: definition?.enabled === true,
       publishedInWindow: Boolean(release),
       rulesVerified,
-      attested: release?.attested === true,
       marketVerified
     }, {
       atLimit,
@@ -81,7 +80,7 @@ export default async function ExplorePage() {
       <Link className="button" href="/app/community"><BarChart3 size={16}/>Community stats</Link>
     </div>
     <div className="strategy-grid">
-      {released.length===0&&<div className="glass form-card" role="status"><h2>No strategies currently available</h2><p className="help">Only complete, approved strategies supported for your account appear here. Your existing portfolio records are unaffected.</p></div>}
+      {released.length===0&&<div className="glass form-card" role="status"><h2>No strategies currently available</h2><p className="help">Only executable, enabled strategies with eligible instruments for your account appear here. Your existing portfolio records are unaffected.</p></div>}
       {released.map((card) => <section className="glass form-card explore-card" key={card.key} data-strategy-key={card.key} data-state={card.result.state}>
         <div className="strategy-meta">
           <span className={"pill "+(card.result.state==="AVAILABLE"?"good":card.result.state==="COMING_SOON"?"warn":"")}>{EXPLORE_STATE_LABEL[card.result.state]}</span>
