@@ -4,7 +4,7 @@ import { listStrategyAccounts } from "@/lib/strategy-service";
 import { recalculateAfterMutation } from "@/lib/action-service";
 import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
-import { buildEntitlementSnapshot } from "@/domain/entitlements";
+import { loadEntitlementsWith } from "@/lib/entitlement-service";
 import { authFailure } from "@/lib/api-auth";
 
 const schema=z.object({
@@ -46,24 +46,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
 
       // Entitlement is checked under the subscription row lock so a concurrent
       // downgrade cannot race a second-account insert.
-      let planRows=await tx.unsafe(
-        "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys "+
-        "FROM subscriptions s JOIN plans p ON p.id=s.plan_id "+
-        "WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') "+
-        "ORDER BY CASE s.status WHEN 'ACTIVE' THEN 0 WHEN 'TRIALING' THEN 1 WHEN 'PAST_DUE' THEN 2 ELSE 3 END "+
-        "LIMIT 1 FOR UPDATE OF s",
-        [user.id]
-      );
-      if(!planRows[0])planRows=await tx.unsafe(
-        "SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1"
-      );
-      if(!planRows[0])throw new Error("FREE_PLAN_MISSING");
-      const entitlements=buildEntitlementSnapshot({
-        slug:String(planRows[0].slug),
-        maxActiveStrategies:planRows[0].max_active_strategies==null?null:Number(planRows[0].max_active_strategies),
-        entitlements:planRows[0].entitlements,
-        availableStrategyKeys:planRows[0].available_strategy_keys
-      });
+      // Admins are entitlement super-users (no plan row to race), so no lock is taken for them.
+      const entitlements=await loadEntitlementsWith(tx,user.id,{lockSubscription:true});
       if(!entitlements.features.has("multi_account"))throw new Error("MULTI_ACCOUNT_NOT_IN_PLAN");
 
       const currency=input.currency.toUpperCase();

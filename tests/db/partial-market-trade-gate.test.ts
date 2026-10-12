@@ -18,8 +18,8 @@ describe.skipIf(!dbUrl)("HFEA partial UK ISA must not generate a trade",()=>{
       [instrumentId,"X"+suffix.toUpperCase()]);
     lineId=String(line[0].id);
     await db!.unsafe(
-      "INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,effective_from,enabled) "+
-      "VALUES ('US_EQUITY_3X_LONG',3,'GB','ISA',$1,'2020-01-01',true)",[lineId]);
+      "INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,fidelity,effective_from,enabled) "+
+      "VALUES ('US_EQUITY_3X_LONG',3,'GB','ISA',$1,'EXACT','2020-01-01',true)",[lineId]);
     const user=await db!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,'x') RETURNING id",
       ["partial-hfea-"+suffix+"@example.test"]);
     userId=String(user[0].id);

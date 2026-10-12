@@ -1,7 +1,8 @@
 import "server-only";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
-import { assertCanCreateStrategy, assertStrategyFeatureAccess, buildEntitlementSnapshot } from "@/domain/entitlements";
+import { assertCanCreateStrategy, assertStrategyFeatureAccess } from "@/domain/entitlements";
+import { loadEntitlementsWith } from "@/lib/entitlement-service";
 import { effectiveAllocations } from "@/domain/strategy/fixed-allocation";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
 import { serializeExecutionConstraints } from "@/domain/execution";
@@ -93,18 +94,8 @@ export async function createStrategy(userId: string, country: string, rawInput: 
       }
     }
 
-    let planRows = await tx.unsafe(
-      "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') LIMIT 1",
-      [userId]
-    );
-    if (!planRows[0]) planRows = await tx.unsafe("SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1");
-    if (!planRows[0]) throw new Error("FREE_PLAN_MISSING");
-    const snapshot = buildEntitlementSnapshot({
-      slug:String(planRows[0].slug),
-      maxActiveStrategies:planRows[0].max_active_strategies==null?null:Number(planRows[0].max_active_strategies),
-      entitlements:planRows[0].entitlements,
-      availableStrategyKeys:planRows[0].available_strategy_keys
-    });
+    // Role-aware (an ADMIN is an entitlement super-user). The user row is already locked above.
+    const snapshot = await loadEntitlementsWith(tx, userId);
     const countRows = await tx.unsafe("SELECT count(*)::int AS count FROM strategy_instances WHERE user_id=$1 AND status='ACTIVE'",[userId]);
     assertCanCreateStrategy(snapshot,Number(countRows[0]?.count??0),input.strategyKey);
 
@@ -287,18 +278,7 @@ export async function changeStrategyStatus(
     if (target === current) return { status: current };
 
     if (target === "ACTIVE") {
-      let planRows = await tx.unsafe(
-        "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1 AND s.status IN ('FREE','ACTIVE','TRIALING','PAST_DUE') LIMIT 1",
-        [userId]
-      );
-      if (!planRows[0]) planRows=await tx.unsafe("SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1");
-      if (!planRows[0]) throw new Error("FREE_PLAN_MISSING");
-      const snapshot = buildEntitlementSnapshot({
-        slug:String(planRows[0].slug),
-        maxActiveStrategies:planRows[0].max_active_strategies==null?null:Number(planRows[0].max_active_strategies),
-        entitlements:planRows[0].entitlements,
-        availableStrategyKeys:planRows[0].available_strategy_keys
-      });
+      const snapshot = await loadEntitlementsWith(tx, userId);
       const [countRows,accountRows]=await Promise.all([
         tx.unsafe("SELECT count(*)::int AS count FROM strategy_instances WHERE user_id=$1 AND status='ACTIVE' AND id<>$2",[userId,instanceId]),
         tx.unsafe("SELECT count(*)::int AS count FROM strategy_accounts WHERE strategy_instance_id=$1",[instanceId])

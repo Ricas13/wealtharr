@@ -25,7 +25,7 @@ describe.skipIf(!url)("quote -> action -> notification",()=>{
     instrumentId=String(instrument[0].id);
     const line=await sql!.unsafe("INSERT INTO trading_lines (instrument_id,ticker,exchange,currency,exchange_timezone,provider_symbol,effective_from) VALUES ($1,$2,'LSE','GBP','Europe/London','JRNY3X','2020-01-01') RETURNING id",[instrumentId,"J"+run.toUpperCase()]);
     lineId=String(line[0].id);
-    await sql!.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,effective_from,enabled) VALUES ('NASDAQ_100_3X_LONG',3,'GB','ISA',$1,'2020-01-01',true)",[lineId]);
+    await sql!.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,fidelity,effective_from,enabled) VALUES ('NASDAQ_100_3X_LONG',3,'GB','ISA',$1,'EXACT','2020-01-01',true)",[lineId]);
 
     const user=await sql!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,'x') RETURNING id",[`journey-${run}@example.test`]);
     userId=String(user[0].id);
