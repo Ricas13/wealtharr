@@ -1,4 +1,5 @@
 import "server-only";
+import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
 import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
@@ -435,6 +436,7 @@ export async function previewStrategySwitchScenario(
   const target=targets[0];
   if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
   await assertDisabledStrategyPreviewGates(sql,target);
+  await assertUserStrategyAccessWith(sql,userId,String(target.definition_id));
   if(allowedStrategyKeys&&!allowedStrategyKeys.has(String(target.key)))throw new Error("STRATEGY_NOT_IN_PLAN");
 
   const ownership=await sql.unsafe(
