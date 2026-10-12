@@ -1,6 +1,7 @@
 "use client";
 import {useState,type FormEvent} from "react";
 import {useRouter} from "next/navigation";
+import {ALL_CHANNELS,ALL_FEATURES,type ChannelKey,type FeatureKey} from "@/domain/entitlements";
 
 type Entitlements={features:string[];notificationChannels:string[]};
 type Config={
@@ -10,12 +11,15 @@ type Config={
  stripeMonthlyPriceId:string|null;stripeAnnualPriceId:string|null;entitlements:Entitlements;
  trialDays:number;visible:boolean;archived:boolean;sortOrder:number;
 };
-const featureOptions=[
- ["history","Transaction history"],["reconciliation","Broker reconciliation"],["resume","Resume existing investments"],
- ["community","Anonymous community stats"],["analytics","Advanced analytics"],["comparisons","Benchmark comparisons"],
- ["what_if","What-if analysis"],["advanced_imports","Advanced imports"],["multi_account","Multiple accounts per strategy"]
-] as const;
-const channelOptions=[["EMAIL","Email"],["DISCORD","Discord"],["TELEGRAM","Telegram"]] as const;
+// Keys come from the domain constants, so the editor, the plan API and the admin snapshot cannot drift.
+const featureLabels:Record<FeatureKey,string>={
+ history:"Transaction history",reconciliation:"Broker reconciliation",resume:"Resume existing investments",
+ community:"Anonymous community stats",analytics:"Advanced analytics",comparisons:"Benchmark comparisons",
+ what_if:"What-if analysis",advanced_imports:"Advanced imports",multi_account:"Multiple accounts per strategy"
+};
+const channelLabels:Record<ChannelKey,string>={EMAIL:"Email",DISCORD:"Discord",TELEGRAM:"Telegram"};
+const featureOptions=ALL_FEATURES.map((key)=>[key,featureLabels[key]] as const);
+const channelOptions=ALL_CHANNELS.map((key)=>[key,channelLabels[key]] as const);
 const blank:Config={
  slug:"",displayName:"",description:"",monthlyPriceMinor:0,annualPriceMinor:0,annualDiscountBps:0,
  currency:"GBP",supportedBillingCurrencies:["GBP"],maxActiveStrategies:1,availableStrategyKeys:[],
