@@ -63,6 +63,10 @@ The webhook is the authority for paid subscription status. Feature access comes 
 
 In-app notifications exist on every plan. Investor and Pro may use Email and Discord according to their plan entitlements. Discord webhook destinations are encrypted at rest. notification_deliveries has a unique dedupe key, so worker restarts cannot resend the same delivery record.
 
+### Advance review reminders
+
+Optional and off by default. Admin > Settings > Notifications > "Review reminder lead time (days)" (`REVIEW_REMINDER_LEAD_DAYS`, 0-14; 0 is off) makes the hourly worker create one "<Strategy> review due <date>" notification per strategy review, that many days before it is due. It is created only for an active strategy whose newest calculation says nothing is due yet, after the day's calculations and before deliveries are created, so it goes out in the same run on the channels the user's plan allows and has a connected destination for (in-app only on Free). It is held back until 08:00 in the user's own timezone, states the date only (never an amount or an instruction; amounts are calculated on the day from current data) and is cancelled at send time if the strategy was paused or closed or the review date moved. The on-the-day alert is unchanged. Implementation: `src/domain/review-reminder.ts`, `src/lib/review-reminder.ts`, migration 0035.
+
 ## Market data
 
 src/lib/market-data.ts defines the provider interface. The built-in production adapter accepts a configured HTTPS quote service via MARKET_DATA_PROVIDER=http, MARKET_DATA_HTTP_BASE_URL and MARKET_DATA_HTTP_TOKEN. It expects GET /quote?symbol=... and GET /historical?symbol=...&at=... responses containing price, three-letter currency and an offset-aware observedAt timestamp. The hourly worker refreshes active holdings/mappings before action calculation. If no licensed provider is configured, financial actions fail closed on missing or stale critical data.

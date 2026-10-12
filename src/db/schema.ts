@@ -370,6 +370,8 @@ export const notifications = pgTable("notifications", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   actionId: uuid("action_id").references(() => actions.id, { onDelete: "cascade" }),
   reviewKey: text("review_key"),
+  strategyInstanceId: uuid("strategy_instance_id").references(() => strategyInstances.id, { onDelete: "cascade" }),
+  reminderDueAt: timestamp("reminder_due_at", { withTimezone: true }),
   type: text("type").notNull(),
   title: text("title").notNull(),
   body: text("body").notNull(),

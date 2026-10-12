@@ -29,6 +29,19 @@ async function refreshActionNotification(notificationId:string,userId:string){
   return current[0]??null;
 }
 
+// Is the review announced by a REVIEW_UPCOMING reminder still going to happen on that date?
+async function reviewReminderStillCurrent(strategyInstanceId:unknown,reminderDueAt:unknown){
+  if(!strategyInstanceId||!reminderDueAt)return false;
+  const rows=await sql.unsafe(
+    "SELECT 1 FROM strategy_instances i JOIN users u ON u.id=i.user_id "+
+    "JOIN LATERAL (SELECT x.action_type,x.due_at FROM actions x WHERE x.strategy_instance_id=i.id ORDER BY x.calculated_at DESC,x.created_at DESC LIMIT 1) a ON true "+
+    "WHERE i.id=$1 AND i.status='ACTIVE' AND u.deleted_at IS NULL "+
+    "AND a.action_type='NO_ACTION' AND a.due_at=$2::timestamptz AND a.due_at>now()",
+    [strategyInstanceId,reminderDueAt]
+  );
+  return Boolean(rows[0]);
+}
+
 export async function createDeliveriesForNotification(notificationId: string) {
   const rows=await sql.unsafe("SELECT n.id,n.user_id,n.action_id FROM notifications n WHERE n.id=$1 LIMIT 1",[notificationId]);
   const n=rows[0];if(!n)return;
@@ -98,7 +111,7 @@ async function processDeliveryBatch(limit:number,deadline:number){
     "), claimed AS ("+
     " UPDATE notification_deliveries d SET status='SENDING',attempt_count=d.attempt_count+1,next_attempt_at=now()+interval '10 minutes',updated_at=now()"+
     " FROM picked p WHERE d.id=p.id RETURNING d.*"+
-    ") SELECT c.id,c.notification_id,c.channel,c.attempt_count,n.title,n.body,n.user_id,n.action_id,u.email,u.deleted_at AS user_deleted_at,a.status AS action_status,"+
+    ") SELECT c.id,c.notification_id,c.channel,c.attempt_count,n.title,n.body,n.user_id,n.action_id,n.type,n.strategy_instance_id,n.reminder_due_at,u.email,u.deleted_at AS user_deleted_at,a.status AS action_status,"+
     " CASE WHEN n.action_id IS NULL THEN true ELSE n.id=("+
     "   SELECT newer.id FROM notifications newer WHERE newer.action_id=n.action_id ORDER BY newer.created_at DESC,newer.id DESC LIMIT 1"+
     " ) END AS latest_action_notification"+
@@ -147,6 +160,16 @@ async function processDeliveryBatch(limit:number,deadline:number){
     if(d.action_id&&!["CALCULATED","NOTIFIED","ACKNOWLEDGED"].includes(String(d.action_status??""))){
       await sql.unsafe(
         "UPDATE notification_deliveries SET status='CANCELLED',last_error_code='ACTION_NO_LONGER_ACTIVE',updated_at=now() WHERE id=$1 AND status='SENDING'",
+        [d.id]
+      );
+      continue;
+    }
+    if(d.action_id==null&&String(d.type)==="REVIEW_UPCOMING"&&!(await reviewReminderStillCurrent(d.strategy_instance_id,d.reminder_due_at))){
+      // An advance reminder has no action to revalidate. It is only sent while its strategy is still
+      // active, its review is still scheduled for the announced date, and that date has not arrived
+      // (from then on the on-the-day notification is the message).
+      await sql.unsafe(
+        "UPDATE notification_deliveries SET status='CANCELLED',last_error_code='REMINDER_NO_LONGER_CURRENT',updated_at=now() WHERE id=$1 AND status='SENDING'",
         [d.id]
       );
       continue;

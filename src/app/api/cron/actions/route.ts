@@ -12,6 +12,7 @@ import { runOpsCheck } from "@/lib/ops-monitor";
 import { reconcileStripeSubscriptions } from "@/lib/billing-reconciliation";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { safeErrorCode } from "@/lib/safe-error-code";
+import { createReviewReminders } from "@/lib/review-reminder";
 
 function positiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
@@ -109,6 +110,14 @@ export async function GET(request: Request) {
     );
     const calculationDeferred = calculationPool.deferred + Math.max(0, Number(totalActive[0]?.n ?? 0) - instances.length);
 
+    // Optional advance heads-up (off unless REVIEW_REMINDER_LEAD_DAYS is set). It runs after the
+    // calculations so it sees fresh review dates, and before delivery creation so the same run sends it.
+    // Best effort: a failure here must never block the on-the-day alerts.
+    let reviewReminders: unknown = { enabled: false, considered: 0, created: 0 };
+    if (Date.now() < phaseEnds(0.8)) {
+      reviewReminders = await createReviewReminders().catch((error) => ({ enabled: true, failed: true, error: safeErrorCode(error) }));
+    }
+
     // Notifications: drain in batches until nothing is left or the budget for this phase is spent.
     let deliveriesCreated = 0;
     while (Date.now() < phaseEnds(0.85)) {
@@ -129,7 +138,7 @@ export async function GET(request: Request) {
     const summary = {
       ok, status: ok ? "healthy" : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData, billing,
       entitlementPaused, entitlementFailures, calculated, calculationFailures, deferred,
-      deliveriesCreated, delivered: delivery.sent, aggregates
+      deliveriesCreated, delivered: delivery.sent, reviewReminders, aggregates
     };
     await finishLease(lease, ok ? "SUCCESS" : "PARTIAL", summary);
     // Tell administrators about anything that changed. Best effort: it must never fail the run.
