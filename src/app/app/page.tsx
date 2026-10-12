@@ -100,11 +100,11 @@ export default async function OverviewPage(){
     return <div className="home-dashboard member-dashboard">
       <section className="glass welcome-state member-welcome">
         <div className="welcome-orb"><Sparkles size={28}/></div>
-        <div className="eyebrow">Your investment workspace</div>
-        <h1>Welcome to <em>Wealtharr.</em></h1>
-        <p>Choose a fully available investment framework, add your holdings or start from zero, and let Wealtharr organise the rules, calculations and reminders.</p>
-        <Link className="button primary hero-cta" href="/app/strategies/new"><Plus size={17}/>Follow your first strategy</Link>
-        <div className="trust-line"><CheckCircle2 size={15}/>You control your accounts. Wealtharr does not place trades for you.</div>
+        <div className="eyebrow">Welcome</div>
+        <h1>Start with one simple decision.</h1>
+        <p>Choose a strategy, tell us whether you are starting fresh or already following it, and we will guide you from there.</p>
+        <Link className="button primary hero-cta" href="/app/strategies/new"><Plus size={17}/>Start my first strategy</Link>
+        <div className="trust-line"><CheckCircle2 size={15}/>No trading is performed automatically. You stay in control of every action.</div>
       </section>
     </div>;
   }
