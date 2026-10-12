@@ -35,7 +35,8 @@ describe("action calculation runs on the caller's database handle", () => {
   });
 
   it("hands the same handle to every helper that queries the database", () => {
-    expect(build).toMatch(/loadTrustedHistory\([^)]*,db\)/);
+    // The call contains `new Date()`, so match across the parentheses on the same line.
+    expect(build).toMatch(/loadTrustedHistory\(.*,db\)/);
     const loader = read("src/lib/trusted-history-loader.ts");
     expect(loader).toContain('db: Pick<Sql, "unsafe"> = sql');
     const body = loader.slice(loader.indexOf("export async function loadTrustedHistory"));
