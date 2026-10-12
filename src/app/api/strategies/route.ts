@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/session";
 import { createStrategy } from "@/lib/strategy-service";
 import { assertSameOrigin } from "@/lib/security";
-import { calculateAction } from "@/lib/action-service";
+import { recalculateAfterMutation } from "@/lib/action-service";
 import { authFailure } from "@/lib/api-auth";
 import { StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 
@@ -38,7 +38,9 @@ export async function POST(request: Request) {
     const user = await requireUser();
     const input = schema.parse(await request.json());
     const id = await createStrategy(user.id,user.country,input,user.timezone);
-    try { await calculateAction(id); } catch { }
+    // recalculateAfterMutation never throws: a failed first calculation marks the strategy NEEDS_ATTENTION
+    // and writes an audit event instead of leaving it HEALTHY with no action. Creation is unaffected.
+    await recalculateAfterMutation(id,user.id,"strategy-creation");
     return Response.json({ok:true,id},{status:201});
   } catch(error){const denied=authFailure(error);if(denied)return denied;
     if (error instanceof z.ZodError) return Response.json({error:"Check the strategy details."},{status:400});
