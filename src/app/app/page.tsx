@@ -34,7 +34,7 @@ export default async function OverviewPage(){
   }
   const values=await sql.unsafe("SELECT ps.strategy_instance_id,ps.value,a.currency FROM performance_series ps JOIN strategy_instances i ON i.id=ps.strategy_instance_id JOIN accounts a ON a.id=i.account_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND ps.series_type='USER_VALUE' AND ps.date=(SELECT max(p2.date) FROM performance_series p2 WHERE p2.strategy_instance_id=ps.strategy_instance_id AND p2.series_type='USER_VALUE')",[user.id]);
   const contributions=await sql.unsafe("SELECT l.currency,COALESCE(sum(l.cash_amount),0) AS total FROM ledger_events l JOIN strategy_instances i ON i.id=l.strategy_instance_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND l.event_type='CONTRIBUTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) GROUP BY l.currency ORDER BY l.currency",[user.id]);
-  const reviewRows=await sql.unsafe("SELECT i.id,i.name,x.due_at FROM strategy_instances i LEFT JOIN LATERAL (SELECT a.due_at FROM actions a WHERE a.strategy_instance_id=i.id AND a.due_at IS NOT NULL ORDER BY a.created_at DESC LIMIT 1) x ON true WHERE i.user_id=$1 AND i.status='ACTIVE'",[user.id]);
+  const reviewRows=await sql.unsafe("SELECT i.id,i.name,x.due_at FROM strategy_instances i LEFT JOIN LATERAL (SELECT a.due_at FROM actions a WHERE a.strategy_instance_id=i.id AND a.due_at >= NOW() ORDER BY a.due_at ASC LIMIT 1) x ON true WHERE i.user_id=$1 AND i.status='ACTIVE'",[user.id]);
   const activeStrategies=strategies.filter((s:any)=>s.status==="ACTIVE");
   const trackedStrategies=strategies.filter((s:any)=>s.status!=="CLOSED");
   const valuedIds=new Set(values.map((row:any)=>String(row.strategy_instance_id)));
@@ -66,7 +66,7 @@ export default async function OverviewPage(){
     .filter(({plan})=>plan?.enabled===true&&plan.nextDate)
     .sort((a,b)=>String(a.plan?.nextDate).localeCompare(String(b.plan?.nextDate)));
   const nextContribution=plannedContributions[0];
-  const nextReview=reviewRows.filter((row:any)=>row.due_at&&new Date(row.due_at).getTime()>=Date.now()).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
+  const nextReview=reviewRows.filter((row:any)=>row.due_at).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
   const healthyCount=activeStrategies.filter((strategy:any)=>strategy.health_status==="HEALTHY").length;
   const analytics=await loadWorkspaceAnalytics(user.id);
   const combined=analytics.aggregate;
