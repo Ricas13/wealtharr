@@ -491,7 +491,7 @@ html[data-theme="light"] .customer-workspace-shell {
 html[data-theme="light"] .customer-workspace-shell :is(.glass,.card,.form-card){background:#fff;border-color:var(--member-border)}
 html[data-theme="light"] .customer-workspace-shell .portfolio-strategies-workspace{
   --pf-surface:#fff;--pf-surface-hover:#f6faf7;--pf-text:#182b28;--pf-muted:#506861;
-  --pf-soft:#607b70;--pf-border:#d4dedb;--pf-primary:#236e4d
+  --pf-soft:#526a60;--pf-border:#d4dedb;--pf-primary:#236e4d
 }
 
 html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar{border-color:var(--member-border);background:var(--member-sidebar)}
@@ -532,6 +532,13 @@ html[data-theme="light"] .customer-workspace-shell .member-add-strategy{backgrou
 html[data-theme="light"] .customer-workspace-shell .member-deep-dive .analytics-stats .kpi,
 html[data-theme="light"] .customer-workspace-shell .member-deep-dive .leaderboard-row{background:#f5f9f7}
 html[data-theme="light"] .customer-workspace-shell .member-deep-dive .portfolio-positive{color:#246d4c}
+
+/* Contrast corrections for existing member flows on the darker dashboard surfaces. */
+.customer-workspace-shell .step:not(.active):not(.complete){color:#a6b9bf}
+.customer-workspace-shell .recovery-banner-copy > strong{color:var(--member-text)}
+html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar .nav-label{color:#4d6865}
+html[data-theme="light"] .customer-workspace-shell .step:not(.active):not(.complete){color:#51675f}
+html[data-theme="light"] .customer-workspace-shell .recovery-banner-copy > strong{color:#223a32}
 
 /* Fluid layout, keyboard focus and reduced-motion support. */
 .customer-workspace-shell :where(.member-plan-card,.member-queue-row,.member-add-strategy,.member-action-hero a,.member-deep-dive summary):focus-visible{
@@ -580,7 +587,7 @@ html[data-theme="light"] .customer-workspace-shell .member-deep-dive .portfolio-
   }
   .customer-workspace-shell > .sidebar.member-sidebar .nav-link svg{width:16px;height:16px}
   .customer-workspace-shell > .sidebar.member-sidebar .nav-link{white-space:normal;line-height:1.15}
-  .customer-workspace-shell > .sidebar.member-sidebar .nav-link[href="/app/explore"]{display:none}
+  .customer-workspace-shell > .sidebar.member-sidebar .nav-link[href="/app/explore"]{display:flex}
   .customer-workspace-shell .member-queue-nav .nav-badge {position:absolute;transform:translate(19px,-11px);margin:0}
   .customer-workspace-shell .member-sidebar .nav-badge{margin:0}
   .customer-workspace-shell .member-topbar-breadcrumb{font-size:10px}
