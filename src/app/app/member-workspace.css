@@ -579,6 +579,8 @@ html[data-theme="light"] .customer-workspace-shell .member-deep-dive .portfolio-
     justify-content:center;flex-direction:column;gap:3px;font-size:10px;text-align:center
   }
   .customer-workspace-shell > .sidebar.member-sidebar .nav-link svg{width:16px;height:16px}
+  .customer-workspace-shell > .sidebar.member-sidebar .nav-link{white-space:normal;line-height:1.15}
+  .customer-workspace-shell > .sidebar.member-sidebar .nav-link[href="/app/explore"]{display:none}
   .customer-workspace-shell .member-queue-nav .nav-badge {position:absolute;transform:translate(19px,-11px);margin:0}
   .customer-workspace-shell .member-sidebar .nav-badge{margin:0}
   .customer-workspace-shell .member-topbar-breadcrumb{font-size:10px}
