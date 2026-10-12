@@ -1,7 +1,7 @@
 import { describe,expect,it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  cardDescription,exploreCardState,preselectedStrategyKey,summariseRules,
+  cardDescription,exploreCardState,onlyAvailableExploreCards,preselectedStrategyKey,summariseRules,
   type ExploreCardInput
 } from "../src/domain/explore-catalogue";
 import { STRATEGY_PLUGINS,getStrategyPlugin } from "../src/domain/strategy/catalog";
@@ -10,7 +10,7 @@ const read=(path:string)=>readFileSync(new URL("../"+path,import.meta.url),"utf8
 
 const released:ExploreCardInput={
   engine:"FIXED_ALLOCATION",hasRules:true,definitionEnabled:true,publishedInWindow:true,
-  rulesVerified:true,marketVerified:true
+  rulesVerified:true,attested:true,marketVerified:true
 };
 
 describe("exploreCardState",()=>{
@@ -33,7 +33,8 @@ describe("exploreCardState",()=>{
     expect(result.startAction).toBe("NONE");
   });
 
-  it("is COMING_SOON while stored rules are unreviewed or no verified market exists",()=>{
+  it("is COMING_SOON while release attestation, rules or verified market are missing",()=>{
+    expect(exploreCardState({...released,attested:false}).state).toBe("COMING_SOON");
     expect(exploreCardState({...released,rulesVerified:false}).state).toBe("COMING_SOON");
     const noMarket=exploreCardState({...released,marketVerified:false});
     expect(noMarket.state).toBe("COMING_SOON");
@@ -64,6 +65,28 @@ describe("exploreCardState",()=>{
     expect(excluded.startAction).toBe("PLAN_OPTIONS");
     // A plan can never turn a blocked strategy into a startable one.
     expect(exploreCardState({...released,definitionEnabled:false},{atLimit:false,inPlan:true}).startAction).toBe("NONE");
+  });
+});
+
+describe("binary customer strategy catalogue",()=>{
+  it("hides every non-available strategy entirely, not merely its Start button",()=>{
+    const cards=[
+      {key:"ready",result:exploreCardState(released)},
+      {key:"unattested",result:exploreCardState({...released,attested:false})},
+      {key:"disabled",result:exploreCardState({...released,definitionEnabled:false})},
+      {key:"draft",result:exploreCardState({...released,publishedInWindow:false})},
+      {key:"incomplete",result:exploreCardState({...released,hasRules:false})},
+      {key:"unmapped",result:exploreCardState({...released,marketVerified:false})},
+      {key:"unverified",result:exploreCardState({...released,rulesVerified:false})}
+    ];
+    expect(onlyAvailableExploreCards(cards).map(card=>card.key)).toEqual(["ready"]);
+    expect(onlyAvailableExploreCards(cards.slice(1))).toEqual([]);
+  });
+
+  it("keeps a genuinely available strategy visible when a subscription upgrade is needed",()=>{
+    const cards=[{key:"ready",result:exploreCardState(released,{atLimit:true,inPlan:false})}];
+    expect(onlyAvailableExploreCards(cards)).toEqual(cards);
+    expect(cards[0].result.startAction).toBe("PLAN_OPTIONS");
   });
 });
 
@@ -139,6 +162,9 @@ describe("Explore wiring",()=>{
     expect(page).toContain("exploreCardState(");
     expect(page).toContain("assertCuratedRules(");
     expect(page).toContain("assessStrategyMarket(");
+    expect(page).toContain("onlyAvailableExploreCards(cards)");
+    expect(page).toContain("attested: release?.attested === true");
+    expect(page).not.toContain("sorted.map((card)");
   });
 
   it("renders Start links only for the START action",()=>{

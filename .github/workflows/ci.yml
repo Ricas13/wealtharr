@@ -52,6 +52,8 @@ jobs:
           npm run db:migrate
           npm run db:migrate
           npm run db:seed
+      - name: Install synthetic CI-only release fixture (never production seed)
+        run: npm run db:seed:ci-evidence
       - name: Verify least-privilege database roles (real PostgreSQL)
         env:
           APP_DB_PASSWORD: ci-app-database-password-long-enough

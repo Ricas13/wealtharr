@@ -57,7 +57,7 @@ export async function completeSetup(input: { code: string; email: string; passwo
       userId = String(existing[0].id);
       await tx.unsafe("UPDATE users SET role='ADMIN',password_hash=$2,email_verified_at=COALESCE(email_verified_at,now()),session_version=session_version+1,updated_at=now() WHERE id=$1", [userId, passwordHash]);
     } else {
-      const created = await tx.unsafe("INSERT INTO users (email,password_hash,role,email_verified_at) VALUES ($1,$2,'ADMIN',now()) RETURNING id", [input.email, passwordHash]);
+      const created = await tx.unsafe("INSERT INTO users (email,password_hash,role,email_verified_at) VALUES ($1,$2,'ADMIN',now()) RETURNING id", [input.email.trim().toLowerCase(), passwordHash]);
       userId = String(created[0].id);
       const free = await tx.unsafe("SELECT id FROM plans WHERE slug='free' LIMIT 1");
       if (free[0]) await tx.unsafe("INSERT INTO subscriptions (user_id,plan_id,status,cadence) VALUES ($1,$2,'FREE','FREE')", [userId, free[0].id]);

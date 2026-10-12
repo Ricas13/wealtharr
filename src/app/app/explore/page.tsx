@@ -8,7 +8,7 @@ import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified
 import { LEVERAGE_DISCLOSURE, STRATEGY_PLUGINS, curatedRelease } from "@/domain/strategy/catalog";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
 import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
-import { EXPLORE_STATE_LABEL, GENERIC_RISK_NOTE, cardDescription, exploreCardState, summariseRules } from "@/domain/explore-catalogue";
+import { EXPLORE_STATE_LABEL, GENERIC_RISK_NOTE, cardDescription, exploreCardState, onlyAvailableExploreCards, summariseRules } from "@/domain/explore-catalogue";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +53,7 @@ export default async function ExplorePage() {
       definitionEnabled: definition?.enabled === true,
       publishedInWindow: Boolean(release),
       rulesVerified,
+      attested: release?.attested === true,
       marketVerified
     }, {
       atLimit,
@@ -67,8 +68,8 @@ export default async function ExplorePage() {
       result
     };
   });
-  const order = { AVAILABLE: 0, COMING_SOON: 1, RESEARCH: 2 } as const;
-  const sorted = [...cards].sort((a, b) => order[a.result.state] - order[b.result.state]);
+  // Strict owner policy: no unreleased, unapproved or research-only cards in the customer product.
+  const released = onlyAvailableExploreCards(cards);
 
   return <>
     <div className="page-title">
@@ -80,7 +81,8 @@ export default async function ExplorePage() {
       <Link className="button" href="/app/community"><BarChart3 size={16}/>Community stats</Link>
     </div>
     <div className="strategy-grid">
-      {sorted.map((card) => <section className="glass form-card explore-card" key={card.key} data-strategy-key={card.key} data-state={card.result.state}>
+      {released.length===0&&<div className="glass form-card" role="status"><h2>No strategies currently available</h2><p className="help">Only complete, approved strategies supported for your account appear here. Your existing portfolio records are unaffected.</p></div>}
+      {released.map((card) => <section className="glass form-card explore-card" key={card.key} data-strategy-key={card.key} data-state={card.result.state}>
         <div className="strategy-meta">
           <span className={"pill "+(card.result.state==="AVAILABLE"?"good":card.result.state==="COMING_SOON"?"warn":"")}>{EXPLORE_STATE_LABEL[card.result.state]}</span>
         </div>

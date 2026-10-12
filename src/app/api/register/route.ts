@@ -19,7 +19,9 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const ip = requestIp(request);
     await consumeRateLimit("register:" + ip, 8, 3600);
-    const input = schema.parse(await request.json());
+    const parsed = schema.parse(await request.json());
+    // Stored lowercase: the database enforces uniqueness on lower(email).
+    const input = { ...parsed, email: parsed.email.trim().toLowerCase() };
     const passwordHash = await bcrypt.hash(input.password, 12);
     const token = newToken();
     const tokenHash = hashToken(token);
