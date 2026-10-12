@@ -15,7 +15,8 @@ type Db = Pick<Sql, "unsafe">;
  */
 export async function assertDisabledStrategyPreviewGates(
   db: Db,
-  definition: { key: unknown; enabled: unknown; version_id: unknown; engine_key: unknown; config: unknown; input_schema: unknown }
+  // A database row: the fields read below are key, enabled, version_id, engine_key, config, input_schema.
+  definition: Record<string, unknown>
 ) {
   if (definition.enabled === true) return;
   assertCustomerPublishableEngine(String(definition.engine_key));
