@@ -9,7 +9,7 @@ export const dynamic="force-dynamic";
 export default async function PlansAdmin(){
  await requireAdminPage();
  const [rows,definitions,prices,active]=await Promise.all([
-  sql.unsafe("SELECT slug,display_name,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,trial_days,visible,archived,entitlements,description,available_strategy_keys,sort_order,stripe_monthly_price_id,stripe_annual_price_id FROM plans ORDER BY sort_order"),
+  sql.unsafe("SELECT slug,display_name,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,trial_days,visible,archived,entitlements,description,homepage_highlights,available_strategy_keys,sort_order,stripe_monthly_price_id,stripe_annual_price_id FROM plans ORDER BY sort_order"),
   sql.unsafe("SELECT key,name,enabled FROM strategy_definitions ORDER BY name"),
   sql.unsafe("SELECT p.slug,pp.currency,pp.cadence,pp.amount_minor,pp.stripe_price_id,pp.apple_product_id,pp.google_product_id,pp.active FROM plan_prices pp JOIN plans p ON p.id=pp.plan_id ORDER BY p.sort_order,pp.currency,pp.cadence"),
   sql.unsafe("SELECT count(*)::int AS c FROM subscriptions WHERE status IN ('ACTIVE','TRIALING')")
@@ -56,6 +56,7 @@ export default async function PlansAdmin(){
    <div className="admin-advanced-content">
     <SimplePlanEditor initialPlans={rows.map(p=>({
      slug:String(p.slug),displayName:String(p.display_name),description:String(p.description??""),
+     homepageHighlights:Array.isArray(p.homepage_highlights)?p.homepage_highlights.map(String):[],
      monthlyPriceMinor:Number(p.monthly_price_minor),annualPriceMinor:Number(p.annual_price_minor),
      annualDiscountBps:Number(p.annual_discount_bps),currency:String(p.billing_currency),
      supportedBillingCurrencies:Array.isArray(p.supported_billing_currencies)?p.supported_billing_currencies.map(String):["GBP"],
