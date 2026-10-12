@@ -71,6 +71,14 @@ On by default with a 2-day lead time; set 0 to turn it off. Admin > Settings > N
 
 src/lib/market-data.ts defines the provider interface. The built-in production adapter accepts a configured HTTPS quote service via MARKET_DATA_PROVIDER=http, MARKET_DATA_HTTP_BASE_URL and MARKET_DATA_HTTP_TOKEN. It expects GET /quote?symbol=... and GET /historical?symbol=...&at=... responses containing price, three-letter currency and an offset-aware observedAt timestamp. The hourly worker refreshes active holdings/mappings before action calculation. If no licensed provider is configured, financial actions fail closed on missing or stale critical data.
 
+### Yahoo Finance provider (unofficial, unlicensed)
+
+`MARKET_DATA_PROVIDER=yahoo` (Admin > Settings > Market data) uses Yahoo Finance's public chart endpoints (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) and needs no token. **These endpoints are unofficial and undocumented, are not licensed for commercial redistribution, and can break or be rate-limited without notice.** It is available because the owner chose it; it is not a licensed data source and must be replaced before charging customers. Admin > Launch shows a warning whenever it is selected and the market data launch gate cannot pass while it is.
+
+- Provider symbols are stored in `trading_lines.provider_symbol`. London lines use the `.L` suffix (for example `<TICKER>.L`). Yahoo does not list every leveraged ETP, so the owner must spot-check each symbol before relying on it.
+- Current quotes use `regularMarketPrice`/`regularMarketTime`; historical lookups use the last daily bar CLOSE at or before the requested time. Yahoo never sets `corporateActionsAdjusted`, so it can not satisfy `MARKET_DATA_HISTORY_ADJUSTED_LICENSED` and momentum history stays off.
+- LSE prices quoted in pence (`GBp`/`GBX`) are converted to pounds with exact decimal division and reported as GBP. Any other subunit (for example `ZAc`, `ILA`) or malformed currency returns no quote; FX is never guessed. Missing, non-positive, future-dated or errored responses return no quote, and staleness is classified downstream as for every provider. A current quote is also cross-checked against Yahoo's own previous/closing prices in the same response (it must be within 0.5x to 2x of each, converted with the same pence rule); with no reference present the quote is rejected. A historical bar is used only once its day has completed (bar open time + 24 hours at or before the requested time). Setup pages that only recognise licensed providers will still show market data as "not configured" while Yahoo is selected; that is intentional, because Yahoo is unofficial and unlicensed.
+
 ## Deployment
 
 Build the Docker image after migrations have been applied. Run db:migrate and db:seed as controlled release steps before switching application traffic. Configure the hourly /api/cron/actions worker with Authorization: Bearer CRON_SECRET.

@@ -25,7 +25,7 @@ export async function gatherSnapshot(now = new Date()): Promise<OpsSnapshot> {
     activeStrategies: await count("SELECT count(*)::int AS n FROM strategy_instances i JOIN users u ON u.id=i.user_id WHERE i.status='ACTIVE' AND u.deleted_at IS NULL"),
     cron: await workerFact("cron-actions"),
     marketData: await workerFact("market-data-refresh"),
-    marketDataExpected: (process.env.MARKET_DATA_MODE ?? "PROVIDER").toUpperCase() !== "MANUAL" && process.env.MARKET_DATA_PROVIDER === "http",
+    marketDataExpected: (process.env.MARKET_DATA_MODE ?? "PROVIDER").toUpperCase() !== "MANUAL" && (process.env.MARKET_DATA_PROVIDER === "http" || process.env.MARKET_DATA_PROVIDER === "yahoo"),
     backup: { lastSuccessAt: backup[0]?.at ? new Date(backup[0].at) : null, expected: process.env.OPS_EXPECT_BACKUP_HEARTBEAT === "true" },
     failedWebhooks24h: await count("SELECT count(*)::int AS n FROM billing_webhook_events WHERE status='FAILED' AND created_at>now()-interval '24 hours'"),
     stuckWebhooks: await count("SELECT count(*)::int AS n FROM billing_webhook_events WHERE status='PROCESSING' AND created_at<now()-interval '15 minutes'"),
