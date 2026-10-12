@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 
-// Reviewed 2026-10-08 against the rendered Wealtharr pages (accessible mobile menu, demo chart
+// Landing baselines re-reviewed 2026-10-12 from PR #58 GitHub Actions trace captures (390×7672 and 1280×5282).\n// Reviewed 2026-10-08 against the rendered Wealtharr pages (accessible mobile menu, demo chart
 // settled). Digests are those produced by CI's renderer (Playwright Chromium 153, ubuntu-latest) and
 // are reviewed against CI screenshots (the mobile demo has two visually equivalent raster variants).
 // A different browser build may produce new hashes: review the attached screenshot before updating.
@@ -10,11 +10,11 @@ const expected:Record<string,Record<string,string | string[]>>={
   // Two equivalent mobile-demo renders were visually reviewed from the CI retry traces; tiny
   // subpixel raster differences affect only text/chart labels, not layout or user-visible content.
   "mobile-chromium":{
-    landing:"c9b1d56b3b79a28294eaa5c8a6c4674b46052b2e03e63dba76fcaf584ea6549a",
+    landing:"eb025129763b486a3453191c94f3956b8a51097978c8931b35bea88198cdffd2",
     demo:["5c2d458e3777c7e31fdbd1ef3f923b872f0a67f10a8f32beafb5bb1b8a349df9","9f0a4b76fdef0f9d5dd38544e85667e3725b6a928a8ac71484f9f20a804da288"]
   },
   "desktop-chromium":{
-    landing:"8bb40d5ebfa3721ce6721f3ea33f71f12103038643f5b5d425439ffeb17cf0b7",
+    landing:"eca15827b33479bdfa4617b6f2964b0f62ba7f2a3b1784ba574d2296f047581f",
     // 2026-10-09: the second settled raster was inspected from the GitHub trace PNG
     // (1280x1442). Header, value cards, next-action panel, chart, legends and
     // footer cards are intact; differences are rendering-only, not missing UI.
