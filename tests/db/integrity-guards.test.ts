@@ -157,6 +157,8 @@ describe.skipIf(!url)("database integrity guards",()=>{
       await expect(sql!.unsafe("INSERT INTO strategy_instances (user_id,strategy_definition_id,strategy_version_id,name,status) VALUES ($1,$2,$3,'x','DELETED')",[owner,definitionId,id])).rejects.toThrow(/strategy_instances_status_vocabulary_check/);
       const instanceId=String((await sql!.unsafe("INSERT INTO strategy_instances (user_id,strategy_definition_id,strategy_version_id,name) VALUES ($1,$2,$3,'x') RETURNING id",[owner,definitionId,id]))[0].id);
       await expect(sql!.unsafe("INSERT INTO ledger_events (strategy_instance_id,occurred_at,event_type,currency) VALUES ($1,now(),'GIFT','GBP')",[instanceId])).rejects.toThrow(/ledger_events_event_type_vocabulary_check/);
+      // A stock split is a quantity-only adjustment and must be accepted.
+      await expect(sql!.unsafe("INSERT INTO ledger_events (strategy_instance_id,occurred_at,event_type,currency,cash_amount) VALUES ($1,now(),'SPLIT','GBP',0)",[instanceId])).resolves.toBeDefined();
       await expect(sql!.unsafe("INSERT INTO actions (strategy_instance_id,strategy_version_id,fingerprint,action_type,status,title,instruction) VALUES ($1,$2,'v1-'||$3,'HOLD','BOGUS','t','i')",[instanceId,id,run])).rejects.toThrow(/actions_status_vocabulary_check/);
       await expect(sql!.unsafe("INSERT INTO actions (strategy_instance_id,strategy_version_id,fingerprint,action_type,title,instruction) VALUES ($1,$2,'v2-'||$3,'LIQUIDATE','t','i')",[instanceId,id,run])).rejects.toThrow(/actions_action_type_vocabulary_check/);
     });

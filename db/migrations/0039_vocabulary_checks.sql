@@ -6,6 +6,15 @@
 -- Each constraint is added NOT VALID (enforced for every new write, existing rows untouched) and then
 -- validated; if legacy rows violate it the migration only RAISEs a NOTICE and leaves it NOT VALID, so it
 -- can never fail a deployment.
+-- ledger_events.event_type literal sources:
+--   BUY, SELL                      trades route (zod side enum) and executeAction (action-service)
+--   CONTRIBUTION                   contributions route, strategy creation, strategy switch
+--   WITHDRAWAL, DIVIDEND, DISTRIBUTION, INTEREST, FEE, TAX   ledger-events route (zod enum)
+--   OPENING_CASH, OPENING_POSITION opening-snapshot route and strategy switch
+--   BROKER_ADJUSTMENT              reconcile route
+--   CORRECTION                     ledger-events/[eventId]/correct route
+--   SPLIT                          corporate-action split adjustment (fix-domain-correctness PR):
+--                                  quantity-only, cash 0, ratio in metadata
 DO $$
 DECLARE
   c record;
@@ -21,7 +30,7 @@ BEGIN
       ('actions', 'actions_action_type_vocabulary_check',
         'action_type IN (''BUY'',''SELL'',''REBALANCE'',''HOLD'',''NO_ACTION'',''DATA_REQUIRED'')'),
       ('ledger_events', 'ledger_events_event_type_vocabulary_check',
-        'event_type IN (''BUY'',''SELL'',''CONTRIBUTION'',''WITHDRAWAL'',''DIVIDEND'',''DISTRIBUTION'',''INTEREST'',''FEE'',''TAX'',''OPENING_CASH'',''OPENING_POSITION'',''BROKER_ADJUSTMENT'',''CORRECTION'')'),
+        'event_type IN (''BUY'',''SELL'',''CONTRIBUTION'',''WITHDRAWAL'',''DIVIDEND'',''DISTRIBUTION'',''INTEREST'',''FEE'',''TAX'',''OPENING_CASH'',''OPENING_POSITION'',''BROKER_ADJUSTMENT'',''CORRECTION'',''SPLIT'')'),
       ('notification_deliveries', 'notification_deliveries_status_vocabulary_check',
         'status IN (''PENDING'',''SENDING'',''SENT'',''CANCELLED'',''DEAD_LETTER'')'),
       ('subscriptions', 'subscriptions_cadence_vocabulary_check',
