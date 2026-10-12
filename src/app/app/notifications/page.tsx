@@ -1,6 +1,7 @@
 import { Bell, CheckCircle2 } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
 import { sql } from "@/lib/db";
+import { MarkAllReadButton } from "@/components/MarkAllReadButton";
 import { reminderStillCurrentSql } from "@/lib/review-reminder-sql";
 
 export default async function NotificationsPage(){
@@ -13,8 +14,14 @@ export default async function NotificationsPage(){
     ") latest ORDER BY created_at DESC LIMIT 100",
     [user.id]
   );
+  // Same visibility rule as the list, so the "Mark all as read" button matches what the user can see.
+  const unread=await sql.unsafe(
+    "SELECT count(*)::int AS c FROM notifications n WHERE n.user_id=$1 AND n.read_at IS NULL AND (n.type<>'REVIEW_UPCOMING' OR "+reminderStillCurrentSql("n")+")",
+    [user.id]
+  );
+  const unreadTotal=Number(unread[0]?.c??0);
   return <>
-    <div className="page-title"><div><div className="eyebrow">Activity</div><h1>What changed.</h1><p>Important updates from your strategies, in one quiet timeline.</p></div></div>
+    <div className="page-title"><div><div className="eyebrow">Activity</div><h1>What changed.</h1><p>Important updates from your strategies, in one quiet timeline.</p></div>{unreadTotal>0&&<MarkAllReadButton/>}</div>
     <section className="glass activity-timeline">
       {rows.length?rows.map((n:any)=><div className="activity-item" key={n.id}>
         <div className="activity-icon"><Bell size={15}/></div>
@@ -23,4 +30,4 @@ export default async function NotificationsPage(){
       </div>):<div className="empty activity-empty"><CheckCircle2 size={26}/><strong>Quiet is good.</strong><p>There is no activity to catch up on.</p></div>}
     </section>
   </>;
-}
+}

@@ -61,7 +61,7 @@ The checked items in that file are unchanged and accurate. Unchecked items:
 | Golden-case regression against primary-source examples | Open for every strategy except what `tests/value-target.test.ts` and `tests/fixed-allocation.test.ts` cover with self-computed values; independent expected values are still needed |
 | Per-version release attestations; widen the publishable allowlist | Attestations exist (0025) and draft edits revoke them (0029); canonical rule checks supplement the engine allowlist. Independent human certification and widening support remain open |
 | Strategy-specific disclosures (leverage, volatility decay) | Fixed for the leveraged catalogue entry (HFEA): the catalogue carries a leverage disclosure that the seed stores, with a test that any leveraged strategy has one. Wording still needs legal review |
-| Verify exposure, currency, wrapper, fractional trading and purchasability by region and broker | Open (Phase 2). No instrument mappings are seeded |
+| Verify exposure, currency, wrapper, fractional trading and purchasability by region and broker | Open (Phase 2). No instrument mappings are seeded. Admin > Instruments now lists import CANDIDATE mappings with a checklist-gated verify/promote and reject flow (admin, MFA when ADMIN_MFA_REQUIRED; same-origin, one transaction, audit event; refuses non-candidates and ambiguous pairs). The manual "add mapping" form now only creates disabled candidates, instrument/trading-line edits that would change a verified mapping are refused, and migration 0037 defaults fidelity to CANDIDATE; the owner still has to perform the actual verification against issuer documents |
 | Commercial data and licensing rights | Needs people |
 | User-acceptance tests for every supported strategy | Open |
 
@@ -103,6 +103,10 @@ Sign-in with Google and Apple; installable mobile web app and Android/iOS shell;
 - Three-fund, 60/40 and 80/20 are seeded as disabled fixed-allocation drafts. Customer weight inputs are not supported.
 - The platform stores spec-card attestations, but independent human sign-off and full author-method goldens are still required.
 
+## Launch enablement groundwork (12 October 2026)
+- `docs/LAUNCH_ENABLEMENT.md` lists, for 9Sig, HFEA, 60/40 and All Weather, what is done in code and what only the owner or an administrator can do (EXACT mappings, spec-card sign-off, ATTEST, PUBLISH, ENABLE, data licensing, legal). It records no attestation and invents no instrument.
+- All Weather now has hand-derived golden cases in `tests/strategy-reference-golden.test.ts` (initial split, rounding residue, on-target, equity-heavy and bond-heavy drift, deposit, zero threshold, tolerance edge). Not yet run in this environment (no Node); the card remains DRAFT and the withdrawal case is still open. No gate, seed or rule changed.
+
 ## PR #25 engineering audit (11 October 2026)
 Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
 - **Customer-visible strategy without sign-off.** 9Sig is the only enabled, published strategy and it has no recorded specification sign-off (the seed publishes it directly) and no spec card. Live Stripe checkout now refuses until a sign-off is recorded (`src/lib/strategy-evidence.ts`); Admin > Launch lists the gap.
@@ -113,3 +117,13 @@ Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
 ## Advance review reminder (optional)
 - New setting `REVIEW_REMINDER_LEAD_DAYS` (Admin > Settings > Notifications, 0-14; blank = default 2 days, 0 = off). When set, the hourly worker creates one `REVIEW_UPCOMING` notification per strategy review ("<Strategy> review due <date>") for active strategies whose newest action is NO_ACTION with a fresh calculation, held until 08:00 in the user timezone, using the existing `review_key` unique index for one-per-review dedupe. Date only: no amounts or instructions. Channels follow plan entitlements and connected endpoints; a reminder is cancelled at send time (`REMINDER_NO_LONGER_CURRENT`) and hidden from the Activity page if the strategy is no longer active or the review date moved or has arrived. Known limits: the lead time is a multiple of 24 hours (not calendar days, so it can shift by an hour over a daylight-saving change); only strategies whose latest calculation is under 2 days old and says nothing is due get a reminder; a reminder already sitting in an inbox or chat cannot be recalled once sent. Migration 0036 adds nullable `strategy_instance_id` and `reminder_due_at` to `notifications`.
 - Evidence: `tests/review-reminder.test.ts` (window, quiet hours, DST, key, wording, wiring), `tests/db/review-reminder.test.ts` (once per review, paused/closed/stale, plan channels, cancellation). Not yet run in CI at the time of writing.
+
+## Strategy plugins (code organisation, no behaviour change)
+- Every built-in strategy is now one plugin file under `src/domain/strategy/catalog/<key>.ts` (profile, seed definition, spec-card and golden-test pointers), registered in `catalog/index.ts`. `RESEARCH_STRATEGIES`, `LEVERAGE_DISCLOSURE`, `CANONICAL_9SIG_CONFIG` and `assertCuratedRules` keep their import paths and are derived from the registry. The 9Sig special cases in the admin route, admin page, curated-release check and seed script, and the second hard-coded definitions list in `scripts/seed.ts`, were removed.
+- Rules, engines, configs, input schemas, disclosures and seed rows are unchanged (pinned by `tests/strategy-plugin-snapshot.test.ts`). The seed remains insert-only apart from the guarded research-only realignment (coffeehouse, core-four, swensen).
+- Not executed: this change was authored without a Node toolchain, so typecheck, `npm run verify`, the unit tests above and the database/seed tests have not been run; CI is the first run.
+- Adding or changing a strategy: see "How to add or change a strategy" in `docs/strategy-engines.md`.
+
+## Admin entitlement super-user
+- An ADMIN is an entitlement super-user: no active-strategy limit, every plan feature, every notification channel, no strategy-key restriction (`adminEntitlementSnapshot()` in `src/domain/entitlements.ts`, resolved by `loadEntitlementsWith` in `src/lib/entitlement-service.ts`). This is an entitlement bypass only; admin-only powers stay behind `requireAdmin` and MFA.
+- Every plan-resolution path (create, reactivate, switch, linked accounts, enforcement, notifications, previews) goes through that loader, so the hourly enforcement pass never pauses an admin. Demoting an admin re-applies normal plan limits on the next enforcement pass (cron, plan edit or billing event). Tests: `tests/admin-entitlements.test.ts`, `tests/db/admin-entitlements.test.ts` (database test needs `DATABASE_URL`).

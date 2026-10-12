@@ -1,5 +1,4 @@
-import { RESEARCH_STRATEGIES } from "../src/domain/strategy/research-catalog";
-import {CANONICAL_9SIG_CONFIG} from "../src/domain/strategy/curated-release";
+import {STRATEGY_PLUGINS,curatedRelease} from "../src/domain/strategy/catalog/index";
 import postgres from "postgres";
 
 async function main(){
@@ -22,37 +21,24 @@ async function main(){
     await seedPlan("investor","Investor",999,9900,1742,3,{features:["history","reconciliation","resume","community","analytics","comparisons"],notificationChannels:["EMAIL","DISCORD","TELEGRAM"]},10);
     await seedPlan("pro","Pro",2999,29900,1692,null,{features:["history","reconciliation","resume","community","analytics","comparisons","what_if","advanced_imports","multi_account"],notificationChannels:["EMAIL","DISCORD","TELEGRAM"]},20);
 
-    const definitions=[
-      ["9sig","9Sig","SIGNAL_VALUE_TARGET","Rules-based value target strategy","VALUE_TARGET",true,true],
-      ["hfea","HFEA","FIXED_ALLOCATION","Leveraged fixed-allocation strategy","FIXED_ALLOCATION",false,false],
-      ["golden-butterfly","Golden Butterfly","FIXED_ALLOCATION","Diversified fixed-allocation strategy","FIXED_ALLOCATION",false,false],
-      ["three-fund","Three-Fund Portfolio — 40/40/20 model","FIXED_ALLOCATION","Named fixed-allocation strategy","FIXED_ALLOCATION",false,false],
-      ["60-40","60/40 Portfolio","FIXED_ALLOCATION","Named fixed-allocation strategy","FIXED_ALLOCATION",false,false],
-      ["80-20","80/20 Portfolio","FIXED_ALLOCATION","Named fixed-allocation strategy","FIXED_ALLOCATION",false,false],
-      ["permanent-portfolio","Permanent Portfolio","FIXED_ALLOCATION","Four equal asset sleeves","FIXED_ALLOCATION",false,false],
-      ["all-weather","All Weather (reference)","FIXED_ALLOCATION","Published unlevered reference approximation","FIXED_ALLOCATION",false,false],
-      ["buffett-90-10","Buffett 90/10 Portfolio","FIXED_ALLOCATION","Fixed 90/10 reference model","FIXED_ALLOCATION",false,false],
-      ["coffeehouse","Coffeehouse Portfolio — US seven-fund reference","FIXED_ALLOCATION","Research-only seven-asset profile","FIXED_ALLOCATION",false,false],
-      ["core-four","Four-Fund Stocks/Bonds/REIT Reference","FIXED_ALLOCATION","Research-only four-asset profile; source name requires brand licensing","FIXED_ALLOCATION",false,false],
-      ["swensen","Swensen Lazy Portfolio — US reference","FIXED_ALLOCATION","Research-only six-asset profile","FIXED_ALLOCATION",false,false],
-      ["gtaa-ivy","GTAA / Ivy","MOMENTUM","Research pending","MOMENTUM_ROTATION",false,false],
-      ["paa","Protective Asset Allocation","MOMENTUM","Research pending","MOMENTUM_ROTATION",false,false],
-      ["vaa","Vigilant Asset Allocation","MOMENTUM","Research pending","MOMENTUM_ROTATION",false,false],
-      ["dual-momentum","Dual Momentum","MOMENTUM","Momentum rotation strategy","MOMENTUM_ROTATION",false,false]
-    ] as const;
-
-    for(const item of definitions){
-      const [key,name,family,description,engine,proprietary,enabled]=item;
-      const defQuery="INSERT INTO strategy_definitions (key,name,family,description,engine,proprietary,enabled,supported_regions,supported_wrappers) VALUES ($1,$2,$3,$4,$5,$6,$7,'[]'::jsonb,'[]'::jsonb) ON CONFLICT (key) DO NOTHING";
-      const rows=await sql.unsafe(defQuery,[key,name,family,description,engine,proprietary,enabled]);
+    // Strategy definitions and their first versions come from the plugin registry
+    // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
+    // definition or version is never modified (except the guarded research-only realignment below).
+    for(const plugin of STRATEGY_PLUGINS){
+      const definition=plugin.seedDefinition;
+      if(!definition)continue;
+      const key=plugin.key;
+      const {name,family,description,engine,proprietary,enabled}=definition;
+      const defQuery="INSERT INTO strategy_definitions (key,name,family,description,engine,proprietary,enabled,supported_regions,supported_wrappers) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text::jsonb,$9::text::jsonb) ON CONFLICT (key) DO NOTHING";
+      const rows=await sql.unsafe(defQuery,[key,name,family,description,engine,proprietary,enabled,JSON.stringify(definition.supportedRegions),JSON.stringify(definition.supportedWrappers)]);
       const id=rows[0]?.id??(await sql.unsafe("SELECT id FROM strategy_definitions WHERE key=$1",[key]))[0]?.id;
       if(!id)throw new Error("STRATEGY_SEED_LOOKUP_FAILED:"+key);
 
-      // On an earlier install these three were research-only definitions without
-      // versions. Seeding the new code-approved DRAFT must not leave their
-      // definition.engine stuck on RESEARCH_PENDING. Never mutate a definition
-      // with a published version or operator-enabled status.
-      if(["coffeehouse","core-four","swensen"].includes(key)){
+      // On an earlier install these were research-only definitions without versions.
+      // Seeding the new code-approved DRAFT must not leave their definition.engine stuck on
+      // RESEARCH_PENDING. Never mutate a definition with a published version or
+      // operator-enabled status.
+      if(definition.realignsResearchOnlyDefinition){
         await sql.unsafe(
           "UPDATE strategy_definitions SET name=$2,description=$3,family='FIXED_ALLOCATION',engine='FIXED_ALLOCATION' "+
           "WHERE id=$1 AND enabled=false AND NOT EXISTS ("+
@@ -61,15 +47,15 @@ async function main(){
         );
       }
 
-      if(engine==="MOMENTUM_ROTATION")continue;
+      if(definition.initialVersion===null)continue;
 
-      let config:object={};
-      if(key==="9sig")config=CANONICAL_9SIG_CONFIG;
-      let inputSchema:object[]=[];
-      let disclosure="Rule calculator for a user-selected strategy. Not a suitability recommendation.";
-      if(engine==="FIXED_ALLOCATION"){const preset=RESEARCH_STRATEGIES.find((p)=>p.key===key);if(!preset?.config)throw new Error("Missing reference configuration for "+key);config=preset.config;inputSchema=preset.inputSchema??[];if(preset.disclosure)disclosure=preset.disclosure;}
+      const release=curatedRelease(plugin);
+      if(!release?.config)throw new Error("Missing reference configuration for "+key);
+      const config:object=release.config;
+      const inputSchema:object[]=release.inputSchema??[];
+      const disclosure=release.disclosure||"Rule calculator for a user-selected strategy. Not a suitability recommendation.";
 
-      const lifecycle=key==="9sig"?"PUBLISHED":"DRAFT";
+      const lifecycle=definition.initialVersion;
       await sql.unsafe(
         "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) VALUES ($1,'1.0','2026-01-01',$2,$3,'OPTIONAL',$6::text::jsonb,$4::text::jsonb,$5,CASE WHEN $3='PUBLISHED' THEN now() ELSE NULL END) ON CONFLICT (strategy_definition_id,version) DO NOTHING",
         [id,engine,lifecycle,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]
@@ -78,7 +64,9 @@ async function main(){
 
     // Persist *all* research names for admin inventory without exposing any as an executable release.
     // Published versions and engine validation remain separate review and code gates.
-    for(const research of RESEARCH_STRATEGIES){
+    for(const plugin of STRATEGY_PLUGINS){
+      const research=plugin.profile;
+      if(!research)continue;
       await sql.unsafe(
         "INSERT INTO strategy_definitions (key,name,family,description,engine,enabled,proprietary,supported_regions,supported_wrappers) "+
         "VALUES ($1,$2,'RESEARCH', $3,$4,false,false,'[]'::jsonb,'[]'::jsonb) ON CONFLICT (key) DO NOTHING",

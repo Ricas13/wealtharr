@@ -5,7 +5,7 @@ import { sql } from "@/lib/db";
 import { supportedEngineKeys, validateEngineConfig, assertCustomerPublishableEngine } from "@/domain/strategy/registry";
 import { parseInputSchema } from "@/domain/strategy/config";
 import { authFailure } from "@/lib/api-auth";
-import { RESEARCH_STRATEGIES } from "@/domain/strategy/research-catalog";
+import { curatedRelease, getStrategyPlugin, isBuiltInStrategy } from "@/domain/strategy/catalog";
 import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
@@ -51,8 +51,9 @@ export async function PUT(request:Request){
     const admin=await requireAdmin();
     const p=definitionSchema.parse(await request.json());
     assertEngine(p.engine);
-    const approved=RESEARCH_STRATEGIES.find(profile=>profile.key===p.key);
-    if(p.key!=="9sig"&&(!approved||approved.engine!==p.engine))return Response.json({error:"Only built-in, code-reviewed strategies can be managed."},{status:400});
+    const approved=getStrategyPlugin(p.key);
+    // A code-released strategy without a reference profile (9Sig) has no profile engine to compare.
+    if(!approved||(approved.profile&&approved.profile.engine!==p.engine))return Response.json({error:"Only built-in, code-reviewed strategies can be managed."},{status:400});
     parseInputSchema(p.requiredInputs);
     // A catalogue's availability is controlled ONLY by the verified release toggle.
     // A free-form PUT request must not bypass publisher, market and attestation checks.
@@ -77,12 +78,13 @@ export async function POST(request:Request){
     assertSameOrigin(request);
     const admin=await requireAdmin();
     const p=versionSchema.parse(await request.json());
-    const approved=RESEARCH_STRATEGIES.find(profile=>profile.key===p.strategyKey);
-    if(p.strategyKey!=="9sig"&&(!approved||approved.engine==="RESEARCH_PENDING"))return Response.json({error:"Strategy rules have not yet been implemented."},{status:400});
+    const approved=getStrategyPlugin(p.strategyKey);
+    const approvedRelease=approved?curatedRelease(approved):null;
+    if(!approvedRelease||approvedRelease.engine==="RESEARCH_PENDING")return Response.json({error:"Strategy rules have not yet been implemented."},{status:400});
     const defs=await sql.unsafe("SELECT id,engine,required_inputs FROM strategy_definitions WHERE key=$1 LIMIT 1",[p.strategyKey]);
     if(!defs[0])return Response.json({error:"Strategy not found."},{status:404});
     const engineKey=p.engineKey??String(defs[0].engine);
-    if(engineKey!==(p.strategyKey==="9sig"?"VALUE_TARGET":approved?.engine))return Response.json({error:"A built-in strategy cannot switch calculation engines."},{status:400});
+    if(engineKey!==approvedRelease.engine)return Response.json({error:"A built-in strategy cannot switch calculation engines."},{status:400});
     if(p.config.userWeights===true)return Response.json({error:"Custom allocation weights are not supported."},{status:400});
     const inputSchema=p.inputSchema??(Array.isArray(defs[0].required_inputs)?defs[0].required_inputs:[]);
     assertEngine(engineKey);
@@ -117,7 +119,7 @@ export async function PATCH(request:Request){
     const admin=await requireAdmin();
     const p=patchSchema.parse(await request.json());
     if(p.action==="TOGGLE_DEFINITION"){
-      if(p.strategyKey!=="9sig"&&!RESEARCH_STRATEGIES.some(profile=>profile.key===p.strategyKey))
+      if(!isBuiltInStrategy(p.strategyKey))
         return Response.json({error:"Only built-in strategies can be managed."},{status:400});
       // Serialize the definition toggle with PUBLISH/RETIRE (same definition lock).
       // Otherwise an operator can enable a version while someone else retires it.
@@ -186,7 +188,7 @@ export async function PATCH(request:Request){
         const config=p.config??((current.config??{}) as Record<string,unknown>);
         const inputSchema=p.inputSchema??(Array.isArray(current.input_schema)?current.input_schema:[]);
         assertEngine(engineKey);validateEngineConfig(engineKey,config);parseInputSchema(inputSchema);
-        if(String(current.strategy_key)==="9sig"||RESEARCH_STRATEGIES.some(profile=>profile.key===String(current.strategy_key)))
+        if(isBuiltInStrategy(String(current.strategy_key)))
           assertCuratedRules(String(current.strategy_key),engineKey,config,inputSchema);
         const updated=await tx.unsafe(
           "UPDATE strategy_versions SET effective_from=$1,effective_to=$2,engine_key=$3,upgrade_policy=$4,input_schema=$5::jsonb,config=$6::jsonb,disclosure=$7,release_notes=$8 WHERE id=$9 AND lifecycle_status='DRAFT' RETURNING id",
@@ -220,7 +222,7 @@ export async function PATCH(request:Request){
         if(!attested[0])throw new LifecycleConflict("Record the specification sign-off and golden tests for this version before publishing it.",409);
         validateEngineConfig(String(current.engine_key),(current.config??{}) as Record<string,unknown>);
         parseInputSchema(current.input_schema);
-        if(String(current.strategy_key)==="9sig"||RESEARCH_STRATEGIES.some(profile=>profile.key===String(current.strategy_key)))
+        if(isBuiltInStrategy(String(current.strategy_key)))
           assertCuratedRules(String(current.strategy_key),String(current.engine_key),current.config,current.input_schema);
         const duplicate=await tx.unsafe(
           "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND lifecycle_status='PUBLISHED' AND effective_from=$2 AND id<>$3 LIMIT 1",

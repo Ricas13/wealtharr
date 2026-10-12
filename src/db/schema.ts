@@ -255,7 +255,7 @@ export const regionalInstrumentMappings = pgTable("regional_instrument_mappings"
   broker: text("broker"),
   preferredCurrency: text("preferred_currency"),
   tradingLineId: uuid("trading_line_id").notNull().references(() => tradingLines.id),
-  fidelity: text("fidelity").notNull().default("EXACT"),
+  fidelity: text("fidelity").notNull().default("CANDIDATE"),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
   enabled: boolean("enabled").notNull().default(true),
