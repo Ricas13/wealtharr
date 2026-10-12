@@ -9,7 +9,8 @@ const ORIGIN="http://127.0.0.1:3000";
 
 describe.skipIf(!url)("per-user strategy override storage and admin API",()=>{
  const suffix=randomUUID().slice(0,8);
- let user="",definition="",key="access-test-"+suffix;
+ let user="",definition="";
+ const key="access-test-"+suffix;
  beforeAll(async()=>{
   process.env.NEXT_PUBLIC_APP_URL=ORIGIN;
   ids.admin=String((await db!.unsafe("INSERT INTO users (email,password_hash,role) VALUES ($1,'x','ADMIN') RETURNING id",["ac-admin-"+suffix+"@example.test"]))[0].id);
