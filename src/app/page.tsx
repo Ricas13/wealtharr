@@ -153,7 +153,7 @@ export default async function HomePage(){
       <div className="wm-shell wm-note"><Link href="/strategies">How strategy availability works ↗</Link></div>
     </section>
     <section className="wm-section wm-shell wm-two-col" id="preview">
-      <div><span className="wm-kicker">THE MOMENT IT CLICKS</span><h2>Don't just see the drift. <em>Understand the fix.</em></h2>
+      <div><span className="wm-kicker">THE MOMENT IT CLICKS</span><h2>Don&apos;t just see the drift. <em>Understand the fix.</em></h2>
         <p className="wm-section-intro">Your dashboard is meant to tell you what matters next, not persuade you to stare at markets all day.</p>
         <div className="wm-feature-list"><div><strong>Know your allocation</strong><span>Recorded versus target positions, clearly explained.</span></div>
           <div><strong>Know when to act</strong><span>Scheduled reviews and plan-aware alerts, not noisy price notifications.</span></div>
