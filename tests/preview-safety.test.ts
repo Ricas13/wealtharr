@@ -9,9 +9,9 @@ describe("What-if preview safety boundary",()=>{
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     const calculation=source.slice(start,end);
-    expect(calculation).not.toMatch(/sql\.unsafe\(\s*["'`]INSERT\b/i);
-    expect(calculation).not.toMatch(/sql\.unsafe\(\s*["'`]UPDATE\b/i);
-    expect(calculation).not.toMatch(/sql\.unsafe\(\s*["'`]DELETE\b/i);
+    expect(calculation).not.toMatch(/(?:sql|db|tx)\.unsafe\(\s*["'`]INSERT\b/i);
+    expect(calculation).not.toMatch(/(?:sql|db|tx)\.unsafe\(\s*["'`]UPDATE\b/i);
+    expect(calculation).not.toMatch(/(?:sql|db|tx)\.unsafe\(\s*["'`]DELETE\b/i);
     expect(calculation).not.toMatch(/sql\.begin\(/i);
   });
 

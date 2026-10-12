@@ -24,4 +24,21 @@ describe.skipIf(!process.env.DATABASE_URL)("Date query parameters",()=>{
     expect(new Date(String(rows[0].at)).toISOString()).toBe("2030-01-02T03:04:05.000Z");
     expect(rows[0].none).toBeNull();
   });
+
+  // The client used to inherit these behaviours from a drizzle client constructed as a side effect;
+  // they are now configured explicitly in src/lib/db-config.ts and must not regress.
+  it("returns date, timestamp and timestamptz columns as strings, not Date objects",async()=>{
+    const rows=await sql.unsafe("SELECT '2030-01-02'::date AS d, '2030-01-02 03:04:05'::timestamp AS ts, '2030-01-02 03:04:05+00'::timestamptz AS tz, ARRAY['2030-01-02']::date[] AS da");
+    expect(typeof rows[0].d).toBe("string");
+    expect(String(rows[0].d).slice(0,10)).toBe("2030-01-02");
+    expect(typeof rows[0].ts).toBe("string");
+    expect(typeof rows[0].tz).toBe("string");
+    expect(rows[0].da).not.toBeInstanceOf(Date);
+  });
+
+  it("stores an already-stringified JSON parameter as an object, not a double-encoded string",async()=>{
+    const rows=await sql.unsafe("SELECT jsonb_typeof($1::jsonb) AS kind, $1::jsonb AS value",[JSON.stringify({a:1})]);
+    expect(rows[0].kind).toBe("object");
+    expect(rows[0].value).toEqual({a:1});
+  });
 });
