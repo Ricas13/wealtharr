@@ -1,5 +1,11 @@
 /** Pure production launch checks, intentionally separate from application liveness. */
 type Environment=Record<string,string|undefined>;
+/** Shown whenever MARKET_DATA_PROVIDER=yahoo; the market_data_mode launch gate can never pass for it. */
+export const YAHOO_LAUNCH_WARNING="Market data provider is Yahoo (unofficial, not licensed for commercial redistribution) - replace before charging customers";
+/** Non-gating provider warnings for the launch page; empty when nothing needs flagging. */
+export function marketDataProviderWarnings(env:Environment):string[]{
+ return env.MARKET_DATA_PROVIDER==="yahoo"?[YAHOO_LAUNCH_WARNING]:[];
+}
 export type LaunchCheck={key:string;passed:boolean;reason:string};
 const validHttps=(s:string|undefined)=>{try{return !!s&&new URL(s).protocol==="https:";}catch{return false;}};
 const enough=(s:string|undefined,length:number)=>!!s&&s.length>=length&&!/^(replace|changeme|example|ci-only|test-)/i.test(s);
@@ -16,7 +22,7 @@ export function checkCommercialLaunch(env:Environment):LaunchCheck[]{
  {key:"stripe_live",passed:!!stripe&&/^(sk|rk)_live_/.test(stripe)&&stripe.length>=20,reason:"A Stripe LIVE secret or restricted (rk_live_) key is required for paid launch."},
  {key:"stripe_webhook",passed:!!webhook&&webhook.startsWith("whsec_")&&webhook.length>=20,reason:"Stripe webhook signing secret is required."},
  {key:"email",passed:env.EMAIL_PROVIDER==="http"&&validHttps(env.EMAIL_HTTP_ENDPOINT)&&enough(env.EMAIL_HTTP_TOKEN,12)&&!!env.EMAIL_FROM&&!env.EMAIL_FROM.endsWith("@example.com"),reason:"Configure live transactional email with HTTPS credentials."},
- {key:"market_data_mode",passed:env.MARKET_DATA_PROVIDER==="http"&&validHttps(env.MARKET_DATA_HTTP_BASE_URL)&&enough(env.MARKET_DATA_HTTP_TOKEN,12),reason:"Configure an authenticated historical/intraday and current-price service that permits your commercial use."},
+ {key:"market_data_mode",passed:env.MARKET_DATA_PROVIDER==="http"&&validHttps(env.MARKET_DATA_HTTP_BASE_URL)&&enough(env.MARKET_DATA_HTTP_TOKEN,12),reason:env.MARKET_DATA_PROVIDER==="yahoo"?YAHOO_LAUNCH_WARNING:"Configure an authenticated historical/intraday and current-price service that permits your commercial use."},
  {key:"admin_mfa",passed:env.ADMIN_MFA_REQUIRED==="true",reason:"Require two-step sign-in for administrators (ADMIN_MFA_REQUIRED=true) once every admin has enrolled."},
  {key:"backup_operator_attestation",passed:env.BACKUPS_RESTORE_VERIFIED==="true",reason:"Operator must verify a successful backup restore."},
  {key:"regulatory_signoff",passed:env.UK_REGULATORY_SIGNOFF_VERIFIED==="true",reason:"Obtain documented UK legal/regulatory review before charging customers."},

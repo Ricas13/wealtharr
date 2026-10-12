@@ -1,6 +1,7 @@
 import "server-only";
 import Decimal from "decimal.js";
 import { z } from "zod";
+import { YahooMarketDataProvider } from "@/lib/yahoo-market-data";
 
 export type PriceObservation = {
   price: string;
@@ -115,6 +116,10 @@ class HttpMarketDataProvider implements MarketDataProvider {
 export function getMarketDataProvider(): MarketDataProvider {
   if (process.env.NODE_ENV !== "production" && process.env.MARKET_DATA_PROVIDER === "mock") {
     return new MockMarketDataProvider();
+  }
+  // Unofficial and unlicensed for commercial redistribution; only ever used when explicitly selected.
+  if (process.env.MARKET_DATA_PROVIDER === "yahoo") {
+    return new YahooMarketDataProvider();
   }
   if (process.env.MARKET_DATA_PROVIDER === "http") {
     return new HttpMarketDataProvider(process.env.MARKET_DATA_HTTP_BASE_URL, process.env.MARKET_DATA_HTTP_TOKEN);

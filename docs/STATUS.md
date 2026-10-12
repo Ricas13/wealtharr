@@ -62,7 +62,7 @@ The checked items in that file are unchanged and accurate. Unchecked items:
 | Per-version release attestations; widen the publishable allowlist | Attestations exist (0025) and draft edits revoke them (0029); canonical rule checks supplement the engine allowlist. Independent human certification and widening support remain open |
 | Strategy-specific disclosures (leverage, volatility decay) | Fixed for the leveraged catalogue entry (HFEA): the catalogue carries a leverage disclosure that the seed stores, with a test that any leveraged strategy has one. Wording still needs legal review |
 | Verify exposure, currency, wrapper, fractional trading and purchasability by region and broker | Open (Phase 2). No instrument mappings are seeded |
-| Commercial data and licensing rights | Needs people |
+| Commercial data and licensing rights | Needs people. An optional `yahoo` provider exists (owner decision) but Yahoo's chart endpoints are unofficial and NOT licensed for commercial redistribution; Admin > Launch warns while it is selected and the market data gate stays failed. Replace with a licensed provider before charging customers; each `.L` symbol must be spot-checked by the owner |
 | User-acceptance tests for every supported strategy | Open |
 
 ## Deployment and revenue gates
