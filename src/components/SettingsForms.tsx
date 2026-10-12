@@ -103,11 +103,17 @@ export function BillingButtons({
 
 export function PrivacyControls({optIn,hasPassword,mfaEnabled}:{optIn:boolean;hasPassword:boolean;mfaEnabled:boolean}){
   const[state,setState]=useState(optIn);
-  const[message,setMessage]=useState("");
+  const privacyStatus=useMessage();
   const[confirming,setConfirming]=useState(false);
   const[error,setError]=useState("");
   const[busy,setBusy]=useState(false);
-  async function toggle(){const next=!state;const r=await fetch("/api/account/privacy",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({anonymousAggregateOptIn:next})});if(r.ok){setState(next);setMessage("Privacy preference updated.");}else setMessage("Could not update preference.");}
+  async function toggle(){
+    const next=!state;
+    privacyStatus.clear();
+    const result=await requestJson("/api/account/privacy",{method:"PATCH",body:{anonymousAggregateOptIn:next},fallbackError:"Could not update preference."});
+    if(result.ok){setState(next);privacyStatus.success("Privacy preference updated.");}
+    else privacyStatus.error(result.errorText);
+  }
   // Deleting is irreversible, so it asks again who is at the keyboard: the password, a current code
   // when two-step sign-in is on, or (for accounts that only use Google or Apple) the account email.
   async function remove(e:React.FormEvent<HTMLFormElement>){
@@ -133,7 +139,7 @@ export function PrivacyControls({optIn,hasPassword,mfaEnabled}:{optIn:boolean;ha
       <div className="inline"><button className="button danger" disabled={busy}>Permanently delete my account</button><button className="button" type="button" disabled={busy} onClick={()=>{setConfirming(false);setError("");}}>Cancel</button></div>
       {error&&<div className="error" role="alert">{error}</div>}
     </form>}
-    {message&&<div className={message.startsWith("Privacy")?"success":"error"} role="status">{message}</div>}
+    <MessageView message={privacyStatus.message}/>
   </div>;
 }
 
