@@ -1,6 +1,8 @@
 "use client";
 import { Field } from "@/components/Field";
-import { useId, useRef, useState } from "react";
+import { InlineMessage, MessageView, useMessage } from "@/components/InlineMessage";
+import { postJson, requestJson } from "@/lib/http";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Plus } from "lucide-react";
 
@@ -16,51 +18,60 @@ function AccountSelect({accounts}:{accounts:AccountOption[]}){
 export function AddLinkedAccountForm({id,currency,wrappers}:{id:string;currency:string;wrappers:string[]}){
   const router=useRouter();
   const [busy,setBusy]=useState(false);
-  const [message,setMessage]=useState("");
+  const status=useMessage();
   const options=wrappers.length?wrappers:["ISA","SIPP","GIA"];
 
   return <form className="form-grid linked-account-form" onSubmit={async(e)=>{
-    e.preventDefault();setBusy(true);setMessage("");
+    e.preventDefault();setBusy(true);status.clear();
     const form=e.currentTarget;
     const f=new FormData(form);
-    const response=await fetch("/api/strategies/"+id+"/accounts",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({
+    try{
+      const result=await postJson("/api/strategies/"+id+"/accounts",{
         name:String(f.get("name")||""),
         wrapper:String(f.get("wrapper")||""),
         broker:String(f.get("broker")||"")||null,
         currency
-      })
-    });
-    const body=await response.json();setBusy(false);
-    if(!response.ok)return setMessage(body.error??"Could not add this account.");
-    setMessage(body.recalculationPending?"Account linked. Recalculation needs attention.":"Account linked.");
-    form.reset();
-    router.refresh();
+      },{fallbackError:"Could not add this account."});
+      if(!result.ok){status.error(result.errorText);return;}
+      if(result.data.recalculationPending)status.warning("Account linked. Recalculation needs attention.");
+      else status.success("Account linked.");
+      form.reset();
+      router.refresh();
+    }finally{
+      setBusy(false);
+    }
   }}>
     <div className="field"><label htmlFor={"linked-account-name-"+id}>Account name</label><input id={"linked-account-name-"+id} name="name" maxLength={80} placeholder="e.g. SIPP at InvestEngine" required/></div>
     <div className="field"><label htmlFor={"linked-account-wrapper-"+id}>Account type</label><select id={"linked-account-wrapper-"+id} name="wrapper" required>{options.map((wrapper)=><option key={wrapper} value={wrapper}>{wrapper}</option>)}</select></div>
     <div className="field full"><label htmlFor={"linked-account-broker-"+id}>Broker (optional)</label><input id={"linked-account-broker-"+id} name="broker" maxLength={80} placeholder="Broker name"/></div>
     <div className="field full linked-account-currency"><span>Uses strategy currency</span><strong>{currency}</strong></div>
-    <div className="field full"><button className="button" disabled={busy}><Plus size={15}/>{busy?"Adding…":"Add linked account"}</button>{message&&<span className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Account linked")?"success":"error"}>{message}</span>}</div>
+    <div className="field full"><button className="button" disabled={busy}><Plus size={15}/>{busy?"Adding…":"Add linked account"}</button><MessageView message={status.message} as="span"/></div>
   </form>;
 }
 
 export function RecalculateButton({ id }: { id: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  return <button className="button" disabled={busy} onClick={async () => {
-    setBusy(true);
-    await fetch("/api/strategies/" + id + "/calculate", { method: "POST" });
-    setBusy(false);
-    router.refresh();
-  }}>Recalculate</button>;
+  const status = useMessage();
+  return <>
+    <button className="button" disabled={busy} onClick={async () => {
+      setBusy(true);
+      status.clear();
+      try {
+        const result = await postJson("/api/strategies/" + id + "/calculate", undefined, { fallbackError: "Could not recalculate this strategy." });
+        if (!result.ok) status.error(result.errorText);
+        router.refresh();
+      } finally {
+        setBusy(false);
+      }
+    }}>Recalculate</button>
+    <MessageView message={status.message} as="span"/>
+  </>;
 }
 
-export function ExecuteAction({ action }: { action: { id: string; actionType: string } }) {
+export function ExecuteAction({ action, currency }: { action: { id: string; actionType: string }; currency?: string }) {
   const router = useRouter();
-  const [error, setError] = useState("");
+  const status = useMessage();
   const [busy, setBusy] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [recalculationPending,setRecalculationPending]=useState(false);
@@ -76,45 +87,42 @@ export function ExecuteAction({ action }: { action: { id: string; actionType: st
   return <form className="inline" onSubmit={async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError("");
-    const f = new FormData(e.currentTarget);
-    const localTime=String(f.get("executedAt")||"");
-    const when=localTime?new Date(localTime):null;
-    if(when&&!Number.isFinite(when.getTime())){setBusy(false);setError("Choose a valid execution date and time.");return;}
-    const response = await fetch("/api/actions/" + action.id + "/execute", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ price: f.get("price") || undefined, quantity: f.get("quantity") || undefined, fee: f.get("fee") || "0", partial:Boolean(f.get("partial")),executedAt:when?.toISOString() })
-    });
-    const body = await response.json();
-    setBusy(false);
-    if (!response.ok) return setError(body.error ?? "Could not complete action.");
-    setRecalculationPending(Boolean(body.recalculationPending));
-    setCompleted(true);
-    window.setTimeout(() => router.refresh(), 550);
+    status.clear();
+    try {
+      const f = new FormData(e.currentTarget);
+      const localTime=String(f.get("executedAt")||"");
+      const when=localTime?new Date(localTime):null;
+      if(when&&!Number.isFinite(when.getTime())){status.error("Choose a valid execution date and time.");return;}
+      const result = await postJson("/api/actions/" + action.id + "/execute", {
+        price: f.get("price") || undefined, quantity: f.get("quantity") || undefined, fee: f.get("fee") || "0", partial:Boolean(f.get("partial")),executedAt:when?.toISOString()
+      }, { fallbackError: "Could not complete action." });
+      if (!result.ok) { status.error(result.errorText); return; }
+      setRecalculationPending(Boolean(result.data.recalculationPending));
+      setCompleted(true);
+      window.setTimeout(() => router.refresh(), 550);
+    } finally {
+      setBusy(false);
+    }
   }}>
     {needsPrice && <>
-      <input name="price" type="number" min="0" step="0.000001" placeholder="Execution price" aria-label="Actual execution price" required />
-      <input name="quantity" type="number" min="0" step="0.00000001" placeholder="Actual quantity" aria-label="Actual quantity" required />
-      <input name="fee" type="number" min="0" step="0.01" defaultValue="0" placeholder="Fee" aria-label="Trading fee"/>
-      <label className="trade-execution-when">Broker execution date &amp; time
-        <input name="executedAt" type="datetime-local" aria-label="Broker execution date and time"/>
-        <small>Optional. Leave blank for now, or enter the actual local time shown by your broker.</small>
-      </label>
+      <Field label={currency ? "Price per share (" + currency + ")" : "Price per share"}><input name="price" type="number" min="0" step="0.000001" required /></Field>
+      <Field label="Quantity (shares)"><input name="quantity" type="number" min="0" step="0.00000001" required /></Field>
+      <Field label={currency ? "Fee (" + currency + ")" : "Fee"}><input name="fee" type="number" min="0" step="0.01" defaultValue="0"/></Field>
+      <Field className="field trade-execution-when" label="Broker execution date & time" help="Optional. Leave blank for now, or enter the actual local time shown by your broker."><input name="executedAt" type="datetime-local"/></Field>
       <label className="partial-fill"><input name="partial" type="checkbox"/><span>I only completed part of this trade</span></label>
     </>}
     <button className="button primary" disabled={busy}>{busy ? "Recording…" : needsPrice ? "Mark trade completed" : "Mark reviewed"}</button>
-    {error && <span className="error" role="alert">{error}</span>}
+    <MessageView message={status.message} as="span"/>
   </form>;
 }
 
 export function ContributionForm({ id, accounts=[] }: { id: string; accounts?:AccountOption[] }) {
   const router = useRouter();
-  const [message, setMessage] = useState("");
+  const status = useMessage();
   const [busy,setBusy]=useState(false);
   const requestKey=useRef<string|null>(null);
   return <form className="form-grid" onSubmit={async (e) => {
-    e.preventDefault();setBusy(true);setMessage("");
+    e.preventDefault();setBusy(true);status.clear();
     const form=e.currentTarget;
     const mutationKey=requestKey.current??crypto.randomUUID();
     requestKey.current=mutationKey;
@@ -122,66 +130,63 @@ export function ContributionForm({ id, accounts=[] }: { id: string; accounts?:Ac
     const value = String(f.get("when") || "");
     const occurredAt = value ? new Date(value).toISOString() : undefined;
     try{
-      const r = await fetch("/api/strategies/" + id + "/contributions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount: String(f.get("amount")), occurredAt, accountId:f.get("accountId")||undefined, requestKey:mutationKey })
-      });
-      const body=await r.json().catch(()=>({}));
-      setMessage(r.ok ? (body.recalculationPending?"Contribution recorded. Recalculation needs attention.":"Contribution recorded as cash.") : body.error??"Could not record contribution.");
-      if (r.ok) {
-        requestKey.current=null;
-        form.reset();
-        router.refresh();
+      const result = await postJson("/api/strategies/" + id + "/contributions",
+        { amount: String(f.get("amount")), occurredAt, accountId:f.get("accountId")||undefined, requestKey:mutationKey },
+        { fallbackError: "Could not record contribution." });
+      if (!result.ok) {
+        // A request that never reached the server keeps its key so a retry is idempotent.
+        status.error(result.status===0?"Connection interrupted. Try again — the same request will be reused safely.":result.errorText);
+        return;
       }
+      if (result.data.recalculationPending) status.warning("Contribution recorded. Recalculation needs attention.");
+      else status.success("Contribution recorded as cash.");
+      requestKey.current=null;
+      form.reset();
+      router.refresh();
     }catch{
-      setMessage("Connection interrupted. Try again — the same request will be reused safely.");
+      status.error("Connection interrupted. Try again — the same request will be reused safely.");
     }finally{
       setBusy(false);
     }
   }}>
     <AccountSelect accounts={accounts}/><Field label="Contribution"><input name="amount" type="number" min="0.01" step="0.01" required /></Field>
     <Field label="Date & time"><input name="when" type="datetime-local" /></Field>
-    <div className="field full"><button className="button" disabled={busy}>{busy?"Recording…":"Record contribution"}</button>{message && <div className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Contribution recorded") ? "success" : "error"}>{message}</div>}</div>
+    <div className="field full"><button className="button" disabled={busy}>{busy?"Recording…":"Record contribution"}</button><MessageView message={status.message}/></div>
   </form>;
 }
 
 export function ReconcileForm({ id, expected, accounts=[] }: { id: string; expected?: number | null; accounts?:AccountOption[] }) {
   const router = useRouter();
-  const [message, setMessage] = useState("");
+  const status = useMessage();
   const [busy,setBusy]=useState(false);
   const requestKey=useRef<string|null>(null);
   return <form className="form-grid" onSubmit={async (e) => {
-    e.preventDefault();setBusy(true);setMessage("");
+    e.preventDefault();setBusy(true);status.clear();
     const mutationKey=requestKey.current??crypto.randomUUID();
     requestKey.current=mutationKey;
     const f = new FormData(e.currentTarget);
     try{
-      const r = await fetch("/api/strategies/" + id + "/reconcile", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          expectedValue: String(f.get("expected")),
-          brokerValue: String(f.get("broker")),
-          reason: f.get("reason") || undefined,
-          affectsCash: Boolean(f.get("affectsCash")),
-          accountId: f.get("accountId") || undefined,
-          requestKey: mutationKey
-        })
-      });
-      const b = await r.json().catch(()=>({}));
-      setMessage(r.ok
-        ? (b.recalculationPending
-          ? "Reconciliation saved. Recalculation needs attention."
-          : b.strategyResolved
-            ? "Reconciliation resolved."
-            : b.resolved
-              ? "This account is matched, but another linked account still needs attention."
-              : "Reconciliation recorded, but the strategy remains blocked until the discrepancy is resolved.")
-        : b.error??"Could not reconcile strategy.");
-      if (r.ok) {requestKey.current=null;router.refresh();}
+      const result = await postJson("/api/strategies/" + id + "/reconcile", {
+        expectedValue: String(f.get("expected")),
+        brokerValue: String(f.get("broker")),
+        reason: f.get("reason") || undefined,
+        affectsCash: Boolean(f.get("affectsCash")),
+        accountId: f.get("accountId") || undefined,
+        requestKey: mutationKey
+      }, { fallbackError: "Could not reconcile strategy." });
+      if (!result.ok) {
+        status.error(result.status===0?"Connection interrupted. Try again — the same reconciliation will be reused safely.":result.errorText);
+        return;
+      }
+      const b = result.data;
+      if (b.recalculationPending) status.warning("Reconciliation saved. Recalculation needs attention.");
+      else if (b.strategyResolved) status.success("Reconciliation resolved.");
+      else if (b.resolved) status.warning("This account is matched, but another linked account still needs attention.");
+      else status.warning("Reconciliation recorded, but the strategy remains blocked until the discrepancy is resolved.");
+      requestKey.current=null;
+      router.refresh();
     }catch{
-      setMessage("Connection interrupted. Try again — the same reconciliation will be reused safely.");
+      status.error("Connection interrupted. Try again — the same reconciliation will be reused safely.");
     }finally{
       setBusy(false);
     }
@@ -193,7 +198,7 @@ export function ReconcileForm({ id, expected, accounts=[] }: { id: string; expec
       <label><input name="affectsCash" type="checkbox" /> This difference definitely changes available cash</label>
       <div className="help">Use this for a fee, tax, financing or FX cash charge. Leave it off for an unexplained valuation difference; actions stay blocked instead of treating unknown drift as spendable cash.</div>
     </div>
-    <div className="field full"><button className="button" disabled={busy}>{busy?"Reconciling…":"Reconcile"}</button>{message && <div className={message.includes("Recalculation needs attention")?"attention-message":message.includes("resolved") ? "success" : "error"}>{message}</div>}</div>
+    <div className="field full"><button className="button" disabled={busy}>{busy?"Reconciling…":"Reconcile"}</button><MessageView message={status.message}/></div>
   </form>;
 }
 
@@ -207,7 +212,7 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
   const [accountId,setAccountId]=useState(pendingAccounts[0]?.id??accounts[0]?.id??"");
   const [cash, setCash] = useState("0");
   const [holdings, setHoldings] = useState([{ ticker: "", exchange: "LSE", quantity: "" }]);
-  const [message, setMessage] = useState("");
+  const status = useMessage();
   const [busy,setBusy]=useState(false);
 
   function update(index: number, field: "ticker" | "exchange" | "quantity", value: string) {
@@ -221,40 +226,36 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
   return <form className="stack opening-snapshot-form" onSubmit={async (e) => {
     e.preventDefault();
     if(busy||!effectiveAccountId)return;
-    setBusy(true);setMessage("");
+    setBusy(true);status.clear();
     try{
     const cleanHoldings = holdings.filter((h) => h.ticker.trim() && h.exchange.trim() && h.quantity.trim());
-    const response = await fetch("/api/strategies/" + id + "/opening-snapshot", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ accountId:effectiveAccountId||undefined, cash, holdings: cleanHoldings })
-    });
-    const body = await response.json();setBusy(false);
-    if(!response.ok){
-      setMessage(body.error ?? "Could not save snapshot.");
+    const result = await postJson("/api/strategies/" + id + "/opening-snapshot",
+      { accountId:effectiveAccountId||undefined, cash, holdings: cleanHoldings },
+      { fallbackError: "Could not save snapshot." });
+    if(!result.ok){
+      status.error(result.status===0?"Connection interrupted. Refresh to check whether the snapshot was saved before trying again.":result.errorText);
       return;
     }
+    const body = result.data;
     // A refresh is asynchronous. Retire the saved account immediately so a
     // second submission cannot reuse it while server props are still stale.
     setSavedAccountIds((ids)=>[...ids,effectiveAccountId]);
     setAccountId(pendingAccounts.find((account)=>account.id!==effectiveAccountId)?.id??"");
     setCash("0");
     setHoldings([{ticker:"",exchange:"LSE",quantity:""}]);
-    setMessage(body.recalculationPending
-      ? "Opening snapshot saved. Recalculation needs attention."
-      : body.complete
-        ? "Opening snapshot complete. Your strategy can now calculate from today."
-        : "Saved for "+(selected?.name??"this account")+". Next: "+(body.pendingAccountNames?.[0]??"the remaining account")+".");
+    if(body.recalculationPending)status.warning("Opening snapshot saved. Recalculation needs attention.");
+    else if(body.complete)status.success("Opening snapshot complete. Your strategy can now calculate from today.");
+    else status.success("Saved for "+(selected?.name??"this account")+". Next: "+(body.pendingAccountNames?.[0]??"the remaining account")+".");
     router.refresh();
     }catch{
-      setMessage("Connection interrupted. Refresh to check whether the snapshot was saved before trying again.");
+      status.error("Connection interrupted. Refresh to check whether the snapshot was saved before trying again.");
     }finally{
       setBusy(false);
     }
   }}>
     {accountChoices.length>1&&<div className="field">
       <label htmlFor={accountSelectId}>Account to capture</label>
-      <select id={accountSelectId} value={effectiveAccountId} onChange={(event)=>{setAccountId(event.target.value);setMessage("")}}>
+      <select id={accountSelectId} value={effectiveAccountId} onChange={(event)=>{setAccountId(event.target.value);status.clear()}}>
         {accountChoices.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.wrapper}</option>)}
       </select>
     </div>}
@@ -279,30 +280,32 @@ export function OpeningSnapshotForm({ id, accounts=[] }: { id: string; accounts?
     </div>
     <div className="help">This records what you hold now. It does not invent historical trades, cost basis or contributions.</div>
     {accounts.length>1&&pendingAccounts.length>1&&<div className="help">{pendingAccounts.length} linked accounts still need a starting position.</div>}
-    {message && <div className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Opening snapshot complete")||message.startsWith("Saved for") ? "success" : "error"}>{message}</div>}
+    <MessageView message={status.message}/>
   </form>;
 }
 
 export function StrategyLifecycleControls({ id, status }: { id: string; status: string }) {
   const router = useRouter();
-  const [message, setMessage] = useState("");
+  const status = useMessage();
   const [busy, setBusy] = useState(false);
   const [confirmClose,setConfirmClose]=useState(false);
 
   async function change(next: "ACTIVE" | "PAUSED" | "CLOSED") {
     setBusy(true);
-    setMessage("");
-    const response = await fetch("/api/strategies/" + id + "/status", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: next })
-    });
-    const body = await response.json();
-    setBusy(false);
-    setMessage(response.ok ? (body.recalculationPending?"Strategy status updated. Recalculation needs attention.":"Strategy status updated.") : body.error ?? "Could not update status.");
-    if (response.ok) {
+    status.clear();
+    try {
+      const result = await requestJson("/api/strategies/" + id + "/status", {
+        method: "PATCH",
+        body: { status: next },
+        fallbackError: "Could not update status."
+      });
+      if (!result.ok) { status.error(result.errorText); return; }
+      if (result.data.recalculationPending) status.warning("Strategy status updated. Recalculation needs attention.");
+      else status.success("Strategy status updated.");
       setConfirmClose(false);
       router.refresh();
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -319,7 +322,7 @@ export function StrategyLifecycleControls({ id, status }: { id: string; status: 
         <button className="button quiet" disabled={busy} onClick={()=>setConfirmClose(false)}>Keep strategy</button>
       </div>
     </div>}
-    {message && <span className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Strategy status updated") ? "success" : "error"}>{message}</span>}
+    <MessageView message={status.message} as="span"/>
   </div>;
 }
 
@@ -344,7 +347,7 @@ export function StrategyVersionUpgrade({
   inputSchema:VersionInputField[];currentSettings:Record<string,unknown>;currentConfig:Record<string,unknown>;targetConfig:Record<string,unknown>;
 }){
   const router=useRouter();
-  const[message,setMessage]=useState("");
+  const status=useMessage();
   const[busy,setBusy]=useState(false);
   const[previewBusy,setPreviewBusy]=useState(false);
   const[previewError,setPreviewError]=useState("");
@@ -365,13 +368,13 @@ export function StrategyVersionUpgrade({
 
   async function previewVersion(form:HTMLFormElement){
     setPreviewBusy(true);setPreviewError("");setPreview(null);
-    const response=await fetch("/api/strategies/"+id+"/version",{
-      method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({targetVersionId,settings:collectSettings(form)})
-    });
-    const body=await response.json();setPreviewBusy(false);
-    if(!response.ok)return setPreviewError(body.error??"Could not preview this version.");
-    setPreview(body.result.action);
+    try{
+      const result=await postJson("/api/strategies/"+id+"/version",{targetVersionId,settings:collectSettings(form)},{fallbackError:"Could not preview this version."});
+      if(!result.ok||!result.data.result?.action)return setPreviewError(result.ok?"Could not preview this version.":result.errorText);
+      setPreview(result.data.result.action);
+    }finally{
+      setPreviewBusy(false);
+    }
   }
 
   const changedKeys=[...new Set([...Object.keys(currentConfig),...Object.keys(targetConfig)])]
@@ -401,11 +404,17 @@ export function StrategyVersionUpgrade({
     </details>
 
     <form className="version-upgrade-form" onSubmit={async(e)=>{
-      e.preventDefault();setBusy(true);setMessage("");
-      const settings=collectSettings(e.currentTarget);
-      const response=await fetch("/api/strategies/"+id+"/version",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({targetVersionId,settings})});
-      const body=await response.json();setBusy(false);setMessage(response.ok?(body.recalculationPending?"Strategy updated to v"+targetVersion+". Recalculation needs attention.":"Strategy updated to v"+targetVersion+"."):body.error??"Could not update strategy.");
-      if(response.ok)router.refresh();
+      e.preventDefault();setBusy(true);status.clear();
+      try{
+        const settings=collectSettings(e.currentTarget);
+        const result=await requestJson("/api/strategies/"+id+"/version",{method:"PATCH",body:{targetVersionId,settings},fallbackError:"Could not update strategy."});
+        if(!result.ok){status.error(result.errorText);return;}
+        if(result.data.recalculationPending)status.warning("Strategy updated to v"+targetVersion+". Recalculation needs attention.");
+        else status.success("Strategy updated to v"+targetVersion+".");
+        router.refresh();
+      }finally{
+        setBusy(false);
+      }
     }}>
       {inputSchema.length>0&&<details className="advanced-details">
         <summary>Review strategy-specific settings</summary>
@@ -422,31 +431,35 @@ export function StrategyVersionUpgrade({
         <div><span>Today on v{targetVersion}</span><strong>{preview.title}</strong><p>{preview.instruction}</p></div>
         <span className={"pill "+(preview.confidence==="HIGH"?"good":"warn")}>{preview.confidence} confidence</span>
       </div>}
-      {previewError&&<div className="error" role="alert">{previewError}</div>}
+      {previewError&&<InlineMessage tone="error">{previewError}</InlineMessage>}
       <div className="version-upgrade-actions">
         <button type="button" className="button" disabled={busy||previewBusy} onClick={(event)=>event.currentTarget.form&&previewVersion(event.currentTarget.form)}>{previewBusy?"Previewing…":"Preview today’s action"}</button>
         <button className="button primary" disabled={busy||previewBusy}>{busy?"Updating…":"Update to v"+targetVersion}</button>
-        {message&&<div className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Strategy updated")?"success":"error"}>{message}</div>}
+        <MessageView message={status.message}/>
       </div>
     </form>
   </section>;
 }
 
 export function CashEventForm({id,accounts=[]}:{id:string;accounts?:AccountOption[]}){
-  const router=useRouter();const[message,setMessage]=useState("");const[busy,setBusy]=useState(false);
+  const router=useRouter();const status=useMessage();const[busy,setBusy]=useState(false);
   const requestKey=useRef<string|null>(null);
   return <form className="form-grid" onSubmit={async(e)=>{
-    e.preventDefault();setBusy(true);setMessage("");const form=e.currentTarget;const f=new FormData(form);const when=String(f.get("when")||"");
+    e.preventDefault();setBusy(true);status.clear();const form=e.currentTarget;const f=new FormData(form);const when=String(f.get("when")||"");
     const mutationKey=requestKey.current??crypto.randomUUID();requestKey.current=mutationKey;
     try{
-      const response=await fetch("/api/strategies/"+id+"/ledger-events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+      const result=await postJson("/api/strategies/"+id+"/ledger-events",{
         eventType:f.get("eventType"),amount:String(f.get("amount")),occurredAt:when?new Date(when).toISOString():undefined,note:f.get("note")||undefined,accountId:f.get("accountId")||undefined,requestKey:mutationKey
-      })});
-      const body=await response.json().catch(()=>({}));
-      setMessage(response.ok?(body.recalculationPending?"Cash event recorded. Recalculation needs attention.":"Cash event recorded."):body.error??"Could not record cash event.");
-      if(response.ok){requestKey.current=null;form.reset();router.refresh();}
+      },{fallbackError:"Could not record cash event."});
+      if(!result.ok){
+        status.error(result.status===0?"Connection interrupted. Try again — the same cash event will be reused safely.":result.errorText);
+        return;
+      }
+      if(result.data.recalculationPending)status.warning("Cash event recorded. Recalculation needs attention.");
+      else status.success("Cash event recorded.");
+      requestKey.current=null;form.reset();router.refresh();
     }catch{
-      setMessage("Connection interrupted. Try again — the same cash event will be reused safely.");
+      status.error("Connection interrupted. Try again — the same cash event will be reused safely.");
     }finally{
       setBusy(false);
     }
@@ -455,7 +468,7 @@ export function CashEventForm({id,accounts=[]}:{id:string;accounts?:AccountOptio
     <Field label="Amount"><input name="amount" type="number" min="0.01" step="0.01" required/></Field>
     <Field label="Date & time"><input name="when" type="datetime-local"/></Field>
     <Field label="Note (optional)"><input name="note" maxLength={240}/></Field>
-    <div className="field full"><button className="button" disabled={busy}>{busy?"Recording…":"Record cash event"}</button><div className="help">Withdrawals, fees and tax reduce cash; dividends, distributions and interest increase cash. The original ledger history remains append-only.</div>{message&&<div className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Cash event recorded")?"success":"error"}>{message}</div>}</div>
+    <div className="field full"><button className="button" disabled={busy}>{busy?"Recording…":"Record cash event"}</button><div className="help">Withdrawals, fees and tax reduce cash; dividends, distributions and interest increase cash. The original ledger history remains append-only.</div><MessageView message={status.message}/></div>
   </form>;
 }
 
@@ -465,46 +478,50 @@ export function ReverseLedgerEventButton({strategyId,eventId}:{strategyId:string
   const[open,setOpen]=useState(false);
   const[busy,setBusy]=useState(false);
   const[error,setError]=useState("");
+  const errorId=useId();
   if(!open)return <button type="button" className="button compact quiet correction-trigger" onClick={()=>{setOpen(true);setError("")}}>Correct</button>;
   return <form className="correction-inline" onSubmit={async(e)=>{
     e.preventDefault();const f=new FormData(e.currentTarget);const reason=String(f.get("reason")||"").trim();
     if(!reason)return setError("Add a short reason.");
     setBusy(true);setError("");
-    const response=await fetch("/api/strategies/"+strategyId+"/ledger-events/"+eventId+"/correct",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
-    const body=await response.json();setBusy(false);
-    if(!response.ok)return setError(body.error??"Could not correct entry.");
-    setOpen(false);router.refresh();
+    try{
+      const result=await postJson("/api/strategies/"+strategyId+"/ledger-events/"+eventId+"/correct",{reason},{fallbackError:"Could not correct entry."});
+      if(!result.ok)return setError(result.errorText);
+      setOpen(false);router.refresh();
+    }finally{
+      setBusy(false);
+    }
   }}>
-    <input name="reason" maxLength={240} placeholder="What was wrong?" autoFocus/>
+    <input name="reason" maxLength={240} placeholder="What was wrong?" aria-label="Reason for the correction" aria-invalid={error?true:undefined} aria-describedby={error?errorId:undefined} autoFocus/>
     <button className="button compact" disabled={busy}>{busy?"Saving…":"Reverse"}</button>
     <button type="button" className="button compact quiet" disabled={busy} onClick={()=>setOpen(false)}>Cancel</button>
-    {error&&<span className="error">{error}</span>}
+    {error&&<InlineMessage tone="error" as="span" id={errorId}>{error}</InlineMessage>}
   </form>;
 }
 
 export function ExecutionConstraintsForm({id,constraints}:{id:string;constraints?:Record<string,unknown>|null}){
   const router=useRouter();
   const [busy,setBusy]=useState(false);
-  const [message,setMessage]=useState("");
+  const status=useMessage();
   const value=constraints??{};
   return <form className="stack execution-preferences" onSubmit={async(e)=>{
-    e.preventDefault();setBusy(true);setMessage("");
+    e.preventDefault();setBusy(true);status.clear();
     const f=new FormData(e.currentTarget);
-    const response=await fetch("/api/strategies/"+id+"/execution-constraints",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({
+    try{
+      const result=await postJson("/api/strategies/"+id+"/execution-constraints",{
         fractionalShares:Boolean(f.get("fractionalShares")),
         minimumTradeAmount:String(f.get("minimumTradeAmount")||"0"),
         cashBufferAmount:String(f.get("cashBufferAmount")||"0"),
         flatFee:String(f.get("flatFee")||"0"),
         allowSelling:Boolean(f.get("allowSelling"))
-      })
-    });
-    const body=await response.json();setBusy(false);
-    if(!response.ok)return setMessage(body.error??"Could not save trade preferences.");
-    setMessage(body.recalculationPending?"Saved. Recalculation needs attention.":"Saved. Your next action has been recalculated.");
-    router.refresh();
+      },{fallbackError:"Could not save trade preferences."});
+      if(!result.ok){status.error(result.errorText);return;}
+      if(result.data.recalculationPending)status.warning("Saved. Recalculation needs attention.");
+      else status.success("Saved. Your next action has been recalculated.");
+      router.refresh();
+    }finally{
+      setBusy(false);
+    }
   }}>
     <label className="toggle-row"><input type="checkbox" name="fractionalShares" defaultChecked={value.fractionalShares!==false}/><span><b>Fractional shares</b><small>Turn off if your broker only allows whole shares.</small></span></label>
     <div className="form-grid">
@@ -513,7 +530,7 @@ export function ExecutionConstraintsForm({id,constraints}:{id:string;constraints
       <Field className="field full" label="Estimated fee per trade"><input name="flatFee" type="number" min="0" step="0.01" defaultValue={String(value.flatFee??"0")}/></Field>
     </div>
     <label className="toggle-row"><input type="checkbox" name="allowSelling" defaultChecked={value.allowSelling!==false}/><span><b>Allow sell recommendations</b><small>Turn off if you want new contributions to do the work wherever the strategy permits.</small></span></label>
-    <div className="inline"><button className="button" disabled={busy}>{busy?"Saving…":"Save trade preferences"}</button>{message&&<span className={message.includes("Recalculation needs attention")?"attention-message":message.startsWith("Saved")?"success":"error"}>{message}</span>}</div>
+    <div className="inline"><button className="button" disabled={busy}>{busy?"Saving…":"Save trade preferences"}</button><MessageView message={status.message} as="span"/></div>
   </form>;
 }
 
@@ -523,24 +540,23 @@ export function ContributionPlanForm({id,plan}:{id:string;plan?:Record<string,un
   const value=plan??{};
   const [enabled,setEnabled]=useState(value.enabled===true);
   const [busy,setBusy]=useState(false);
-  const [message,setMessage]=useState("");
+  const status=useMessage();
   return <form className="stack contribution-plan-form" onSubmit={async(e)=>{
-    e.preventDefault();setBusy(true);setMessage("");
+    e.preventDefault();setBusy(true);status.clear();
     const f=new FormData(e.currentTarget);
-    const response=await fetch("/api/strategies/"+id+"/contribution-plan",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({
+    try{
+      const result=await postJson("/api/strategies/"+id+"/contribution-plan",{
         enabled,
         amount:enabled?String(f.get("amount")||"0"):"0",
         frequency:String(f.get("frequency")||"MONTHLY"),
         nextDate:enabled&&f.get("nextDate")?String(f.get("nextDate")):null
-      })
-    });
-    const body=await response.json();setBusy(false);
-    if(!response.ok)return setMessage(body.error??"Could not save contribution plan.");
-    setMessage(enabled?"Saved. We will use this only as a reminder.":"Regular contribution reminders are off.");
-    router.refresh();
+      },{fallbackError:"Could not save contribution plan."});
+      if(!result.ok){status.error(result.errorText);return;}
+      status.success(enabled?"Saved. We will use this only as a reminder.":"Regular contribution reminders are off.");
+      router.refresh();
+    }finally{
+      setBusy(false);
+    }
   }}>
     <label className="toggle-row"><input type="checkbox" checked={enabled} onChange={(e)=>setEnabled(e.target.checked)}/><span><b>Regular contribution reminder</b><small>Your portfolio cash changes only when you record an actual contribution.</small></span></label>
     {enabled&&<div className="form-grid">
@@ -548,7 +564,7 @@ export function ContributionPlanForm({id,plan}:{id:string;plan?:Record<string,un
       <Field label="Frequency"><select name="frequency" defaultValue={String(value.frequency??"MONTHLY")}><option value="WEEKLY">Weekly</option><option value="MONTHLY">Monthly</option><option value="QUARTERLY">Quarterly</option></select></Field>
       <Field className="field full" label="Next date"><input name="nextDate" type="date" defaultValue={value.nextDate?String(value.nextDate):undefined}/></Field>
     </div>}
-    <div className="inline"><button className="button" disabled={busy}>{busy?"Saving…":"Save contribution plan"}</button>{message&&<span className="success">{message}</span>}</div>
+    <div className="inline"><button className="button" disabled={busy}>{busy?"Saving…":"Save contribution plan"}</button><MessageView message={status.message} as="span"/></div>
   </form>;
 }
 
@@ -588,28 +604,29 @@ export function StrategySwitchControl({id,options=[]}:{id:string;options?:Strate
 
   async function previewSwitch(form:HTMLFormElement){
     setBusy(true);setError("");setPreview(null);setConfirm(false);
-    const nextSettings=collect(form);
-    const response=await fetch("/api/strategies/"+id+"/preview",{
-      method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({type:"STRATEGY_SWITCH",targetStrategyKey:key,settings:nextSettings})
-    });
-    const body=await response.json();setBusy(false);
-    if(!response.ok)return setError(body.error??"Could not preview this strategy.");
-    setSettings(nextSettings);
-    setPreview({targetStrategy:body.result.scenario.targetStrategy,action:body.result.action});
+    try{
+      const nextSettings=collect(form);
+      const result=await postJson("/api/strategies/"+id+"/preview",{type:"STRATEGY_SWITCH",targetStrategyKey:key,settings:nextSettings},{fallbackError:"Could not preview this strategy."});
+      const scenario=result.data.result?.scenario;
+      if(!result.ok||!scenario?.targetStrategy||!result.data.result?.action)return setError(result.ok?"Could not preview this strategy.":result.errorText);
+      setSettings(nextSettings);
+      setPreview({targetStrategy:scenario.targetStrategy,action:result.data.result.action});
+    }finally{
+      setBusy(false);
+    }
   }
 
   async function applySwitch(){
     if(!preview)return;
     setApplying(true);setError("");
-    const response=await fetch("/api/strategies/"+id+"/switch",{
-      method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({targetStrategyKey:preview.targetStrategy.key,settings})
-    });
-    const body=await response.json();setApplying(false);
-    if(!response.ok)return setError(body.error??"Could not switch strategies.");
-    router.push("/app/strategies/"+body.newStrategyInstanceId);
-    router.refresh();
+    try{
+      const result=await postJson("/api/strategies/"+id+"/switch",{targetStrategyKey:preview.targetStrategy.key,settings},{fallbackError:"Could not switch strategies."});
+      if(!result.ok)return setError(result.errorText);
+      router.push("/app/strategies/"+result.data.newStrategyInstanceId);
+      router.refresh();
+    }finally{
+      setApplying(false);
+    }
   }
 
   return <form className="strategy-switch-control" onSubmit={(event)=>{event.preventDefault();previewSwitch(event.currentTarget)}}>
@@ -628,9 +645,11 @@ export function StrategySwitchControl({id,options=[]}:{id:string;options?:Strate
         <div className="inline"><button type="button" className="button primary" disabled={applying} onClick={applySwitch}>{applying?"Switching…":"Confirm switch"}</button><button type="button" className="button quiet" disabled={applying} onClick={()=>setConfirm(false)}>Cancel</button></div>
       </div>}
     </div>}
-    {error&&<div className="error" role="alert">{error}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
   </form>;
 }
+
+type ScenarioType="CONTRIBUTION"|"WITHDRAWAL"|"EXECUTION_CONSTRAINTS"|"STRATEGY_SWITCH";
 
 type WhatIfResult={
   scenario:{
@@ -657,13 +676,31 @@ export function WhatIfPreview({
   currency:string;
   switchOptions?:StrategySwitchOption[];
 }){
-  const [type,setType]=useState<"CONTRIBUTION"|"WITHDRAWAL"|"EXECUTION_CONSTRAINTS"|"STRATEGY_SWITCH">("CONTRIBUTION");
+  const [type,setType]=useState<ScenarioType>("CONTRIBUTION");
   const [switchKey,setSwitchKey]=useState(switchOptions[0]?.key??"");
   const [result,setResult]=useState<WhatIfResult|null>(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const selectedSwitch=switchOptions.find((option)=>option.key===switchKey)??switchOptions[0];
-
+  const scenarioOptions:Array<{type:ScenarioType;label:string}>=[
+    {type:"CONTRIBUTION",label:"Add money"},
+    {type:"WITHDRAWAL",label:"Withdraw"},
+    {type:"EXECUTION_CONSTRAINTS",label:"Trade settings"},
+    ...(switchOptions.length>0?[{type:"STRATEGY_SWITCH" as const,label:"Switch strategy"}]:[])
+  ];
+  function chooseScenario(next:ScenarioType){setType(next);setResult(null);}
+  // Radio-group keyboard model: arrows move the selection and the focus together.
+  function moveScenario(event:KeyboardEvent<HTMLDivElement>){
+    const forward=event.key==="ArrowRight"||event.key==="ArrowDown";
+    const backward=event.key==="ArrowLeft"||event.key==="ArrowUp";
+    if(!forward&&!backward)return;
+    event.preventDefault();
+    const index=scenarioOptions.findIndex((option)=>option.type===type);
+    const next=scenarioOptions[(index+(forward?1:scenarioOptions.length-1))%scenarioOptions.length];
+    chooseScenario(next.type);
+    const buttons=event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    buttons[scenarioOptions.indexOf(next)]?.focus();
+  }
 
 
   return <div className="what-if">
@@ -696,18 +733,24 @@ export function WhatIfPreview({
         payload={type,amount:String(f.get("amount")||"")};
       }
 
-      const response=await fetch("/api/strategies/"+id+"/preview",{
-        method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)
-      });
-      const body=await response.json();setBusy(false);
-      if(!response.ok)return setError(body.error??"Could not preview that scenario.");
-      setResult(body.result);
+      try{
+        const response=await postJson("/api/strategies/"+id+"/preview",payload,{fallbackError:"Could not preview that scenario."});
+        if(!response.ok||!response.data.result)return setError(response.ok?"Could not preview that scenario.":response.errorText);
+        setResult(response.data.result);
+      }finally{
+        setBusy(false);
+      }
     }}>
-      <div className={"scenario-switch "+(switchOptions.length?"four":"three")} role="group" aria-label="Scenario type">
-        <button type="button" className={type==="CONTRIBUTION"?"active":""} onClick={()=>{setType("CONTRIBUTION");setResult(null)}}>Add money</button>
-        <button type="button" className={type==="WITHDRAWAL"?"active":""} onClick={()=>{setType("WITHDRAWAL");setResult(null)}}>Withdraw</button>
-        <button type="button" className={type==="EXECUTION_CONSTRAINTS"?"active":""} onClick={()=>{setType("EXECUTION_CONSTRAINTS");setResult(null)}}>Trade settings</button>
-        {switchOptions.length>0&&<button type="button" className={type==="STRATEGY_SWITCH"?"active":""} onClick={()=>{setType("STRATEGY_SWITCH");setResult(null)}}>Switch strategy</button>}
+      <div className={"scenario-switch "+(switchOptions.length?"four":"three")} role="radiogroup" aria-label="Scenario type" onKeyDown={moveScenario}>
+        {scenarioOptions.map((option)=><button
+          type="button"
+          role="radio"
+          aria-checked={type===option.type}
+          tabIndex={type===option.type?0:-1}
+          key={option.type}
+          className={type===option.type?"active":""}
+          onClick={()=>chooseScenario(option.type)}
+        >{option.label}</button>)}
       </div>
 
       {type==="EXECUTION_CONSTRAINTS"?<div className="preview-settings">
@@ -741,7 +784,7 @@ export function WhatIfPreview({
       </div>}
 
       <p className="help">Preview only. This does not change holdings, cash, settings, strategy version, history, actions or notifications.</p>
-      {error&&<div className="error" role="alert">{error}</div>}
+      {error&&<InlineMessage tone="error">{error}</InlineMessage>}
     </form>
 
     {result&&<div className="what-if-result">

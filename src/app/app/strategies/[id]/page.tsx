@@ -8,6 +8,7 @@ import {isStoredActionCurrent,STALE_ACTION_DISPLAY} from "@/lib/action-service";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { simulateSameCashFlows } from "@/domain/comparison";
 import { PerformanceChart } from "@/components/PerformanceChart";
+import { money as formatMoney, pct } from "@/lib/format";
 import { benchmarkComparison, loadWorkspaceAnalytics } from "@/lib/workspace-analytics";
 import { growthIndex, summarizeObservedPerformance } from "@/domain/portfolio-analytics";
 import { initialAllocationPlan } from "@/domain/initial-allocation";
@@ -228,7 +229,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
   for(const point of trackedIndex)mainChart.set(point.date,{date:point.date,actual:Number(point.value)});
   for(const [date,values] of benchmark.mapped){const row=mainChart.get(date);if(row)row.benchmarkValues=values;}
   const performanceOverview=[...mainChart.values()].sort((a,b)=>a.date.localeCompare(b.date));
-  const signedPct=(v:number|null|undefined)=>v==null?"—":new Intl.NumberFormat("en-GB",{style:"percent",maximumFractionDigits:2}).format(v/100);
+  const signedPct=(v:number|null|undefined)=>v==null?"—":pct(v,{dp:2,signed:true});
   const contributions=await sql.unsafe("SELECT l.id,l.occurred_at,l.cash_amount,l.provenance,l.confidence FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) ORDER BY l.occurred_at DESC LIMIT 8",[id]);
   const reconciliations=await sql.unsafe("SELECT occurred_at,expected_value,broker_reported_value,difference,reason FROM reconciliations WHERE strategy_instance_id=$1 ORDER BY occurred_at DESC LIMIT 5",[id]);
   const cashEvents=await sql.unsafe("SELECT l.id,l.occurred_at,l.event_type,l.cash_amount,l.fee_amount,l.metadata FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type IN ('WITHDRAWAL','DIVIDEND','DISTRIBUTION','INTEREST','FEE','TAX') AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) ORDER BY l.occurred_at DESC,l.created_at DESC LIMIT 12",[id]);
@@ -301,7 +302,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         <p>{actionReady?action.instruction:isActive?"We will show your next action here as soon as the strategy needs you.":"Resume this strategy when you want new actions to be calculated."}</p>
         {actionReady&&accountOptions.length>1&&action.account_name&&<div className="action-account-hint"><WalletCards size={14}/><span>Use <strong>{String(action.account_name)}</strong>{action.account_wrapper?" · "+String(action.account_wrapper):""}</span></div>}
         {actionReady&&plainReason&&<div className="plain-reason"><Sparkles size={14}/><span>{plainReason}</span></div>}
-        {action&&isActive&&action.action_type!=="DATA_REQUIRED"&&action.action_type!=="NO_ACTION"&&<div className="focus-action"><ExecuteAction action={{id:String(action.id),actionType:String(action.action_type)}}/></div>}
+        {action&&isActive&&action.action_type!=="DATA_REQUIRED"&&action.action_type!=="NO_ACTION"&&<div className="focus-action"><ExecuteAction action={{id:String(action.id),actionType:String(action.action_type)}} currency={String(action.currency??s.currency)}/></div>}
       </div>
 
       <div className="strategy-focus-side">
@@ -340,10 +341,10 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
       <div className="section-head"><div><div className="eyebrow">Your investment performance</div><h2>Progress and benchmarks</h2>
         <p>Measured since the first recorded portfolio value. Contributions and withdrawals are not counted as profit.</p></div></div>
       <div className="analytics-stats">
-        <div className="kpi"><span>Profit / loss since tracking began</span><strong>{trackSummary?money(Number(trackSummary.profitSinceStart),String(s.currency)):"—"}</strong></div>
+        <div className="kpi"><span>Profit / loss since tracking began</span><strong>{trackSummary?formatMoney(Number(trackSummary.profitSinceStart),String(s.currency),{signed:true}):"—"}</strong></div>
         <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong>{signedPct(trackSummary?.flowAdjustedReturnPct)}</strong></div>
         <div className="kpi"><span>Observed maximum drawdown</span><strong>{signedPct(trackSummary?.observedMaxDrawdownPct)}</strong></div>
-        <div className="kpi"><span>Last observed session P/L</span><strong>{trackSummary?.lastObservedSessionPnl!=null?money(Number(trackSummary.lastObservedSessionPnl),String(s.currency)):"—"}</strong></div>
+        <div className="kpi"><span>Last observed session P/L</span><strong>{trackSummary?.lastObservedSessionPnl!=null?formatMoney(Number(trackSummary.lastObservedSessionPnl),String(s.currency),{signed:true}):"—"}</strong></div>
       </div>
       {performanceOverview.length>=2?<div className="chart-card">
         <PerformanceChart data={performanceOverview} comparisons={benchmark.comparisons} indexed fullControls actualLabel={String(s.strategy_name)}/>
@@ -386,7 +387,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         <div className="quick-drawer-content">
           <section className="chart-card explore-chart">
             <div className="section-head"><div><h2>Performance</h2><p>Your account versus the same cash flows applied to the strategy model and benchmark.</p></div></div>
-            <PerformanceChart data={chartData} markers={chartMarkers} comparisons={comparisonSeries.map(({key,label,defaultVisible})=>({key,label,defaultVisible}))} fullControls/>
+            <PerformanceChart data={chartData} markers={chartMarkers} comparisons={comparisonSeries.map(({key,label,defaultVisible})=>({key,label,defaultVisible}))} fullControls currency={String(s.currency)}/>
             <p className="help">Contributions and withdrawals are applied across comparison series so adding money is not mistaken for investment performance.</p>
             {comparisonWarnings.map((warning)=><p className="help comparison-warning" key={warning}>{warning}</p>)}
             <div className="tracking-boundary"><span>Tracked by {process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"} since {new Date(s.started_at).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.</span>{s.onboarding_mode==="RESUME"&&<span>Performance before that date is not reconstructed from incomplete history.</span>}</div>
@@ -396,7 +397,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
             <section className="drawer-section"><h3>Recent contributions</h3>{contributions.length?contributions.map((c:any)=><div className="why-row" key={String(c.id)}><span>{new Date(c.occurred_at).toLocaleDateString("en-GB")}</span><span className="inline"><b>{new Intl.NumberFormat("en-GB",{style:"currency",currency:s.currency}).format(Number(c.cash_amount))}</b><ReverseLedgerEventButton strategyId={id} eventId={String(c.id)}/></span></div>):<p className="help">No contributions recorded yet.</p>}</section>
             <section className="drawer-section"><h3>Other cash events</h3>{cashEvents.length?cashEvents.map((event:any)=><div className="why-row" key={String(event.id)}><span>{new Date(event.occurred_at).toLocaleDateString("en-GB")} · {String(event.event_type).replaceAll("_"," ")}</span><span className="inline"><b>{new Intl.NumberFormat("en-GB",{style:"currency",currency:s.currency}).format(Math.abs(Number(event.cash_amount||event.fee_amount||0)))}</b><ReverseLedgerEventButton strategyId={id} eventId={String(event.id)}/></span></div>):<p className="help">No other cash events yet.</p>}</section>
           </div>
-          <section className="drawer-section"><h3>Reconciliation history</h3>{reconciliations.length?reconciliations.map((r:any,i:number)=><div className="why-row" key={i}><span>{new Date(r.occurred_at).toLocaleDateString("en-GB")} · {r.reason??"Adjustment"}</span><b>{Number(r.difference).toFixed(2)}</b></div>):<p className="help">No reconciliations yet.</p>}</section>
+          <section className="drawer-section"><h3>Reconciliation history</h3>{reconciliations.length?reconciliations.map((r:any,i:number)=><div className="why-row" key={i}><span>{new Date(r.occurred_at).toLocaleDateString("en-GB")} · {r.reason??"Adjustment"}</span><b>{formatMoney(Number(r.difference),String(s.currency),{signed:true})}</b></div>):<p className="help">No reconciliations yet.</p>}</section>
         </div>
       </details>
 

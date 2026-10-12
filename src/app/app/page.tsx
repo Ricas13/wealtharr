@@ -8,6 +8,7 @@ import { plainEnglishActionReason } from "@/domain/action-copy";
 import { loadWorkspaceAnalytics, benchmarkComparison } from "@/lib/workspace-analytics";
 import { growthIndex } from "@/domain/portfolio-analytics";
 import { PerformanceChart } from "@/components/PerformanceChart";
+import { money as formatMoney, pct } from "@/lib/format";
 
 function strategyCardState(strategy:any){
   const status=String(strategy.status);
@@ -19,7 +20,7 @@ function strategyCardState(strategy:any){
 }
 
 function money(value:number,currency:string){
-  return new Intl.NumberFormat("en-GB",{style:"currency",currency,maximumFractionDigits:0}).format(value);
+  return formatMoney(value,currency,{dp:0});
 }
 
 export default async function OverviewPage(){
@@ -57,6 +58,7 @@ export default async function OverviewPage(){
     ?contributions.map((row:any)=>money(Number(row.total),String(row.currency))).join(" · ")
     :"No contributions recorded";
   const primaryAction:any=actions[0];
+  const dueHeading=actions.length===0?"Everything is on track.":actions.length>=12?"12+ actions due":actions.length===1?"1 action due":actions.length+" actions due";
   const primaryReason=primaryAction?plainEnglishActionReason({actionType:primaryAction.action_type,instruction:primaryAction.instruction}):null;
   const plannedContributions=activeStrategies
     .map((s:any)=>({strategy:s,plan:s.contribution_plan as Record<string,unknown>|null}))
@@ -89,8 +91,8 @@ export default async function OverviewPage(){
   }
   const overallChart=[...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date));
   const overallComparisons=[...(benchmark?.comparisons??[]),...extraComparisons];
-  const profitText=combinedSummary&&combined?money(Number(combinedSummary.profitSinceStart),combined.currency):"—";
-  const formatPct=(value:number|null|undefined)=>value==null?"—":new Intl.NumberFormat("en-GB",{style:"percent",maximumFractionDigits:2}).format(value/100);
+  const profitText=combinedSummary&&combined?formatMoney(Number(combinedSummary.profitSinceStart),combined.currency,{signed:true}):"—";
+  const formatPct=(value:number|null|undefined)=>value==null?"—":pct(value,{dp:2,signed:true});
 
   if(!strategies.length){
     return <section className="glass welcome-state">
@@ -107,8 +109,8 @@ export default async function OverviewPage(){
     <div className="dashboard-heading">
       <div>
         <div className="eyebrow">Home</div>
-        <h1>{primaryAction?"One thing needs your attention.":"Everything is on track."}</h1>
-        <p>{primaryAction?"Your most important next step is ready below.":"There is nothing you need to do right now."}</p>
+        <h1>{dueHeading}</h1>
+        <p>{primaryAction?(actions.length>1?"Your most important next step is ready below; the rest are listed underneath.":"Your next step is ready below."):"There is nothing you need to do right now."}</p>
       </div>
       <Link className="button" href="/app/strategies">View portfolio</Link>
     </div>
@@ -125,7 +127,7 @@ export default async function OverviewPage(){
         {portfolioValueContext&&portfolioFullyValued&&<div className="portfolio-context secondary-context"><span>{contributionContext} contributed</span></div>}
         {combinedSummary&&combined&&portfolioFullyValued&&<div className={"portfolio-growth"+(Number(combinedSummary.profitSinceStart)<0?" loss":"")}>
           {Number(combinedSummary.profitSinceStart)>0?"Portfolio up ":Number(combinedSummary.profitSinceStart)<0?"Portfolio down ":"Portfolio unchanged at "}
-          {Number(combinedSummary.profitSinceStart)!==0?money(Math.abs(Number(combinedSummary.profitSinceStart)),combined.currency):money(0,combined.currency)} since tracking began
+          {formatMoney(Math.abs(Number(combinedSummary.profitSinceStart)),combined.currency)} since tracking began
         </div>}
       </div>
 
@@ -157,7 +159,7 @@ export default async function OverviewPage(){
         <div className="kpi"><span>Profit since first tracked value</span><strong className={combinedSummary?(Number(combinedSummary.profitSinceStart)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{profitText}</strong></div>
         <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong className={combinedSummary?.flowAdjustedReturnPct!=null?(Number(combinedSummary.flowAdjustedReturnPct)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{formatPct(combinedSummary?.flowAdjustedReturnPct)}</strong></div>
         <div className="kpi"><span>Observed maximum drawdown</span><strong className={combinedSummary?.observedMaxDrawdownPct!=null?"portfolio-negative":undefined}>{formatPct(combinedSummary?.observedMaxDrawdownPct)}</strong></div>
-        <div className="kpi"><span>Last observed session P/L</span><strong className={combinedSummary?.lastObservedSessionPnl!=null?(Number(combinedSummary.lastObservedSessionPnl)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{combinedSummary?.lastObservedSessionPnl!=null&&combined?money(Number(combinedSummary.lastObservedSessionPnl),combined.currency):"—"}</strong></div>
+        <div className="kpi"><span>Last observed session P/L</span><strong className={combinedSummary?.lastObservedSessionPnl!=null?(Number(combinedSummary.lastObservedSessionPnl)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{combinedSummary?.lastObservedSessionPnl!=null&&combined?formatMoney(Number(combinedSummary.lastObservedSessionPnl),combined.currency,{signed:true}):"—"}</strong></div>
       </div>
       {overallChart.length>=2?<div className="chart-card">
         <PerformanceChart data={overallChart} comparisons={overallComparisons} actualLabel="All strategies" indexed fullControls/>

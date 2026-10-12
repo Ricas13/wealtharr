@@ -104,8 +104,9 @@
   width: 7px;
   height: 7px;
   background: var(--cw-mint);
-  box-shadow: 0 0 12px var(--cw-mint);
+  box-shadow: none;
 }
+.customer-workspace-shell .status-dot.idle {background:#617994}
 .customer-workspace-shell .topbar-actions {gap:8px}
 .customer-workspace-shell .app-topbar .button.primary {
   padding: 9px 13px;

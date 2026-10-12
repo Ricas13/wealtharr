@@ -1,9 +1,22 @@
 "use client";
 import { Field } from "@/components/Field";
+import { InlineMessage, MessageView, useMessage } from "@/components/InlineMessage";
+import { postJson, requestJson } from "@/lib/http";
 import { useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
 
-export function DiscordForm(){const[message,setMessage]=useState("");return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const r=await fetch("/api/settings/discord",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({webhook:f.get("webhook")})});const b=await r.json();setMessage(r.ok?"Discord webhook saved.":b.error);}}><Field label="Discord webhook"><input name="webhook" type="url" placeholder="https://discord.com/api/webhooks/..." required/></Field><button className="button">Save Discord webhook</button>{message&&<div className={message.startsWith("Discord webhook saved")?"success":"error"}>{message}</div>}</form>;}
+export function DiscordForm(){
+  const status=useMessage();const[busy,setBusy]=useState(false);
+  return <form className="stack" onSubmit={async(e)=>{
+    e.preventDefault();setBusy(true);status.clear();const f=new FormData(e.currentTarget);
+    try{
+      const result=await postJson("/api/settings/discord",{webhook:f.get("webhook")},{fallbackError:"Could not save the Discord webhook."});
+      if(result.ok)status.success("Discord webhook saved.");else status.error(result.errorText);
+    }finally{
+      setBusy(false);
+    }
+  }}><Field label="Discord webhook"><input name="webhook" type="url" placeholder="https://discord.com/api/webhooks/..." required/></Field><button className="button" disabled={busy}>Save Discord webhook</button><MessageView message={status.message}/></form>;
+}
 
 type BillingPrice={
   planSlug:string;planName:string;currency:string;cadence:"MONTHLY"|"ANNUAL";amountMinor:number;
@@ -30,17 +43,22 @@ export function BillingButtons({
   const[busy,setBusy]=useState("");
   const[error,setError]=useState("");
 
-  async function checkout(planSlug:string,cadence:"monthly"|"annual"){
-    setBusy(planSlug+cadence);setError("");
-    const r=await fetch("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planSlug,cadence,currency})});
-    const b=await r.json();setBusy("");
-    if(b.url)window.location.assign(b.url);else setError(b.error);
+  async function redirectTo(path:string,body:unknown,busyKey:string,fallbackError:string){
+    setBusy(busyKey);setError("");
+    try{
+      const result=await postJson(path,body,{fallbackError});
+      const url=result.ok?result.data.url:undefined;
+      if(typeof url==="string"&&url)window.location.assign(url);
+      else setError(result.errorText||fallbackError);
+    }finally{
+      setBusy("");
+    }
   }
-  async function portal(){
-    setBusy("portal");setError("");
-    const r=await fetch("/api/billing/portal",{method:"POST"});
-    const b=await r.json();setBusy("");
-    if(b.url)window.location.assign(b.url);else setError(b.error);
+  function checkout(planSlug:string,cadence:"monthly"|"annual"){
+    return redirectTo("/api/billing/checkout",{planSlug,cadence,currency},planSlug+cadence,"Could not open checkout. Please try again.");
+  }
+  function portal(){
+    return redirectTo("/api/billing/portal",undefined,"portal","Could not open the billing portal. Please try again.");
   }
 
   if(paidSubscription)return <div className="billing-current">
@@ -54,7 +72,7 @@ export function BillingButtons({
       <span>If the new plan allows fewer active strategies — or removes a feature an active strategy depends on, such as multiple linked accounts — affected strategies are paused automatically. Their history is preserved and can be resumed later when your plan allows it.</span>
     </div>
     <button className="button primary" disabled={Boolean(busy)} onClick={portal}>{busy==="portal"?"Opening…":"Manage billing"}</button>
-    {error&&<div className="error" role="alert">{error}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
   </div>;
 
   const slugs=[...new Set(prices.map((price)=>price.planSlug))];
@@ -79,11 +97,52 @@ export function BillingButtons({
       })}
     </div>
     {currentPlanSlug==="free"&&<p className="help">Your Free plan keeps working if you do nothing. Upgrading only changes the limits and features available to your account. Nothing changes until checkout completes successfully.</p>}
-    {error&&<div className="error">{error}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
   </div>;
 }
 
-export function PrivacyControls({optIn}:{optIn:boolean}){const[state,setState]=useState(optIn);const[message,setMessage]=useState("");async function toggle(){const next=!state;const r=await fetch("/api/account/privacy",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({anonymousAggregateOptIn:next})});if(r.ok){setState(next);setMessage("Privacy preference updated.");}else setMessage("Could not update preference.");}async function remove(){if(!confirm("Permanently delete your account and financial history from the application?"))return;const r=await fetch("/api/account/delete",{method:"DELETE"});if(r.ok)await signOut({callbackUrl:"/"});else setMessage("Could not delete account.");}return <div className="stack"><div className="inline"><button className="button" onClick={toggle}>{state?"Opt out of anonymous aggregates":"Opt in to anonymous aggregates"}</button><a className="button" href="/api/account/export">Export my data</a></div><button className="button danger" onClick={remove}>Delete account</button>{message&&<div className={message.startsWith("Privacy")?"success":"error"}>{message}</div>}</div>;}
+export function PrivacyControls({optIn}:{optIn:boolean}){
+  const[state,setState]=useState(optIn);
+  const status=useMessage();
+  const[busy,setBusy]=useState(false);
+  const[confirmDelete,setConfirmDelete]=useState(false);
+  async function toggle(){
+    const next=!state;
+    setBusy(true);status.clear();
+    try{
+      const result=await requestJson("/api/account/privacy",{method:"PATCH",body:{anonymousAggregateOptIn:next},fallbackError:"Could not update preference."});
+      if(result.ok){setState(next);status.success("Privacy preference updated.");}
+      else status.error(result.errorText);
+    }finally{
+      setBusy(false);
+    }
+  }
+  async function remove(){
+    setBusy(true);status.clear();
+    try{
+      const result=await requestJson("/api/account/delete",{method:"DELETE",fallbackError:"Could not delete account."});
+      if(result.ok)await signOut({callbackUrl:"/"});
+      else{status.error(result.errorText);setConfirmDelete(false);}
+    }finally{
+      setBusy(false);
+    }
+  }
+  return <div className="stack">
+    <div className="inline">
+      <button className="button" type="button" disabled={busy} onClick={toggle}>{state?"Opt out of anonymous aggregates":"Opt in to anonymous aggregates"}</button>
+      <a className="button" href="/api/account/export">Export my data</a>
+    </div>
+    {!confirmDelete&&<button className="button danger" type="button" disabled={busy} onClick={()=>setConfirmDelete(true)}>Delete account</button>}
+    {confirmDelete&&<div className="close-confirmation" role="group" aria-label="Confirm account deletion">
+      <div><strong>Permanently delete your account?</strong><span>Your account and financial history are removed from the application. This cannot be undone.</span></div>
+      <div className="inline">
+        <button className="button danger" type="button" disabled={busy} onClick={remove}>{busy?"Deleting…":"Yes, delete my account"}</button>
+        <button className="button quiet" type="button" disabled={busy} autoFocus onClick={()=>setConfirmDelete(false)}>Keep my account</button>
+      </div>
+    </div>}
+    <MessageView message={status.message}/>
+  </div>;
+}
 
 
 export function SecurityControls({enabled}:{enabled:boolean}){
@@ -96,22 +155,20 @@ export function SecurityControls({enabled}:{enabled:boolean}){
   async function call(path:string,body?:unknown){
     setBusy(true);setError("");setMessage("");
     try{
-      const r=await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:body?JSON.stringify(body):undefined});
-      const b=await r.json().catch(()=>({} as {error?:string}));
-      if(!r.ok){setError(b.error??"Something went wrong. Please try again.");return null;}
-      return b;
-    }catch{setError("Could not reach the server. Please try again.");return null;}
-    finally{setBusy(false);}
+      const result=await postJson(path,body,{fallbackError:"Something went wrong. Please try again."});
+      if(!result.ok){setError(result.errorText);return null;}
+      return result.data;
+    }finally{setBusy(false);}
   }
   if(on&&!recovery)return <form className="stack" onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);const b=await call("/api/account/mfa/disable",{password:f.get("password"),code:f.get("code")});if(b){setOn(false);setSetup(null);setMessage("Two-step sign-in is off.");}}}>
     <p className="help">Two-step sign-in is on. To turn it off, confirm your password and a current code (or a recovery code).</p>
     <div className="form-grid"><div className="field"><label htmlFor="mfa-off-password">Password</label><input id="mfa-off-password" name="password" type="password" autoComplete="current-password" required/></div>
     <div className="field"><label htmlFor="mfa-off-code">Code</label><input id="mfa-off-code" name="code" autoComplete="one-time-code" required/></div></div>
     <button className="button danger" disabled={busy}>Turn off two-step sign-in</button>
-    {error&&<div className="error">{error}</div>}{message&&<div className="success">{message}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}{message&&<InlineMessage tone="success">{message}</InlineMessage>}
   </form>;
   if(recovery)return <div className="stack">
-    <div className="success">Two-step sign-in is on.</div>
+    <InlineMessage tone="success">Two-step sign-in is on.</InlineMessage>
     <p className="help">Save these recovery codes somewhere safe. Each works once if you lose your authenticator. They will not be shown again.</p>
     <pre style={{fontFamily:"monospace",whiteSpace:"pre-wrap"}}>{recovery.join("\n")}</pre>
     <button className="button primary" onClick={()=>{setRecovery(null);setSetup(null);}}>I have saved them</button>
@@ -122,12 +179,12 @@ export function SecurityControls({enabled}:{enabled:boolean}){
     <a className="button" href={setup.otpauthUri}>Open in authenticator app</a>
     <div className="field"><label htmlFor="mfa-code">Code from the app</label><input id="mfa-code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} required/></div>
     <button className="button primary" disabled={busy}>Confirm and turn on</button>
-    {error&&<div className="error">{error}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}
   </form>;
   return <div className="stack">
     <p className="help">Ask for a code from an authenticator app when you sign in, on top of your password.</p>
     <button className="button" disabled={busy} onClick={async()=>{const b=await call("/api/account/mfa/setup");if(b)setSetup(b);}}>Set up two-step sign-in</button>
-    {error&&<div className="error">{error}</div>}{message&&<div className="success">{message}</div>}
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}{message&&<InlineMessage tone="success">{message}</InlineMessage>}
   </div>;
 }
 
@@ -135,24 +192,23 @@ export function SecurityControls({enabled}:{enabled:boolean}){
 export function TelegramForm({connected,allowed}:{connected:boolean;allowed:boolean}){
   const[linked,setLinked]=useState(connected);
   const[url,setUrl]=useState("");
-  const[message,setMessage]=useState("");
+  const status=useMessage();
   const[busy,setBusy]=useState(false);
-  async function connect(){setBusy(true);setMessage("");setUrl("");try{
-    const r=await fetch("/api/settings/telegram",{method:"POST"});
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(data.error||"Could not start Telegram connection.");
-    setUrl(String(data.url));setMessage("Open the link and press Start in the Telegram bot, then refresh this page.");
-  }catch(e){setMessage(e instanceof Error?e.message:"Telegram connection failed.");}finally{setBusy(false);}}
-  async function disconnect(){setBusy(true);setMessage("");try{
-    const r=await fetch("/api/settings/telegram",{method:"DELETE"});
-    if(!r.ok)throw new Error("Could not disconnect Telegram.");
-    setLinked(false);setUrl("");setMessage("Telegram disconnected.");
-  }catch(e){setMessage(e instanceof Error?e.message:"Could not disconnect.");}finally{setBusy(false);}}
+  async function connect(){setBusy(true);status.clear();setUrl("");try{
+    const result=await postJson("/api/settings/telegram",undefined,{fallbackError:"Could not start Telegram connection."});
+    if(!result.ok){status.error(result.errorText);return;}
+    setUrl(String(result.data.url));status.info("Open the link and press Start in the Telegram bot, then refresh this page.");
+  }finally{setBusy(false);}}
+  async function disconnect(){setBusy(true);status.clear();try{
+    const result=await requestJson("/api/settings/telegram",{method:"DELETE",fallbackError:"Could not disconnect Telegram."});
+    if(!result.ok){status.error(result.errorText);return;}
+    setLinked(false);setUrl("");status.success("Telegram disconnected.");
+  }finally{setBusy(false);}}
   return <div className="stack">
     <p className="help">{!allowed?"Telegram alerts are not included in your current plan.":linked?"Telegram is connected. Your plan controls whether alerts are delivered.":"Telegram is not connected."}</p>
     <div className="inline">{linked?<button className="button" type="button" disabled={busy} onClick={disconnect}>Disconnect Telegram</button>:<button className="button" type="button" disabled={busy||!allowed} onClick={connect}>Connect Telegram</button>}
       {url&&<a className="button primary" href={url} target="_blank" rel="noopener noreferrer">Open Telegram bot</a>}</div>
-    {message&&<p className="help" role="status">{message}</p>}
+    <MessageView message={status.message} as="p"/>
   </div>;
 }
 

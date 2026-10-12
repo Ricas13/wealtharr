@@ -50,4 +50,13 @@ describe("premium design system", () => {
     expect(css).toContain("font-variant-numeric:tabular-nums lining-nums");
     expect(css).toContain('font-feature-settings:"tnum" 1,"lnum" 1');
   });
+
+  it("keeps a visible keyboard focus ring for fields inside the signed-in shells", () => {
+    expect(block(".field input,.field select,.field textarea")).not.toMatch(/outline\s*:\s*(none|0)\b/);
+    expect(css).toContain(".app-shell :where(input,select,textarea,button,a,summary,[tabindex]):focus-visible");
+  });
+
+  it("does not fade signed-in content in on every page entry", () => {
+    expect(css).not.toContain("premium-rise");
+  });
 });
