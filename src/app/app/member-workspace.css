@@ -27,6 +27,23 @@
   color:var(--member-text);
   background:var(--member-bg);
 }
+/* Match the rest of the signed-in routes to the member palette without touching public/admin. */
+.customer-workspace-shell {
+  --bg:#080d11;--bg2:#10191e;--text:#f1f6f3;--muted:#9cafb2;
+  --accent:#b7f5cc;--accent2:#95b9e8;--line:#2b3b40;
+  --panel:rgba(16,25,30,.95);--panel-solid:#10191e;
+  --radius:15px;--shadow:0 18px 35px rgba(0,0,0,.11);
+}
+.customer-workspace-shell :is(.glass,.card,.form-card) {
+  background:linear-gradient(155deg,#121e22,#0f171b);
+  border-color:var(--member-border);
+  border-radius:15px;
+}
+.customer-workspace-shell .portfolio-strategies-workspace {
+  --pf-surface:#121e22;--pf-surface-hover:#1a2a2e;
+  --pf-text:#f1f6f3;--pf-muted:#a6b8b8;--pf-soft:#92a9aa;
+  --pf-border:#2b3b40;--pf-primary:#b7f5cc;
+}
 .customer-workspace-shell .app-main {
   background:var(--member-bg);
   min-width:0;
@@ -466,6 +483,17 @@ html[data-theme="light"] .customer-workspace-shell{
   color:var(--member-text);background:var(--member-bg)
 }
 html[data-theme="light"] .customer-workspace-shell .app-main{background:var(--member-bg)}
+html[data-theme="light"] .customer-workspace-shell {
+  --bg:#f3f6f5;--bg2:#fff;--text:#182b28;--muted:#4f6763;
+  --accent:#236e4d;--accent2:#315e88;--line:#d4dedb;
+  --panel:#fff;--panel-solid:#fff;--shadow:0 10px 25px rgba(30,70,50,.07)
+}
+html[data-theme="light"] .customer-workspace-shell :is(.glass,.card,.form-card){background:#fff;border-color:var(--member-border)}
+html[data-theme="light"] .customer-workspace-shell .portfolio-strategies-workspace{
+  --pf-surface:#fff;--pf-surface-hover:#f6faf7;--pf-text:#182b28;--pf-muted:#506861;
+  --pf-soft:#607b70;--pf-border:#d4dedb;--pf-primary:#236e4d
+}
+
 html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar{border-color:var(--member-border);background:var(--member-sidebar)}
 html[data-theme="light"] .customer-workspace-shell .member-sidebar .brand-mark{background:#e4f3e9;color:#236e4d;border-color:#9ab7a7}
 html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar .nav-link:not(.current){color:#465e59}
