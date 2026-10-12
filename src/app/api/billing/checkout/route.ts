@@ -7,7 +7,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { hasLiveStripeSubscription, isTerminalLocalStatus } from "@/domain/subscription-status";
 import { authFailure } from "@/lib/api-auth";
 import { paidCheckoutBlockers } from "@/domain/commercial-launch";
-import { unattestedCustomerStrategies } from "@/lib/strategy-evidence";
+import { customerStrategyEvidence,hasApprovedCustomerStrategyCatalogue } from "@/lib/strategy-evidence";
 import { purchasesAllowedFor } from "@/domain/native-app";
 import { isSinglePeriodPrice } from "@/domain/billing-price";
 
@@ -43,9 +43,9 @@ export async function POST(request: Request) {
 
     // Live payments also need a recorded specification sign-off for every strategy customers can start.
     if (/^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "")) {
-      const unattested = await unattestedCustomerStrategies();
-      if (unattested.length) {
-        console.error("Checkout refused: strategies without a recorded sign-off: " + unattested.map((u) => u.key + "@" + u.version).join(", "));
+      const evidence = await customerStrategyEvidence();
+      if (!hasApprovedCustomerStrategyCatalogue(evidence)) {
+        console.error("Checkout refused: empty customer strategy catalogue or strategy without recorded source approval.");
         return Response.json({ error: "Billing is not available yet." }, { status: 503 });
       }
     }
