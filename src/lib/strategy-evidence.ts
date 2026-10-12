@@ -21,3 +21,8 @@ export async function customerStrategyEvidence(): Promise<StrategyEvidenceRow[]>
 export async function unattestedCustomerStrategies() {
   return (await customerStrategyEvidence()).filter((row) => !row.attested);
 }
+
+/** Live billing is unavailable with an empty catalogue or an unapproved strategy. */
+export function hasApprovedCustomerStrategyCatalogue(rows:readonly StrategyEvidenceRow[]):boolean{
+  return rows.length>0&&rows.every(row=>row.attested&&row.lifecycle==="PUBLISHED");
+}
