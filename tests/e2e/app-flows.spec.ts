@@ -279,3 +279,25 @@ test("expired price evidence hides the order and blocks stale confirmation until
     await sql.end();
   }
 });
+
+test("Explore lists the catalogue and offers Start only for released strategies with a verified market",async({page},testInfo)=>{
+  const user=await createVerifiedUser(testInfo,"explore");
+  await login(page,user);
+  await page.goto("/app/explore");
+  await expect(page.getByRole("heading",{name:"Popular strategies, in plain English."})).toBeVisible();
+  const cards=page.locator("[data-strategy-key]");
+  expect(await cards.count()).toBeGreaterThan(1);
+  await expect(page.getByRole("link",{name:"Community stats"})).toHaveAttribute("href","/app/community");
+  // Every Start link belongs to an AVAILABLE card; no other state may offer one.
+  await expect(page.locator('[data-state]:not([data-state="AVAILABLE"]) a[href^="/app/strategies/new"]')).toHaveCount(0);
+  // HFEA is installed disabled and has no verified market in the test database.
+  const hfea=page.locator('[data-strategy-key="hfea"]');
+  await expect(hfea).toHaveAttribute("data-state","COMING_SOON");
+  await expect(hfea.getByRole("link",{name:/Start this strategy/})).toHaveCount(0);
+  // 9Sig has the exact test mapping used by the start-a-strategy flow above.
+  const nineSig=page.locator('[data-strategy-key="9sig"]');
+  await expect(nineSig).toHaveAttribute("data-state","AVAILABLE");
+  await nineSig.getByRole("link",{name:/Start this strategy/}).click();
+  await page.waitForURL("**/app/strategies/new?strategy=9sig");
+  await expect(page.getByRole("heading",{name:"Choose your strategy."})).toBeVisible();
+});
