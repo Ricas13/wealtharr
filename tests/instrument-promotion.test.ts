@@ -102,13 +102,43 @@ describe("promotion route and service source", () => {
     expect(route).toContain("promoteCandidateMapping(admin.id");
   });
   it("promotes and rejects only inside a transaction that audits and locks", () => {
-    expect(service.match(/sql\.begin\(/g)?.length).toBe(2);
+    expect(service.match(/sql\.begin\(/g)?.length).toBe(4);
     expect(service).toContain("pg_advisory_xact_lock");
     expect(service).toContain("FOR UPDATE OF m");
     expect(service).toContain("fidelity='CANDIDATE'");
     expect(service).toContain("'instrument-mapping.promoted'");
     expect(service).toContain("'instrument-mapping.rejected'");
     expect(service).toContain("INSERT INTO audit_events");
+  });
+  it("has no path that writes a verified mapping except promoteCandidateMapping", () => {
+    expect(route).not.toContain("'EXACT'");
+    expect(route).not.toMatch(/(INSERT|UPDATE)[^;]*EXACT/);
+    expect(route).toContain("insertCandidateMapping(");
+    // The only statement that sets fidelity EXACT sits inside promoteCandidateMapping.
+    expect(service.match(/fidelity='EXACT'/g)?.length).toBeGreaterThan(0);
+    const writes = service.match(/(INSERT INTO regional_instrument_mappings|UPDATE regional_instrument_mappings SET fidelity='EXACT')[^"]*/g) ?? [];
+    expect(writes.filter((w) => w.includes("'EXACT'"))).toHaveLength(1);
+    const promoteStart = service.indexOf("export async function promoteCandidateMapping");
+    const promoteEnd = service.indexOf("const VERIFIED_ON_INSTRUMENT");
+    const exactSet = service.indexOf("SET fidelity='EXACT'");
+    expect(exactSet).toBeGreaterThan(promoteStart);
+    expect(exactSet).toBeLessThan(promoteEnd);
+    expect(service).toMatch(/'CANDIDATE',\$9,\$10,false\)/);
+  });
+  it("guards verified instruments and trading lines and the import script", () => {
+    expect(service).toContain("INSTRUMENT_IN_USE");
+    expect(service).toContain("TRADING_LINE_IN_USE");
+    expect(route).toContain("updateInstrumentGuarded(");
+    expect(route).toContain("upsertTradingLineGuarded(");
+    const script = readFileSync("scripts/import-instruments.ts", "utf8");
+    expect(script).toContain("ON CONFLICT (exchange,ticker,effective_from) DO NOTHING");
+    expect(script).not.toMatch(/trading_lines[^"]*DO UPDATE/);
+  });
+  it("makes unverified the database default", () => {
+    const migration = readFileSync("db/migrations/0037_instrument_mapping_fidelity_guard.sql", "utf8");
+    expect(migration).toContain("SET DEFAULT 'CANDIDATE'");
+    expect(migration).toContain("pg_constraint");
+    expect(migration).toContain("NOT VALID");
   });
   it("never promotes from the import script or any automatic path", () => {
     const script = readFileSync("scripts/import-instruments.ts", "utf8");

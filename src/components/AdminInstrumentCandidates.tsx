@@ -24,10 +24,11 @@ export function InstrumentCandidates({ candidates }: { candidates: CandidateView
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmingReject, setConfirmingReject] = useState(false);
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
-  function open(c: CandidateView) { setSelectedId(c.id); setDraft(emptyDraft(c)); setReviewing(false); setMessage(""); setFailed(false); }
-  function close() { setSelectedId(null); setDraft(null); setReviewing(false); }
+  function open(c: CandidateView) { setSelectedId(c.id); setDraft(emptyDraft(c)); setReviewing(false); setConfirmingReject(false); setMessage(""); setFailed(false); }
+  function close() { setSelectedId(null); setDraft(null); setReviewing(false); setConfirmingReject(false); }
 
   const isin = draft?.isin.trim().toUpperCase() ?? "";
   const allChecked = CHECKLIST_ITEMS.every((item) => draft?.checks[item.key] === true);
@@ -41,13 +42,15 @@ export function InstrumentCandidates({ candidates }: { candidates: CandidateView
       const body = await response.json().catch(() => ({}));
       if (!response.ok) { setFailed(true); setMessage(body.error ?? "The request was refused."); return; }
       setMessage(done); close(); router.refresh();
+    } catch {
+      setFailed(true); setMessage("Could not reach the server. Nothing was changed; try again.");
     } finally { setBusy(false); }
   }
 
   const subject = (c: CandidateView) => ({ economicExposure: c.economicExposure, leverage: c.leverage, direction: c.direction, country: c.country, wrapper: c.wrapper, tradingLineId: c.tradingLineId });
 
   return <div>
-    <div aria-live="polite">{message && !selected && <div className={failed ? "error" : "success"}>{message}</div>}</div>
+    <div aria-live="polite" role="status">{message && <div className={failed ? "error" : "success"}>{message}</div>}</div>
     {candidates.length ? <div className="table-wrap" tabIndex={0} role="region" aria-label="Candidates awaiting verification"><table><thead><tr><th>Exposure</th><th>Leverage</th><th>Country</th><th>Wrapper</th><th>Ticker · exchange · currency</th><th>ISIN on file</th><th>Source</th><th>Action</th></tr></thead><tbody>
       {candidates.map((c) => <tr key={c.id}><td>{c.economicExposure}</td><td>{c.leverage}x {c.direction}</td><td>{c.country}</td><td>{c.wrapper}</td><td>{c.ticker} · {c.exchange} · {c.currency}</td><td>{c.isin ?? "—"}</td><td>CSV import candidate</td><td><button type="button" className="button" aria-label={"Verify " + c.economicExposure + " " + c.country + " " + c.wrapper + " " + c.ticker} onClick={() => open(c)}>Verify</button></td></tr>)}
     </tbody></table></div> : <div className="empty">No candidates are waiting. Import candidates with scripts/import-instruments.ts; nothing becomes tradable until a person verifies it here.</div>}
@@ -66,9 +69,16 @@ export function InstrumentCandidates({ candidates }: { candidates: CandidateView
         <div className="actions" style={{ marginTop: 16 }}>
           <button type="submit" className="button primary" disabled={!ready}>Review verification</button>{" "}
           <button type="button" className="button" onClick={close}>Cancel</button>{" "}
-          <button type="button" className="button" disabled={busy || !noteOk} onClick={() => send({ kind: "reject", mappingId: selected.id, note: draft.note }, "Candidate rejected.")}>Reject candidate</button>
+          <button type="button" className="button" disabled={busy || !noteOk} onClick={() => setConfirmingReject(true)}>Reject candidate</button>
         </div>
-      </form> : <div>
+      </form> : confirmingReject ? <div>
+        <h4>Confirm rejection</h4>
+        <p>Reject {selected.economicExposure} · {selected.country} · {selected.wrapper} ({selected.ticker})? It will be disabled and can no longer be promoted. Note: {draft.note.trim()}</p>
+        <div className="actions">
+          <button type="button" className="button primary" disabled={busy} onClick={() => send({ kind: "reject", mappingId: selected.id, note: draft.note }, "Candidate rejected.")}>Confirm rejection</button>{" "}
+          <button type="button" className="button" disabled={busy} onClick={() => setConfirmingReject(false)}>Back</button>
+        </div>
+      </div> : <div>
         <h4>Confirm verification</h4>
         <ul>
           <li>Mapping: {selected.economicExposure}, {selected.leverage}x {selected.direction}, {selected.country} / {selected.wrapper}</li>
@@ -82,7 +92,6 @@ export function InstrumentCandidates({ candidates }: { candidates: CandidateView
           <button type="button" className="button" disabled={busy} onClick={() => setReviewing(false)}>Back</button>
         </div>
       </div>}
-      <div aria-live="polite">{message && <div className={failed ? "error" : "success"}>{message}</div>}</div>
     </section>}
   </div>;
 }

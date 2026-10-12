@@ -68,7 +68,10 @@ export type PromotionRefusal =
   | "ISIN_MISMATCH"
   | "ISIN_IN_USE"
   | "AMBIGUOUS_MAPPING"
-  | "DUPLICATE_MAPPING";
+  | "DUPLICATE_MAPPING"
+  | "PROVIDER_SYMBOL_CONFLICT"
+  | "INSTRUMENT_IN_USE"
+  | "TRADING_LINE_IN_USE";
 
 export const PROMOTION_REFUSALS: Record<PromotionRefusal, { status: number; message: string }> = {
   NOT_FOUND: { status: 404, message: "That mapping no longer exists." },
@@ -79,7 +82,10 @@ export const PROMOTION_REFUSALS: Record<PromotionRefusal, { status: number; mess
   ISIN_MISMATCH: { status: 409, message: "The ISIN differs from the one stored on the instrument." },
   ISIN_IN_USE: { status: 409, message: "That ISIN already belongs to a different instrument." },
   AMBIGUOUS_MAPPING: { status: 409, message: "Another enabled verified mapping already covers this exposure, country, wrapper, broker and currency with a different trading line. Resolve it first; nothing was changed." },
-  DUPLICATE_MAPPING: { status: 409, message: "A verified mapping for this trading line already exists." }
+  DUPLICATE_MAPPING: { status: 409, message: "A verified mapping for this trading line already exists." },
+  PROVIDER_SYMBOL_CONFLICT: { status: 409, message: "The trading line already has a different provider symbol and other verified mappings use it. Nothing was changed." },
+  INSTRUMENT_IN_USE: { status: 409, message: "This instrument sits behind an enabled verified mapping, so its ISIN, exposure, leverage or direction cannot be changed. Disable the mapping first." },
+  TRADING_LINE_IN_USE: { status: 409, message: "This trading line sits behind an enabled verified mapping, so it cannot be repointed to another instrument or currency. Disable the mapping first." }
 };
 
 export class PromotionRefused extends Error {

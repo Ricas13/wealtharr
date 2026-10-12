@@ -144,6 +144,54 @@ describe.skipIf(!process.env.DATABASE_URL)("candidate promotion",()=>{
     expect((await promote(s)).status).toBe(409);
   });
 
+  it("creates mappings only as disabled candidates and never as EXACT",async()=>{
+    const s=await seed({country:"SE"});
+    await sql.unsafe("DELETE FROM regional_instrument_mappings WHERE id=$1",[s.mappingId]);
+    const base={kind:"mapping",economicExposure:"BROAD_EQUITY",leverage:"1",direction:"LONG",country:"SE",wrapper,tradingLineId:s.lineId,effectiveFrom:"2026-01-01"};
+    const exact=await put({...base,fidelity:"EXACT",enabled:true});
+    expect(exact.status).toBe(400);
+    expect(await sql.unsafe("SELECT id FROM regional_instrument_mappings WHERE trading_line_id=$1",[s.lineId])).toHaveLength(0);
+    const created=await put({...base,enabled:true});
+    expect(created.status).toBe(200);
+    const rows=await sql.unsafe("SELECT id,fidelity,enabled FROM regional_instrument_mappings WHERE trading_line_id=$1",[s.lineId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].fidelity).toBe("CANDIDATE");expect(rows[0].enabled).toBe(false);
+    expect(await resolvable(String(rows[0].id))).toBe(0);
+  });
+
+  it("refuses changing or repointing an instrument or line that sits behind a verified mapping",async()=>{
+    const s=await seed({country:"NO"});
+    expect((await promote(s)).status).toBe(200);
+    const edit=(over:Record<string,unknown>)=>put({kind:"instrument",id:s.instrumentId,isin:s.isin,name:"Renamed "+run,economicExposure:"BROAD_EQUITY",leverage:"1.000000",direction:"LONG",fundCurrency:"GBP",...over});
+    expect((await edit({})).status).toBe(200);
+    const blockedIsin=await edit({isin:freshIsin()});
+    expect(blockedIsin.status).toBe(409);expect(blockedIsin.body.code).toBe("INSTRUMENT_IN_USE");
+    expect((await edit({economicExposure:"GOLD"})).status).toBe(409);
+    expect((await edit({leverage:"2"})).status).toBe(409);
+    const stored=(await sql.unsafe("SELECT isin,economic_exposure,leverage::text AS leverage FROM instruments WHERE id=$1",[s.instrumentId]))[0];
+    expect(stored.isin).toBe(s.isin);expect(stored.economic_exposure).toBe("BROAD_EQUITY");expect(Number(stored.leverage)).toBe(1);
+
+    const line=(await sql.unsafe("SELECT ticker,exchange,effective_from::text AS effective_from FROM trading_lines WHERE id=$1",[s.lineId]))[0];
+    const other=await seed({country:"DK"});
+    const lineBody=(over:Record<string,unknown>)=>put({kind:"tradingLine",instrumentId:s.instrumentId,ticker:line.ticker,exchange:line.exchange,currency:"GBP",exchangeTimezone:"Europe/London",effectiveFrom:line.effective_from,...over});
+    const repoint=await lineBody({instrumentId:other.instrumentId});
+    expect(repoint.status).toBe(409);expect(repoint.body.code).toBe("TRADING_LINE_IN_USE");
+    expect((await lineBody({currency:"USD"})).status).toBe(409);
+    expect((await sql.unsafe("SELECT instrument_id::text AS i FROM trading_lines WHERE id=$1",[s.lineId]))[0].i).toBe(s.instrumentId);
+    expect((await lineBody({})).status).toBe(200);
+  });
+
+  it("refuses overwriting a different provider symbol that other verified mappings rely on and audits the previous one",async()=>{
+    const first=await seed({country:"AT"});
+    expect((await promote(first,{providerSymbol:"AAA.L"})).status).toBe(200);
+    const audit=await sql.unsafe("SELECT metadata FROM audit_events WHERE action='instrument-mapping.promoted' AND entity_id=$1",[first.mappingId]);
+    expect(audit[0].metadata.previousProviderSymbol).toBeNull();
+    const extra=await sql.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,direction,country,wrapper,trading_line_id,fidelity,effective_from,enabled) VALUES ('BROAD_EQUITY',1,'LONG','BE',$1,$2,'CANDIDATE','2026-01-01',true) RETURNING id",[wrapper,first.lineId]);
+    const result=await put({kind:"promote",mappingId:String(extra[0].id),isin:first.isin,providerSymbol:"BBB.L",checklist,subject:{...subjectOf(first),country:"BE"},note});
+    expect(result.status).toBe(409);expect(result.body.code).toBe("PROVIDER_SYMBOL_CONFLICT");
+    expect((await sql.unsafe("SELECT provider_symbol FROM trading_lines WHERE id=$1",[first.lineId]))[0].provider_symbol).toBe("AAA.L");
+  });
+
   it("answers an unknown mapping with 404",async()=>{
     const s=await seed();
     const result=await promote({...s,mappingId:crypto.randomUUID()});
