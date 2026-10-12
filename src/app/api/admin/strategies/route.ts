@@ -206,8 +206,8 @@ export async function PATCH(request:Request){
       if(p.action==="ATTEST"){
         if(!["DRAFT","PUBLISHED"].includes(String(current.lifecycle_status)))throw new LifecycleConflict("Only a draft or published version can be attested.",409);
         await tx.unsafe(
-          "INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (strategy_version_id) DO UPDATE SET spec_card=EXCLUDED.spec_card,golden_tests=EXCLUDED.golden_tests,notes=EXCLUDED.notes,attested_by=EXCLUDED.attested_by,attested_at=now()",
-          [p.versionId,p.specCard,p.goldenTests,p.notes,admin.id]
+          "INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by,attested_by_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (strategy_version_id) DO UPDATE SET spec_card=EXCLUDED.spec_card,golden_tests=EXCLUDED.golden_tests,notes=EXCLUDED.notes,attested_by=EXCLUDED.attested_by,attested_by_email=EXCLUDED.attested_by_email,attested_at=now()",
+          [p.versionId,p.specCard,p.goldenTests,p.notes,admin.id,admin.email]
         );
         await tx.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'strategy-version.attested','strategy_version',$2,$3::jsonb)",[admin.id,p.versionId,JSON.stringify({specCard:p.specCard})]);
         return "DRAFT";
