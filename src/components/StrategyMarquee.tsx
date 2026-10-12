@@ -62,13 +62,13 @@ export function StrategyMarquee({ strategies }: { strategies: PublicStrategy[] }
     <div className={"landing-strategy-emblem tone-" + (i % 5)} aria-hidden="true"><span>{String(i + 1).padStart(2, "0")}</span></div>
     <h3>{strategy.name}</h3>
     <p>{strategy.description || "A rules-based investment approach with a defined review method."}</p>
-    <div className="landing-strategy-bottom"><span>{strategy.available ? "Published" : "Research / draft"}</span><span aria-hidden="true">↗</span></div>
+    <div className="landing-strategy-bottom"><span>{"Available"}</span><span aria-hidden="true">↗</span></div>
   </article>)}</>;
   if (!strategies.length) return null;
   return <section className="landing-strategies" id="strategies">
     <div className="landing-wrap landing-carousel-top">
       <div><div className="landing-kicker">The strategy library</div><h2>Explore established ideas.<br/>Follow defined rules.</h2>
-      <p>Browse the models being developed and published in Wealtharr. Availability depends on independent verification.</p></div>
+      <p>Only fully released strategies with verified UK ISA instruments are shown here. If none are approved, no carousel is displayed.</p></div>
       <div className="landing-arrows">
         <button type="button" aria-label="Previous strategies" onClick={() => nudge(-1)}>←</button>
         <button type="button" aria-label="Next strategies" onClick={() => nudge(1)}>→</button>
