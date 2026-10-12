@@ -154,7 +154,7 @@ async function processDeliveryBatch(limit:number,deadline:number){
   // Revalidation (a full recalculation) is per notification, not per channel: a notification queued on
   // email and Telegram is checked once per batch, and a failure is remembered so the second channel does
   // not repeat it. The outcome, including an error, is replayed to every channel of that notification.
-  type Revalidation={ok:true;current:{title:unknown;body:unknown}|null}|{ok:false;error:unknown};
+  type Revalidation={ok:true;current:Record<string,unknown>|null}|{ok:false;error:unknown};
   const revalidations=new Map<string,Revalidation>();
   const revalidate=async(notificationId:string,userId:string)=>{
     let entry:Revalidation;
