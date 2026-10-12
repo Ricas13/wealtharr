@@ -26,6 +26,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const code = error instanceof Error ? error.message : "FAILED";
     if (code === "STRATEGY_INSTANCE_NOT_FOUND") return Response.json({ error: "Not found." }, { status: 404 });
     if (code === "STRATEGY_ALREADY_CLOSED") return Response.json({ error: "A closed strategy cannot be reopened." }, { status: 409 });
+    if (code === "STRATEGY_NOT_ALLOWED_FOR_USER") return Response.json({error:"Your account is not permitted to resume this strategy.",code},{status:403});
     if (code === "STRATEGY_NOT_AVAILABLE") return Response.json({ error: "That strategy is not currently available to resume.", code }, { status: 409 });
     if (code === "PLAN_STRATEGY_LIMIT" || code === "STRATEGY_NOT_IN_PLAN" || code === "MULTI_ACCOUNT_NOT_IN_PLAN") {
       return Response.json({

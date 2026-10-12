@@ -32,6 +32,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       STRATEGY_ALREADY_SELECTED:"You are already using that strategy.",
       PLAN_STRATEGY_LIMIT:"Your current plan does not allow another active strategy.",
       STRATEGY_NOT_IN_PLAN:"That strategy is not included in your current plan.",
+      STRATEGY_NOT_ALLOWED_FOR_USER:"Your account does not have access to that strategy.",
       MULTI_ACCOUNT_NOT_IN_PLAN:"Your current plan does not support the linked accounts used by this strategy.",
       STRATEGY_NOT_SUPPORTED_IN_REGION:"The target strategy does not support one of your linked account regions.",
       STRATEGY_NOT_SUPPORTED_FOR_WRAPPER:"The target strategy does not support one of your linked account types.",
@@ -42,7 +43,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       STRATEGY_ACCOUNT_MISSING:"This strategy has no account to carry into the new journey."
     };
     if(code.startsWith("MISSING_STRATEGY_INPUT:"))return Response.json({error:"The target strategy needs additional setup information."},{status:409});
-    const status=code==="STRATEGY_INSTANCE_NOT_FOUND"?404:["PLAN_STRATEGY_LIMIT","STRATEGY_NOT_IN_PLAN","MULTI_ACCOUNT_NOT_IN_PLAN"].includes(code)?403:409;
+    const status=code==="STRATEGY_INSTANCE_NOT_FOUND"?404:["PLAN_STRATEGY_LIMIT","STRATEGY_NOT_IN_PLAN","MULTI_ACCOUNT_NOT_IN_PLAN","STRATEGY_NOT_ALLOWED_FOR_USER"].includes(code)?403:409;
     return Response.json({error:messages[code]??"Could not switch strategies."},{status});
   }
 }

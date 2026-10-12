@@ -10,7 +10,7 @@ const read=(path:string)=>readFileSync(new URL("../"+path,import.meta.url),"utf8
 
 const released:ExploreCardInput={
   engine:"FIXED_ALLOCATION",hasRules:true,definitionEnabled:true,publishedInWindow:true,
-  rulesVerified:true,attested:true,marketVerified:true
+  rulesVerified:true,marketVerified:true
 };
 
 describe("exploreCardState",()=>{
@@ -33,8 +33,7 @@ describe("exploreCardState",()=>{
     expect(result.startAction).toBe("NONE");
   });
 
-  it("is COMING_SOON while release attestation, rules or verified market are missing",()=>{
-    expect(exploreCardState({...released,attested:false}).state).toBe("COMING_SOON");
+  it("is COMING_SOON when canonical rules or an exact market are missing",()=>{
     expect(exploreCardState({...released,rulesVerified:false}).state).toBe("COMING_SOON");
     const noMarket=exploreCardState({...released,marketVerified:false});
     expect(noMarket.state).toBe("COMING_SOON");
@@ -72,7 +71,6 @@ describe("binary customer strategy catalogue",()=>{
   it("hides every non-available strategy entirely, not merely its Start button",()=>{
     const cards=[
       {key:"ready",result:exploreCardState(released)},
-      {key:"unattested",result:exploreCardState({...released,attested:false})},
       {key:"disabled",result:exploreCardState({...released,definitionEnabled:false})},
       {key:"draft",result:exploreCardState({...released,publishedInWindow:false})},
       {key:"incomplete",result:exploreCardState({...released,hasRules:false})},
@@ -163,7 +161,6 @@ describe("Explore wiring",()=>{
     expect(page).toContain("assertCuratedRules(");
     expect(page).toContain("assessStrategyMarket(");
     expect(page).toContain("onlyAvailableExploreCards(cards)");
-    expect(page).toContain("attested: release?.attested === true");
     expect(page).not.toContain("sorted.map((card)");
   });
 

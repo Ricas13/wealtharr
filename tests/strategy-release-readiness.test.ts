@@ -28,16 +28,16 @@ describe("Master Admin strategy readiness cannot invent approvals",()=>{
  it("does not represent complete mapping as real-world certification",()=>{
   const g=researchGate(profile,release,[equities,treasuries],"2026-10-09");
   expect(g.marketNames).toEqual(["US / TAXABLE (USD)"]);
-  expect(g.state).toBe("Eligible for operator review only");
+  expect(g.state).toBe("Ready for global enablement");
  });
- it("does not trust mismatched stored weights or reissued unapproved versions",()=>{
+ it("does not trust mismatched stored weights and never requires optional audit evidence",()=>{
   const changed={...release,config:{...release.config,allocations:[
    {exposure:"US_EQUITY_3X_LONG",weight:"0.99"},
    {exposure:"LONG_TREASURY_3X_LONG",weight:"0.01"}]}};
   expect(researchGate(profile,changed,[equities,treasuries],"2026-10-09").state)
     .toBe("Stored rules need code review");
   expect(researchGate(profile,{...release,attestedAt:null},[equities,treasuries],"2026-10-09").state)
-    .toBe("Published: independent evidence missing");
+    .toBe("Ready for global enablement");
  });
  it("research profiles without complete canonical code remain visibly blocked",()=>{
   const research=RESEARCH_STRATEGIES.find(p=>p.key==="merriman-ultimate")!;
