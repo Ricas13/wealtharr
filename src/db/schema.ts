@@ -1,3 +1,6 @@
+// PARTIAL, INFORMATIONAL schema. This file does NOT describe the whole database: it is missing many
+// tables and columns added by later migrations. The SQL files in db/migrations/ are the single source
+// of truth (applied by scripts/migrate.ts). Never generate migrations from this file.
 import {
   pgTable, uuid, text, timestamp, boolean, integer, bigint, numeric, jsonb,
   uniqueIndex, index, date, primaryKey
