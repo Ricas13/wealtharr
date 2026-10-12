@@ -34,13 +34,14 @@ describe("ensureSettings(force)", () => {
   });
 
   it("does not return stale settings when a load was already in flight before the save", async () => {
-    const { ensureSettings } = await import("@/lib/settings");
+    const { ensureSettings, markSettingsSaved } = await import("@/lib/settings");
     // A background refresh starts and reads the table before the save.
     const background = ensureSettings(true);
     await flush();
     expect(state.pending).toHaveLength(1);
     // The save commits, then the saver asks for a forced refresh.
     state.table = "true";
+    markSettingsSaved();
     let forcedDone = false;
     const forced = ensureSettings(true).then(() => { forcedDone = true; });
     await flush();
