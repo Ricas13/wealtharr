@@ -5,7 +5,7 @@ import {ALL_CHANNELS,ALL_FEATURES,type ChannelKey,type FeatureKey} from "@/domai
 
 type Entitlements={features:string[];notificationChannels:string[]};
 type Config={
- slug:string;displayName:string;description:string;monthlyPriceMinor:number;annualPriceMinor:number;
+ slug:string;displayName:string;description:string;homepageHighlights:string[];monthlyPriceMinor:number;annualPriceMinor:number;
  annualDiscountBps:number;currency:string;supportedBillingCurrencies:string[];
  maxActiveStrategies:number|null;availableStrategyKeys:string[];
  stripeMonthlyPriceId:string|null;stripeAnnualPriceId:string|null;entitlements:Entitlements;
@@ -21,7 +21,7 @@ const channelLabels:Record<ChannelKey,string>={EMAIL:"Email",DISCORD:"Discord",T
 const featureOptions=ALL_FEATURES.map((key)=>[key,featureLabels[key]] as const);
 const channelOptions=ALL_CHANNELS.map((key)=>[key,channelLabels[key]] as const);
 const blank:Config={
- slug:"",displayName:"",description:"",monthlyPriceMinor:0,annualPriceMinor:0,annualDiscountBps:0,
+ slug:"",displayName:"",description:"",homepageHighlights:[],monthlyPriceMinor:0,annualPriceMinor:0,annualDiscountBps:0,
  currency:"GBP",supportedBillingCurrencies:["GBP"],maxActiveStrategies:1,availableStrategyKeys:[],
  stripeMonthlyPriceId:null,stripeAnnualPriceId:null,entitlements:{features:[],notificationChannels:[]},
  trialDays:0,visible:false,archived:false,sortOrder:50
@@ -41,10 +41,12 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
  const router=useRouter();
  const [selection,setSelection]=useState(initialPlans[0]?.slug??"new");
  const [form,setForm]=useState<Config>(()=>initialPlans[0]?{...initialPlans[0],entitlements:entitlements(initialPlans[0].entitlements)}:{...blank});
+ const [highlightsDraft,setHighlightsDraft]=useState(initialPlans[0]?.homepageHighlights.join("\n")??"");
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  function choose(slug:string){
   setSelection(slug);setMessage("");
+  setHighlightsDraft(initialPlans.find(p=>p.slug===slug)?.homepageHighlights.join("\n")??"");
   const picked=initialPlans.find(p=>p.slug===slug);
   setForm(picked?{...picked,entitlements:entitlements(picked.entitlements)}:{...blank,entitlements:{features:[],notificationChannels:[]}});
  }
@@ -61,7 +63,8 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
  async function save(e:FormEvent<HTMLFormElement>){
   e.preventDefault();setBusy(true);setMessage("");
   try{
-    const result=await fetch("/api/admin/plans",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(form)});
+    const payload={...form,homepageHighlights:highlightsDraft.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)};
+    const result=await fetch("/api/admin/plans",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
     const data=await result.json().catch(()=>({}));
     if(!result.ok)throw new Error(data.error??"Could not save this plan.");
     setMessage(data.enforcementFailures?"Plan saved, but "+data.enforcementFailures+" existing subscribers could not be rechecked. Inspect worker health.":"Plan saved. Existing subscribers were rechecked.");
@@ -81,7 +84,8 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
   <div className="form-grid">
    <div className="field"><label htmlFor="admin-plan-slug">Plan ID</label><input id="admin-plan-slug" value={form.slug} readOnly={selection!=="new"} required pattern="[a-z][a-z0-9-]*" onChange={e=>change("slug",e.target.value.toLowerCase())}/></div>
    <div className="field"><label htmlFor="admin-plan-name">Display name</label><input id="admin-plan-name" value={form.displayName} required onChange={e=>change("displayName",e.target.value)}/></div>
-   <div className="field full"><label htmlFor="admin-plan-description">Description</label><input id="admin-plan-description" value={form.description} onChange={e=>change("description",e.target.value)}/></div>
+   <div className="field full"><label htmlFor="admin-plan-description">Homepage card description</label><input id="admin-plan-description" value={form.description} onChange={e=>change("description",e.target.value)}/></div>
+   <div className="field full"><label htmlFor="admin-plan-highlights">Homepage card highlights (one per line, up to 5)</label><textarea id="admin-plan-highlights" rows={4} value={highlightsDraft} onChange={e=>setHighlightsDraft(e.target.value)} placeholder="Ideal for simple tracking\nKnow when to rebalance"/><p className="help">Marketing copy only. Included features and notifications shown to customers are always derived from the actual plan entitlements.</p></div>
    <div className="field"><label htmlFor="admin-plan-monthly">Default monthly ({form.currency})</label><input id="admin-plan-monthly" type="number" min="0" step=".01" value={form.monthlyPriceMinor/100} onChange={e=>change("monthlyPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
    <div className="field"><label htmlFor="admin-plan-annual">Default annual ({form.currency})</label><input id="admin-plan-annual" type="number" min="0" step=".01" value={form.annualPriceMinor/100} onChange={e=>change("annualPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
    <div className="field"><label htmlFor="admin-plan-currency">Default currency</label><select id="admin-plan-currency" value={form.currency} onChange={e=>change("currency",e.target.value)}>{["GBP","USD","EUR"].map(c=><option key={c}>{c}</option>)}</select></div>
