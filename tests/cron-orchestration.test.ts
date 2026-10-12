@@ -56,6 +56,7 @@ vi.mock("@/lib/market-data-worker",()=>({refreshMarketData:async()=>h.market}));
 vi.mock("@/lib/entitlement-service",()=>({enforceStrategyEntitlements:async()=>({paused:0})}));
 vi.mock("@/lib/account-deletion",()=>({finishPendingAccountDeletions:async()=>h.deletions}));
 vi.mock("@/lib/billing-reconciliation",()=>({reconcileStripeSubscriptions:async()=>h.billing}));
+vi.mock("@/lib/review-reminder",()=>({createReviewReminders:async()=>({enabled:false,considered:0,created:0,deferred:false})}));
 
 const call=async(authorization?:string)=>{
   const {GET}=await import("@/app/api/cron/actions/route");

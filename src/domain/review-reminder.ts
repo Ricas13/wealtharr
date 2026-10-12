@@ -12,10 +12,18 @@ export const REVIEW_REMINDER_EARLIEST_LOCAL_HOUR = 8;
 
 const DAY_MS = 86_400_000;
 
-/** Reads the REVIEW_REMINDER_LEAD_DAYS setting. Anything not a whole number 0-14 means off (fail closed). */
+/** Owner-approved default: remind 2 days ahead unless an operator sets the lead time (0 turns it off). */
+export const DEFAULT_REMINDER_LEAD_DAYS = 2;
+
+/**
+ * Reads the REVIEW_REMINDER_LEAD_DAYS setting. Unset or blank means the default (2 days); an explicit 0
+ * is off; anything that is not a whole number 0-14 is off (fail closed).
+ */
 export function parseReminderLeadDays(raw: unknown): number {
+  if (raw === undefined || raw === null) return DEFAULT_REMINDER_LEAD_DAYS;
   if (typeof raw !== "string" && typeof raw !== "number") return 0;
   const text = String(raw).trim();
+  if (text === "") return DEFAULT_REMINDER_LEAD_DAYS;
   if (!/^\d{1,2}$/.test(text)) return 0;
   const value = Number(text);
   return value >= 1 && value <= REVIEW_REMINDER_MAX_LEAD_DAYS ? value : 0;

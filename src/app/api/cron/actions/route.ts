@@ -110,7 +110,7 @@ export async function GET(request: Request) {
     );
     const calculationDeferred = calculationPool.deferred + Math.max(0, Number(totalActive[0]?.n ?? 0) - instances.length);
 
-    // Optional advance heads-up (off unless REVIEW_REMINDER_LEAD_DAYS is set). It runs after the
+    // Optional advance heads-up (on with a 2-day default; REVIEW_REMINDER_LEAD_DAYS=0 turns it off). It runs after the
     // calculations so it sees fresh review dates, and before delivery creation so the same run sends it.
     // Best effort: a failure here must never block the on-the-day alerts.
     let reviewReminders: Record<string, unknown> = { enabled: false, considered: 0, created: 0 };

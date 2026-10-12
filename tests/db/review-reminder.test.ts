@@ -63,10 +63,8 @@ describe.skipIf(!url)("review reminders", () => {
     await sql.end();
   });
 
-  it("creates nothing while the setting is off (the default)", async () => {
-    delete process.env.REVIEW_REMINDER_LEAD_DAYS;
+  it("creates nothing while the setting is explicitly 0 (off)", async () => {
     const f = await fixture("off", {});
-    expect(await createReviewReminders()).toEqual({ enabled: false, considered: 0, created: 0 });
     process.env.REVIEW_REMINDER_LEAD_DAYS = "0";
     expect((await createReviewReminders()).enabled).toBe(false);
     expect(await reminders(f.instanceId)).toHaveLength(0);

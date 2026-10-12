@@ -14,9 +14,10 @@ const DAY = 86_400_000;
 const at = (iso: string) => new Date(iso);
 
 describe("parseReminderLeadDays", () => {
-  it("is off unless a whole number from 1 to 14", () => {
-    expect(parseReminderLeadDays(undefined)).toBe(0);
-    expect(parseReminderLeadDays("")).toBe(0);
+  it("defaults to 2 days when unset or blank, is off at 0 or for anything invalid", () => {
+    expect(parseReminderLeadDays(undefined)).toBe(2);
+    expect(parseReminderLeadDays("")).toBe(2);
+    expect(parseReminderLeadDays("   ")).toBe(2);
     expect(parseReminderLeadDays("0")).toBe(0);
     expect(parseReminderLeadDays("3")).toBe(3);
     expect(parseReminderLeadDays("14")).toBe(14);
