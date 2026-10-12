@@ -14,7 +14,7 @@ export default async function NewStrategyPage({searchParams}:{searchParams?:Prom
   const user=await requirePageUser();
   const entitlements=await loadEntitlements(user.id);
   const [rows,existing,marketMappings]=await Promise.all([
-    listAvailableStrategies({includeDisabled:entitlements.includeDisabledStrategies}),
+    listAvailableStrategies({includeDisabled:entitlements.includeDisabledStrategies,userId:user.id}),
     listUserStrategies(user.id),
     sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)
   ]);

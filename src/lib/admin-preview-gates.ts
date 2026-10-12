@@ -7,22 +7,18 @@ import { assertCuratedRules } from "@/domain/strategy/curated-release";
 type Db = Pick<Sql, "unsafe">;
 
 /**
- * Enforce the same immutable source-release gates for EVERY new start or switch, even if a
- * legacy version was seeded as enabled before approvals existed. Admin entitlement bypasses
- * never bypass rule integrity or missing release evidence. Existing user ledgers are untouched.
- * The historic function name is kept for compatibility with the create/switch/preview callers.
- * An attestation is a recorded operator assertion, not proof of independent methodology review.
+ * Check executable, code-owned strategy rules for ALL new starts and switches.
+ * Administrative attestations are optional audit metadata, NOT an activation prerequisite.
+ * Global enablement, plan/user entitlements and verified broker/wrapper mapping are
+ * separately enforced by the calling services.
  */
 export async function assertDisabledStrategyPreviewGates(
   db: Db,
   // A database row: the fields read below are key, enabled, version_id, engine_key, config, input_schema.
   definition: Record<string, unknown>
 ) {
+  void db; // Preserve the transaction-shaped interface used by all callers.
   assertCustomerPublishableEngine(String(definition.engine_key));
   assertCuratedRules(String(definition.key), String(definition.engine_key), definition.config, definition.input_schema);
-  const attested = await db.unsafe(
-    "SELECT 1 FROM strategy_version_attestations WHERE strategy_version_id=$1 AND attested_by_email IS NOT NULL LIMIT 1",
-    [String(definition.version_id)]
-  );
-  if (!attested[0]) throw new Error("STRATEGY_NOT_AVAILABLE");
+
 }

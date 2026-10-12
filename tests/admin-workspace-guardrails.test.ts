@@ -11,7 +11,8 @@ describe("Admin strategy workspace guardrails",()=>{
   expect(page).toContain("assertCustomerPublishableEngine");
   expect(page).toContain("assertCuratedRules");
   expect(page).toContain("assessStrategyMarket");
-  expect(page).toContain('status:"NO_SIGNOFF"');
+  expect(page).toContain('status:"NO_RELEASE"');
+  expect(page).not.toContain('status:"NO_SIGNOFF"');
  });
  it("uses the authenticated server enable endpoint and only batches eligible versions",()=>{
   const client=readFileSync("src/components/AdminStrategyInventory.tsx","utf8");
@@ -19,7 +20,8 @@ describe("Admin strategy workspace guardrails",()=>{
   expect(client).toContain('action:"TOGGLE_DEFINITION"');
   expect(client).not.toContain("fetch(\"/api/admin/feature-flags\"");
   const api=readFileSync("src/app/api/admin/strategies/route.ts","utf8");
-  expect(api).toContain("strategy_version_attestations");
+  expect(api).toContain("assertCuratedRules");
+  expect(api).toContain("assessStrategyMarket");
   expect(api).toContain("Publish and verify this strategy before enabling it.");
  });
  it("retains an accessible dark admin control-plane across light theme and mobile shell",()=>{

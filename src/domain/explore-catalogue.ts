@@ -25,8 +25,6 @@ export type ExploreCardInput={
   publishedInWindow:boolean;
   /** Stored published rules equal the code-reviewed rules (`assertCuratedRules` passed). */
   rulesVerified:boolean;
-  /** A human attestation is recorded for this exact published version (not a substitute for independent verification). */
-  attested:boolean;
   /** A complete exact market exists for the viewer's country (`assessStrategyMarket`). */
   marketVerified:boolean;
 };
@@ -53,7 +51,6 @@ export function exploreCardState(input:ExploreCardInput,plan:ExplorePlanInput={a
   if(!input.definitionEnabled)return blocked("COMING_SOON","Not yet released. Awaiting operator review.");
   if(!input.publishedInWindow)return blocked("COMING_SOON","Awaiting a published, verified version.");
   if(!input.rulesVerified)return blocked("COMING_SOON","Awaiting rules review.");
-  if(!input.attested)return blocked("COMING_SOON","Release approval has not been recorded.");
   if(!input.marketVerified)return blocked("COMING_SOON","Awaiting verified instruments for your region.");
   let startAction:ExploreStartAction="START";
   if(!plan.inPlan||plan.atLimit)startAction="PLAN_OPTIONS";

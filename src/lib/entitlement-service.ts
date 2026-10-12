@@ -50,8 +50,9 @@ export async function assertNotificationAllowed(userId: string, channel: string)
 export async function enforceStrategyEntitlements(userId: string, snapshot?: EntitlementSnapshot) {
   const entitlements = snapshot ?? await loadEntitlements(userId);
   const active = await sql.unsafe(
-    "SELECT i.id,d.key,d.enabled AS definition_enabled,i.admin_disabled_preview,(SELECT count(*)::int FROM strategy_accounts sa WHERE sa.strategy_instance_id=i.id) AS account_count "+
+    "SELECT i.id,d.key,d.enabled AS definition_enabled,i.admin_disabled_preview,ua.allowed AS user_strategy_allowed,(SELECT count(*)::int FROM strategy_accounts sa WHERE sa.strategy_instance_id=i.id) AS account_count "+
     "FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id "+
+    "LEFT JOIN user_strategy_access ua ON ua.user_id=i.user_id AND ua.strategy_definition_id=i.strategy_definition_id "+
     "WHERE i.user_id=$1 AND i.status='ACTIVE' ORDER BY i.started_at ASC,i.created_at ASC",
     [userId]
   );
@@ -71,11 +72,11 @@ export async function enforceStrategyEntitlements(userId: string, snapshot?: Ent
   const previewBlocked = (row: Record<string, unknown>) =>
     !entitlements.includeDisabledStrategies && row.admin_disabled_preview === true && row.definition_enabled !== true;
   const permitted = active.filter((row) =>
-    !unavailableFeatureIds.has(String(row.id))&&!previewBlocked(row)&&
+    !unavailableFeatureIds.has(String(row.id))&&!previewBlocked(row)&&row.user_strategy_allowed!==false&&
     (!entitlements.availableStrategyKeys || entitlements.availableStrategyKeys.has(String(row.key)))
   );
   const disallowed = active.filter((row) =>
-    unavailableFeatureIds.has(String(row.id))||previewBlocked(row)||
+    unavailableFeatureIds.has(String(row.id))||previewBlocked(row)||row.user_strategy_allowed===false||
     Boolean(entitlements.availableStrategyKeys&&!entitlements.availableStrategyKeys.has(String(row.key)))
   );
   const max = entitlements.maxActiveStrategies;

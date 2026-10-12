@@ -38,10 +38,9 @@ export function researchGate(
   if(!profile.config||profile.engine==="RESEARCH_PENDING")state="Research method incomplete";
   else if(!evidence?.version)state="Release not installed";
   else if(!rulesMatch)state="Stored rules need code review";
-  else if(!published)state="Draft: source approval required";
-  else if(!attested)state="Published: independent evidence missing";
+  else if(!published)state="Not published";
   else if(!marketNames.length)state="No complete configured market";
-  else state=operatorEnabled?"Enabled in catalogue: verify live evidence":"Eligible for operator review only";
+  else state=operatorEnabled?"Enabled for eligible customer accounts":"Ready for global enablement";
   return {key:profile.key,name:profile.name,state,marketNames,missing,
     rulesMatch,published,attested,operatorEnabled};
 }
