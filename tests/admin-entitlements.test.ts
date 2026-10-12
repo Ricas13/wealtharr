@@ -123,7 +123,8 @@ describe("admin preview applies the same gates as enabling a strategy",()=>{
     expect(gates).toContain("assertCustomerPublishableEngine");
     expect(gates).toContain("assertCuratedRules");
     expect(gates).toContain("strategy_version_attestations");
-    expect(gates).toMatch(/definition\.enabled === true\) return/);
+    expect(gates).not.toMatch(/definition\.enabled === true\) return/);
+    expect(gates).toContain("attested_by_email IS NOT NULL");
   });
   it("is applied on create, switch and switch preview, after the target lookup",()=>{
     for(const path of ["src/lib/strategy-service.ts","src/lib/strategy-switch-service.ts","src/lib/action-service.ts"]){

@@ -66,7 +66,6 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
     }
     ids.unattested=await definition(keys.unattested,false,"PUBLISHED");
     ids.draft=await definition(keys.draft,false,"DRAFT");
-    ids.customer=await definition(keys.customer,true,"PUBLISHED");
   });
 
   afterAll(async()=>{
@@ -104,10 +103,15 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
       "SELECT i.admin_disabled_preview,i.strategy_version_id,v.lifecycle_status FROM strategy_instances i JOIN strategy_versions v ON v.id=i.strategy_version_id WHERE i.id=$1",[instanceId]);
     expect(rows[0].admin_disabled_preview).toBe(true);
     expect(String(rows[0].lifecycle_status)).toBe("PUBLISHED");
-    // A normal strategy started by an admin is not flagged.
-    const normalId=await createStrategy(admin,"GB",input(keys.customer,"Admin normal"));
-    const normal=await sql!.unsafe("SELECT admin_disabled_preview FROM strategy_instances WHERE id=$1",[normalId]);
-    expect(normal[0].admin_disabled_preview).toBe(false);
+    // Re-enable the same *curated and attested* release to test ordinary starts.
+    await sql!.unsafe("UPDATE strategy_definitions SET enabled=true WHERE id=$1",[ids.published]);
+    try{
+      const normalId=await createStrategy(admin,"GB",input(keys.published,"Admin normal"));
+      const normal=await sql!.unsafe("SELECT admin_disabled_preview FROM strategy_instances WHERE id=$1",[normalId]);
+      expect(normal[0].admin_disabled_preview).toBe(false);
+    }finally{
+      await sql!.unsafe("UPDATE strategy_definitions SET enabled=false WHERE id=$1",[ids.published]);
+    }
   });
 
   it("refuses a normal user on a disabled definition and leaves nothing behind",async()=>{
@@ -141,7 +145,10 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
 
   it("does not let a normal user switch to a disabled strategy",async()=>{
     const customer=await user("switch","USER");
-    const current=await createStrategy(customer,"GB",input(keys.customer,"Customer current"));
+    await sql!.unsafe("UPDATE strategy_definitions SET enabled=true WHERE id=$1",[ids.published]);
+    let current="";
+    try{current=await createStrategy(customer,"GB",input(keys.published,"Customer current"));}
+    finally{await sql!.unsafe("UPDATE strategy_definitions SET enabled=false WHERE id=$1",[ids.published]);}
     await expect(switchStrategy(customer,current,{targetStrategyKey:keys.published})).rejects.toThrow("STRATEGY_NOT_AVAILABLE");
     expect(await status(current)).toBe("ACTIVE");
   });
@@ -158,14 +165,12 @@ describe.skipIf(!url)("admin may start disabled strategies; customers may not",(
 
     // A customer who legitimately started a strategy that the operator disabled later keeps running.
     const customer=await user("legit","USER");
-    const own=await createStrategy(customer,"GB",input(keys.customer,"Legit customer"));
-    await sql!.unsafe("UPDATE strategy_definitions SET enabled=false WHERE id=$1",[ids.customer]);
-    try{
-      expect(await enforceStrategyEntitlements(customer)).toEqual({paused:0});
-      expect(await status(own)).toBe("ACTIVE");
-    }finally{
-      await sql!.unsafe("UPDATE strategy_definitions SET enabled=true WHERE id=$1",[ids.customer]);
-    }
+    await sql!.unsafe("UPDATE strategy_definitions SET enabled=true WHERE id=$1",[ids.published]);
+    let own="";
+    try{own=await createStrategy(customer,"GB",input(keys.published,"Legit customer"));}
+    finally{await sql!.unsafe("UPDATE strategy_definitions SET enabled=false WHERE id=$1",[ids.published]);}
+    expect(await enforceStrategyEntitlements(customer)).toEqual({paused:0});
+    expect(await status(own)).toBe("ACTIVE");
   });
 
   it("does not pause a demoted admin's instance once the definition is enabled for everyone",async()=>{

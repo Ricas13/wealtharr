@@ -34,12 +34,13 @@ export async function listAvailableStrategies(options: { includeDisabled?: boole
   return sql.unsafe(
     "SELECT d.id,d.key,d.name,d.family,d.description,d.engine,d.enabled,d.proprietary,d.supported_regions,d.supported_wrappers,"+
     "v.id AS version_id,v.version,v.config,v.input_schema,v.release_notes,v.engine_key,"+
-    "EXISTS (SELECT 1 FROM strategy_version_attestations a WHERE a.strategy_version_id=v.id) AS attested "+
+    "EXISTS (SELECT 1 FROM strategy_version_attestations a WHERE a.strategy_version_id=v.id AND a.attested_by_email IS NOT NULL) AS attested "+
     "FROM strategy_definitions d JOIN LATERAL ("+
     " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
     " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
     " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
-    ") v ON true WHERE (d.enabled=true OR $1::boolean) ORDER BY d.name",
+    ") v ON true WHERE (d.enabled=true OR $1::boolean)"+
+    " AND EXISTS (SELECT 1 FROM strategy_version_attestations a WHERE a.strategy_version_id=v.id AND a.attested_by_email IS NOT NULL) ORDER BY d.name",
     [options.includeDisabled===true]
   );
 }

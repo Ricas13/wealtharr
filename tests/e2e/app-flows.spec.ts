@@ -280,16 +280,19 @@ test("expired price evidence hides the order and blocks stale confirmation until
   }
 });
 
-test("Explore never shows draft, research or unattested seeded strategies",async({page},testInfo)=>{
+test("Explore lists only genuinely gate-passing strategies in CI fixture",async({page},testInfo)=>{
   const user=await createVerifiedUser(testInfo,"explore");
   await login(page,user);
   await page.goto("/app/explore");
   await expect(page.getByRole("heading",{name:"Strategy catalogue, in plain English."})).toBeVisible();
   await expect(page.getByRole("link",{name:"Community stats"})).toHaveAttribute("href","/app/community");
-  // A fresh seed deliberately has no independently signed release. Even if an
-  // instrument mapping exists, no placeholder or 9Sig card may be advertised.
-  await expect(page.locator("[data-strategy-key]")).toHaveCount(0);
-  await expect(page.getByRole("heading",{name:"No strategies currently available"})).toBeVisible();
-  await expect(page.getByRole("link",{name:/Start this strategy/})).toHaveCount(0);
+  // The separate CI-only DB fixture explicitly records a synthetic sign-off
+  // for the existing integration-test 9Sig release; no other entry is released.
+  const cards=page.locator("[data-strategy-key]");
+  await expect(cards).toHaveCount(1);
+  await expect(page.locator('[data-strategy-key="9sig"]')).toHaveAttribute("data-state","AVAILABLE");
+  await expect(page.locator('[data-strategy-key="hfea"]')).toHaveCount(0);
   await expect(page.getByText(/Coming soon|In research|Awaiting verified instruments/i)).toHaveCount(0);
+  await page.locator('[data-strategy-key="9sig"] a[href^="/app/strategies/new"]').click();
+  await page.waitForURL("**/app/strategies/new?strategy=9sig");
 });
