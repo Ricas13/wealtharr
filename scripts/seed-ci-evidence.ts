@@ -5,6 +5,7 @@
  */
 import postgres from "postgres";
 
+async function main(){
 const url=process.env.DATABASE_URL??"";
 if(process.env.GITHUB_ACTIONS!=="true" || process.env.CI!=="true" ||
    !/^postgres(?:ql)?:\/\/[^@]+@127\.0\.0\.1:5432\/strategyos_test$/.test(url)){
@@ -29,3 +30,5 @@ try{
 }finally{
   await sql.end();
 }
+}
+void main().catch((error)=>{console.error(error);process.exitCode=1;});
