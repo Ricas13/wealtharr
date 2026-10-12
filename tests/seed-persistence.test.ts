@@ -22,7 +22,7 @@ describe("seed is initial-install-only",()=>{
    expect(seed).toContain("STRATEGY_PLUGINS");
    expect(seed).toContain("seedableStrategies(STRATEGY_PLUGINS,disposableTestDb)");
    expect(seed.match(/INSERT INTO strategy_definitions/g)?.length).toBe(1);
-   expect(seed.match(/INSERT INTO strategy_definitions[^;]*?ON CONFLICT \(key\) DO NOTHING/gs)?.length).toBe(2);
+   expect(seed.match(/INSERT INTO strategy_definitions[^;]*?ON CONFLICT \(key\) DO NOTHING/gs)?.length).toBe(1);
    expect(seed).not.toMatch(/INSERT INTO strategy_versions[^;]*?DO UPDATE/s);
  });
 });
