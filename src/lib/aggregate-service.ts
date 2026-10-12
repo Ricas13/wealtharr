@@ -59,11 +59,11 @@ export async function rebuildAnonymousAggregates(asOf=new Date(),options:{deadli
       const dates=chunk.map((instance)=>String(instance.date).slice(0,10));
       const flowRows=await sql.unsafe(
         "SELECT l.strategy_instance_id,l.occurred_at,l.cash_amount FROM ledger_events l"+
-        " JOIN unnest($1::uuid[],$2::date[]) AS x(id,latest_date) ON x.id=l.strategy_instance_id"+
+        " JOIN jsonb_to_recordset($1::jsonb) AS x(id uuid,latest_date date) ON x.id=l.strategy_instance_id"+
         " WHERE l.event_type IN ('CONTRIBUTION','WITHDRAWAL') AND l.occurred_at::date<=x.latest_date"+
         " AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)"+
         " ORDER BY l.strategy_instance_id,l.occurred_at,l.created_at",
-        [chunk.map((instance)=>String(instance.id)),dates]
+        [JSON.stringify(chunk.map((instance,i)=>({id:String(instance.id),latest_date:dates[i]})))]
       );
       const flowsByInstance=new Map<string,Array<{at:Date;amount:Decimal}>>();
       for(const flow of flowRows){
