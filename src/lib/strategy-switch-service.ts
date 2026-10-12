@@ -1,6 +1,6 @@
 import "server-only";
 import { sql } from "@/lib/db";
-import { foldLedger } from "@/domain/ledger";
+import { foldAccountLedger } from "@/domain/ledger";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
 import { assertCanCreateStrategy, assertStrategyFeatureAccess } from "@/domain/entitlements";
@@ -11,6 +11,7 @@ import { requiredPositions } from "@/domain/strategy/market-eligibility";
 import { switchPositionDiscrepancies } from "@/domain/strategy/switch-position-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
+import { latestPublishedVersionSelect } from "@/lib/strategy-version-sql";
 
 export async function switchStrategy(
   userId:string,
@@ -37,10 +38,7 @@ export async function switchStrategy(
     const entitlements=await loadEntitlementsWith(tx,userId,{lockSubscription:true});
     const targets=await tx.unsafe(
       "SELECT d.id AS definition_id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.engine_key,v.config,v.input_schema "+
-      "FROM strategy_definitions d JOIN LATERAL ("+
-      " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' "+
-      " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
-      " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
+      "FROM strategy_definitions d JOIN LATERAL ("+latestPublishedVersionSelect("v","d.id")+
       ") v ON true WHERE d.key=$1 AND (d.enabled=true OR $2::boolean) LIMIT 1",
       [input.targetStrategyKey,entitlements.includeDisabledStrategies===true]
     );
@@ -90,20 +88,16 @@ export async function switchStrategy(
       cash:string;
       quantities:Array<{instrumentId:string;quantity:string}>;
     }>=[];
+    // One read, then the shared per-account fold: a row with no account belongs to the primary
+    // account here exactly as it does in calculation and execution.
+    const switchLedger=await tx.unsafe(
+      "SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events "+
+      "WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",
+      [strategyInstanceId]
+    );
+    const primaryAccountId=current.account_id?String(current.account_id):null;
     for(const account of accounts){
-      const ledger=await tx.unsafe(
-        "SELECT event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events "+
-        "WHERE strategy_instance_id=$1 AND account_id=$2 ORDER BY occurred_at,created_at",
-        [strategyInstanceId,account.id]
-      );
-      const folded=foldLedger(ledger.map((row)=>({
-        eventType:String(row.event_type),
-        currency:String(row.currency),
-        cashAmount:String(row.cash_amount),
-        feeAmount:String(row.fee_amount),
-        instrumentId:row.instrument_id?String(row.instrument_id):null,
-        quantity:String(row.quantity)
-      })),String(account.currency));
+      const folded=foldAccountLedger(switchLedger,String(account.id),primaryAccountId,String(account.currency));
       const foreign=[...folded.cashByCurrency.entries()].filter(([currency,value])=>currency!==String(account.currency).toUpperCase()&&!value.eq(0));
       if(foreign.length)throw new Error("SWITCH_FOREIGN_CASH_UNSUPPORTED");
       if(folded.cash.lt(0))throw new Error("SWITCH_NEGATIVE_CASH_UNSUPPORTED");

@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import {z} from "zod";
+import {assessFreshness,MANUAL_PRICE_SKEW_MS,MAX_QUOTE_AGE_MS} from "./market-freshness";
 
 const schema=z.object({
   fieldKey:z.union([
@@ -23,11 +24,9 @@ export function parseManualOverride(value:unknown,now=new Date()){
   if(price){
     if(!parsed.observedAt)throw new Error("OVERRIDE_TIMESTAMP_REQUIRED");
     observedAt=new Date(parsed.observedAt);
-    if(!Number.isFinite(observedAt.getTime())||
-       observedAt.getTime()>now.getTime()+60_000||
-       now.getTime()-observedAt.getTime()>36*3_600_000)
+    if(assessFreshness(observedAt,now,{maxAgeMs:MAX_QUOTE_AGE_MS,skewMs:MANUAL_PRICE_SKEW_MS})!=="CURRENT")
       throw new Error("OVERRIDE_PRICE_STALE");
-    expiresAt=new Date(Math.min(observedAt.getTime()+36*3_600_000,now.getTime()+12*3_600_000));
+    expiresAt=new Date(Math.min(observedAt.getTime()+MAX_QUOTE_AGE_MS,now.getTime()+12*3_600_000));
   }else if(parsed.observedAt){
     throw new Error("TARGET_VALUE_HAS_NO_MARKET_TIMESTAMP");
   }

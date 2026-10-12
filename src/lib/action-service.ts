@@ -2,12 +2,15 @@ import "server-only";
 import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
-import { assertLedgerEvent, foldLedger } from "@/domain/ledger";
+import { assertLedgerEvent, foldAccountLedger, foldLedger, ledgerRowToEvent } from "@/domain/ledger";
+import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
+import { safeErrorCode } from "@/lib/safe-error-code";
+import { latestPublishedVersionSelect } from "@/lib/strategy-version-sql";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
 import { assertExecutionCurrencyMatch, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
 import { nextReviewDueAt } from "@/domain/schedule";
-import { classifyFreshness } from "@/domain/market-freshness";
+import { assessFreshness } from "@/domain/market-freshness";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
 import { actionRecalculationDisposition, type ActionStatus } from "@/domain/actions";
 import { actionFingerprintMaterial } from "@/domain/action-fingerprint";
@@ -22,6 +25,15 @@ import { postActionReviewState } from "@/domain/strategy/review-completion";
 import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
+const QUOTE_REJECTED_MESSAGE="The latest market price for a held instrument was rejected as implausible (for example an unrecorded stock split). Check the instrument, record a split or enter a manual price before financial actions resume.";
+/** The provider's newest quote was refused and nothing newer has been accepted since: do not fall back to the older price. */
+function latestQuoteRejected(row:{observed_at?:unknown;rejected_observed_at?:unknown}|undefined){
+  if(!row?.rejected_observed_at)return false;
+  const rejectedAt=new Date(row.rejected_observed_at as string|number|Date).getTime();
+  if(!Number.isFinite(rejectedAt))return true;
+  if(!row.observed_at)return true;
+  return rejectedAt>new Date(row.observed_at as string|number|Date).getTime();
+}
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
 type CalculationScenario={
   cashDelta?:Decimal.Value;
@@ -62,13 +74,11 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const accountCurrencies=new Set(accounts.map((account)=>String(account.currency).toUpperCase()));
   const primaryAccountId=String(instance.account_id);
   const ledgerRows=await sql.unsafe("SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity,occurred_at,created_at FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",[strategyInstanceId]);
-  const asLedgerEvent=(r:any)=>({eventType:String(r.event_type),currency:String(r.currency),cashAmount:String(r.cash_amount),feeAmount:String(r.fee_amount),instrumentId:r.instrument_id?String(r.instrument_id):null,quantity:String(r.quantity)});
-  const folded=foldLedger(ledgerRows.map(asLedgerEvent),baseCurrency);
+  const folded=foldLedger(ledgerRows.map(ledgerRowToEvent),baseCurrency);
   const accountPositions=new Map<string,ReturnType<typeof foldLedger>>();
   for(const account of accounts){
     const accountId=String(account.id);
-    const ownRows=ledgerRows.filter((row)=>row.account_id?String(row.account_id)===accountId:accountId===primaryAccountId);
-    accountPositions.set(accountId,foldLedger(ownRows.map(asLedgerEvent),String(account.currency)));
+    accountPositions.set(accountId,foldAccountLedger(ledgerRows,accountId,primaryAccountId,String(account.currency)));
   }
   const effectiveCash=folded.cash.plus(new Decimal(scenario?.cashDelta??0));
   const calculationDefinitionId=scenario?.versionOverride?.strategyDefinitionId??String(instance.strategy_definition_id);
@@ -110,9 +120,10 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     for(const [instrumentId,quantity] of position.quantities.entries()){
       if(quantity.eq(0))continue;
       const market=await sql.unsafe(
-        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id "+
+        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id,q.rejected_observed_at "+
         "FROM instruments i LEFT JOIN LATERAL ("+
-        " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,o.price,o.observed_at,o.currency AS observation_currency"+
+        " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,o.price,o.observed_at,o.currency AS observation_currency,"+
+        " (SELECT r.observed_at FROM market_data_rejections r WHERE r.trading_line_id=tl.id) AS rejected_observed_at"+
         " FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true"+
         " WHERE tl.instrument_id=i.id AND upper(tl.currency)=upper($2) AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date)"+
         " ORDER BY o.observed_at DESC NULLS LAST,tl.id LIMIT 1"+
@@ -133,9 +144,10 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
         exposurePositions.push({economicExposure:String(m.economic_exposure),value:quantity.mul(manualPrice),tradingLineId:String(m.trading_line_id),accountId,accountName});
         continue;
       }
+      if(latestQuoteRejected(m)){dataStatus="MISSING";dataMessage=QUOTE_REJECTED_MESSAGE;continue;}
       if(!m?.price){dataStatus="MISSING";dataMessage="A held instrument has no current market price in "+accountName+".";continue;}
       const observedAt=new Date(m.observed_at);
-      if(classifyFreshness(observedAt)!=="CURRENT"&&dataStatus!=="MISSING"){dataStatus="STALE";dataMessage="Market data is stale or invalid; financial actions are suppressed until data is current and verified.";}
+      if(assessFreshness(observedAt,new Date())!=="CURRENT"&&dataStatus!=="MISSING"){dataStatus="STALE";dataMessage="Market data is stale or invalid; financial actions are suppressed until data is current and verified.";}
       exposurePositions.push({economicExposure:String(m.economic_exposure),value:quantity.mul(new Decimal(String(m.price))),tradingLineId:m.trading_line_id?String(m.trading_line_id):undefined,accountId,accountName});
     }
   }
@@ -195,7 +207,15 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12):undefined;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  // Engine proposal followed by mapping, pricing and practical sizing. A cash-funded BUY that the
+  // account cannot practically place (below one whole share etc.) is retried with that exposure
+  // marked unaffordable so the fixed-allocation engine proposes the funding sale instead of
+  // deadlocking on DATA_REQUIRED. Other engines never opt in (they ignore the marker).
+  const resolveProposal=async(unaffordableCashBuys:Record<string,Decimal>)=>{
+  let blockedCashBuyExposure:string|null=null;
+  let sizingPrice:Decimal|null=null;
+  let instructedQuantity:Decimal|null=null;
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage},unaffordableCashBuys});
 
   let tradingLineId:string|null=null;
   let executionTicker:string|null=null;
@@ -274,7 +294,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
 
     if(tradingLineId&&["BUY","SELL"].includes(proposal.actionType)&&proposal.amount){
       const quoteRows=await sql.unsafe(
-        "SELECT tl.ticker,tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
+        "SELECT tl.ticker,tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency,(SELECT r.observed_at FROM market_data_rejections r WHERE r.trading_line_id=tl.id) AS rejected_observed_at FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
         [tradingLineId]
       );
       const quote=quoteRows[0];
@@ -291,11 +311,13 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       const priceObservedAt=chosenOverride?.observed_at??quote?.observed_at;
       if(!effectivePrice){
         proposal={actionType:"DATA_REQUIRED",title:"Price needed before you trade",instruction:"A current price is not available for the instrument this strategy would use.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
-      }else if(String(quote.observation_currency??quote.currency)!==String(instance.currency)){
+      }else if(String(quote.observation_currency??quote.currency).trim().toUpperCase()!==String(instance.currency).trim().toUpperCase()){
         proposal={actionType:"DATA_REQUIRED",title:"FX data needed",instruction:"The selected trading line is not priced in your account currency, so we will not estimate an order without an explicit FX conversion.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
-      }else if(!priceObservedAt||!Number.isFinite(new Date(priceObservedAt).getTime())||
-        (Date.now()-new Date(priceObservedAt).getTime())/3600000>36||
-        new Date(priceObservedAt).getTime()>Date.now()+60_000){
+      }else if(chosenOverride?.manual_value==null&&latestQuoteRejected(quote)){
+        // The newest provider quote was refused as implausible (e.g. a split). Never fall back to the
+        // older accepted price: it describes a different share count than the broker now shows.
+        proposal={actionType:"DATA_REQUIRED",title:"Price needs checking",instruction:QUOTE_REJECTED_MESSAGE,explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
+      }else if(assessFreshness(priceObservedAt,new Date())!=="CURRENT"){
         proposal={actionType:"DATA_REQUIRED",title:"Price is out of date",instruction:"Refresh market data before using this trade instruction.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else{
         const selectedPosition=accountPositions.get(String(executionAccountId));
@@ -319,8 +341,12 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
             BELOW_MINIMUM_TRADE:"This action is below your minimum trade size.",
             NO_HOLDINGS:"The strategy wants to reduce this exposure, but no matching holding is recorded."
           } as const;
+          if(proposal.actionType==="BUY"&&calculationEngineKey==="FIXED_ALLOCATION"&&isCashBuyShortfall(practical.reason))
+            blockedCashBuyExposure=proposal.economicExposure??null;
           proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
         }else{
+          sizingPrice=effectivePrice;
+          instructedQuantity=practical.quantity;
           const quantityText=practical.quantity.toDecimalPlaces(6,Decimal.ROUND_DOWN).toString();
           const amountText=practical.amount.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
           proposal={
@@ -342,6 +368,10 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       }
     }
   }
+  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,blockedCashBuyExposure};
+  };
+  const {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity}=
+    await settleCashBuyFallback(resolveProposal,effectiveCash);
 
   const stableHoldings=accounts.flatMap((account)=>{
     const accountId=String(account.id);
@@ -382,7 +412,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   // the engine recalculates. A HOLD acknowledgement can then close the review.
   const nextState=postActionReviewState(proposal,state,new Date());
   const totalValue=exposurePositions.reduce((sum,p)=>sum.plus(p.value),effectiveCash);
-  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker};
+  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker,sizingPrice,instructedQuantity};
 }
 
 export async function previewCashScenario(
@@ -424,10 +454,7 @@ export async function previewStrategySwitchScenario(
 ){
   const targets=await sql.unsafe(
     "SELECT d.id AS definition_id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,v.id AS version_id,v.version,v.effective_from,v.engine_key,v.config,v.input_schema "+
-    "FROM strategy_definitions d JOIN LATERAL ("+
-    " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' "+
-    " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
-    " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
+    "FROM strategy_definitions d JOIN LATERAL ("+latestPublishedVersionSelect("v","d.id")+
     ") v ON true WHERE d.key=$1 AND (d.enabled=true OR $2::boolean) LIMIT 1",
     [targetStrategyKey,includeDisabled===true]
   );
@@ -605,7 +632,11 @@ export async function isStoredActionCurrent(strategyInstanceId:string,actionId:s
     );
     if(!rows[0])return false;
     return (await buildActionCalculation(strategyInstanceId)).fingerprint===String(rows[0].fingerprint);
-  }catch{return false;}
+  }catch(error){
+    // Fail closed (never show an unverifiable instruction as current) but leave a trace of why.
+    console.error("isStoredActionCurrent failed: "+safeErrorCode(error));
+    return false;
+  }
 }
 
 export async function calculateAction(strategyInstanceId:string){
@@ -708,7 +739,7 @@ export async function recalculateAfterMutation(
 export async function executeAction(
   userId:string,
   actionId:string,
-  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string}
+  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string;considerationAmount?:string}
 ){
   const result=await sql.begin(async(tx)=>{
     const ownership=await tx.unsafe(
@@ -719,7 +750,7 @@ export async function executeAction(
 
     // Keep lock ordering consistent with pause/close flows: strategy first, then action.
     const strategyRows=await tx.unsafe(
-      "SELECT i.id,i.status,i.execution_constraints FROM strategy_instances i WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
+      "SELECT i.id,i.status,i.account_id,i.execution_constraints FROM strategy_instances i WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
       [ownership[0].strategy_instance_id,userId]
     );
     const strategy=strategyRows[0];
@@ -737,6 +768,10 @@ export async function executeAction(
     // A deposit, withdrawal, corrected trade or imported fill can invalidate an old
     // instruction if asynchronous recalculation failed. Never let an executable
     // action outlive the financial ledger snapshot it was calculated against.
+    // This timestamp comparison is a fast first check only: a writer that began before the
+    // calculation and commits after it can carry an older created_at. The authoritative guard is the
+    // append-only ledger row COUNT inside the action fingerprint (ledgerRevision), re-derived below
+    // under the strategy row lock, which any such late-committed row changes.
     const newerLedger=await tx.unsafe(
       "SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND created_at>(SELECT calculated_at FROM actions WHERE id=$2) ORDER BY created_at DESC LIMIT 1",
       [strategy.id,actionId]
@@ -762,18 +797,12 @@ export async function executeAction(
       if(!action.account_id)throw new Error("EXECUTION_CURRENCY_MISMATCH");
       const executionCurrency=assertExecutionCurrencyMatch(action.currency,action.account_currency);
 
+      // Same attribution as buildActionCalculation: a row with no account belongs to the primary account.
       const ledgerRows=await tx.unsafe(
-        "SELECT event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events WHERE strategy_instance_id=$1 AND account_id=$2 ORDER BY occurred_at,created_at",
-        [action.strategy_instance_id,action.account_id]
+        "SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",
+        [action.strategy_instance_id]
       );
-      const position=foldLedger(ledgerRows.map((r)=>({
-        eventType:String(r.event_type),
-        currency:String(r.currency),
-        cashAmount:String(r.cash_amount),
-        feeAmount:String(r.fee_amount),
-        instrumentId:r.instrument_id?String(r.instrument_id):null,
-        quantity:String(r.quantity)
-})),String(action.account_currency));
+      const position=foldAccountLedger(ledgerRows,String(action.account_id),strategy.account_id?String(strategy.account_id):null,String(action.account_currency));
       const ledgerTime=await tx.unsafe(
         "SELECT max(occurred_at) AS latest_at FROM ledger_events WHERE strategy_instance_id=$1",
         [action.strategy_instance_id]
@@ -795,7 +824,12 @@ export async function executeAction(
         fee:execution.fee??"0",
         availableCash:spendableCash,
         heldQuantity:held,
-        allowPartial:Boolean(execution.partial)
+        allowPartial:Boolean(execution.partial),
+        considerationAmount:execution.considerationAmount??null,
+        // The instruction was sized from this stored quote and quantity (the rebuild above matched the
+        // action's fingerprint, so these are the values the person was shown).
+        sizingPrice:current.sizingPrice,
+        instructedQuantity:current.instructedQuantity
       });
       if(!constraints.fractionalShares&&!validated.quantity.isInteger())throw new Error("FRACTIONAL_SHARES_DISABLED");
       if(validated.grossNotional.lt(constraints.minimumTradeAmount))throw new Error("BELOW_MINIMUM_TRADE");
@@ -818,6 +852,7 @@ export async function executeAction(
             actionId,
             proposedAmount:String(action.amount),
             actualNotional:validated.grossNotional.toString(),
+            considerationSupplied:execution.considerationAmount!=null,
             partial:Boolean(execution.partial),
             executedAt:brokerExecutedAt.toISOString()
           }),

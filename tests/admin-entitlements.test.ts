@@ -95,15 +95,19 @@ describe("admin may start disabled strategies (server-derived only)",()=>{
   });
   it("keeps every disabled-definition bypass behind a PUBLISHED version lookup and the market check",()=>{
     const strategy=read("src/lib/strategy-service.ts");
+    // The PUBLISHED, in-window lookup is one shared helper; each site must go through it.
+    const helper=read("src/lib/strategy-version-sql.ts");
+    expect(helper).toContain("lifecycle_status='PUBLISHED'");
+    expect(helper).not.toContain("DRAFT");
     const list=strategy.slice(strategy.indexOf("export async function listAvailableStrategies"),strategy.indexOf("export async function listUserStrategies"));
-    expect(list).toContain("lifecycle_status='PUBLISHED'");
+    expect(list).toContain("latestPublishedVersionSelect(");
     expect(list).not.toContain("DRAFT");
     const create=strategy.slice(strategy.indexOf("export async function createStrategy"),strategy.indexOf("export async function migrateStrategyVersion"));
-    expect(create).toContain("lifecycle_status='PUBLISHED'");
+    expect(create).toContain("latestPublishedVersionSelect(");
     expect(create).toContain("assessStrategyMarket(");
-    expect(create.indexOf("(d.enabled=true OR $2::boolean)")).toBeGreaterThan(create.indexOf("lifecycle_status='PUBLISHED'"));
+    expect(create.indexOf("(d.enabled=true OR $2::boolean)")).toBeGreaterThan(create.indexOf("latestPublishedVersionSelect("));
     const sw=read("src/lib/strategy-switch-service.ts");
-    expect(sw).toContain("lifecycle_status='PUBLISHED'");
+    expect(sw).toContain("latestPublishedVersionSelect(");
     expect(sw).toContain("assessStrategyMarket(");
     expect(read("src/lib/action-service.ts")).toContain("(d.enabled=true OR $2::boolean)");
   });

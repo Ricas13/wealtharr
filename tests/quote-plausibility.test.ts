@@ -24,4 +24,21 @@ describe("assessQuote",()=>{
  it("honours a configured limit",()=>{
   expect(assessQuote(130,prev(100),now,0.2)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
  });
+ it("rejects a move of exactly the limit: an exact 2:1 split halves the price",()=>{
+  // 50 / 100 - 1 = -0.5 and |-0.5| >= 0.5, so a 2:1 split (or a doubling) is not a believable quote.
+  expect(assessQuote(50,prev(100),now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+  expect(assessQuote(150,prev(100),now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+  expect(assessQuote(200,prev(100),now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+  // 3:1 split: 100/3 = 33.33 is a -66.7% move.
+  expect(assessQuote("33.3333",prev(100),now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+ });
+ it("accepts the largest move just inside the limit",()=>{
+  // 50.01 / 100 - 1 = -0.4999
+  expect(assessQuote("50.01",prev(100),now)).toEqual({ok:true});
+  expect(assessQuote("149.99",prev(100),now)).toEqual({ok:true});
+ });
+ it("compares exactly with decimals rather than binary floating point",()=>{
+  // 0.3 / 0.6 is exactly one half; 0.1 + 0.2 style float error must not move the verdict.
+  expect(assessQuote("0.3",{price:"0.6",observedAt:prev(0).observedAt},now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+ });
 });

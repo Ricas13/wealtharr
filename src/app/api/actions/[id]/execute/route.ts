@@ -10,6 +10,8 @@ const schema = z.object({
   price: positive.optional(),
   quantity: positive.optional(),
   fee: nonNegative.optional(),
+  // The broker's cash consideration for the fill, excluding the fee, to two decimals as printed.
+  considerationAmount: positive.optional(),
   partial: z.boolean().optional(),
   executedAt:z.string().datetime({offset:true}).optional()
 });
@@ -27,7 +29,11 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const code=error instanceof Error?error.message:"FAILED";
     const messages:Record<string,string>={
       EXECUTION_DETAILS_REQUIRED:"Confirm the execution price before marking this trade complete.",
-      EXECUTION_PRECISION_UNSUPPORTED:"These fill values exceed ledger precision (12 quantity, 10 price and 8 cash/fee decimal places). Check your broker confirmation; the fill has not been rounded or saved.",
+      EXECUTION_PRECISION_UNSUPPORTED:"These fill values exceed ledger precision (12 quantity, 10 price and 8 cash/fee decimal places). Check your broker confirmation; the fill has not been rounded or saved. If quantity x price needs more than 8 decimals, also enter the broker's trade value (excluding fees).",
+      EXECUTION_CONSIDERATION_MISMATCH:"The cash amount does not match quantity x price to within half a penny. Enter the broker's trade value excluding fees.",
+      EXECUTION_PRICE_OUT_OF_BAND:"The fill price is far from the price this instruction was sized with. Check the broker confirmation (pence versus pounds?) or recalculate with a corrected price.",
+      EXECUTION_QUANTITY_MISMATCH:"The filled quantity differs too much from the calculated quantity. Mark a smaller fill as partial, or recalculate.",
+      INVALID_CONSIDERATION:"Enter the broker's cash amount for the fill as a positive number.",
       EXECUTION_AMOUNT_TOO_LARGE:"These fill values exceed the supported ledger amount. Check your broker confirmation.",
       ACTION_STALE_LEDGER_MUTATION:"Your portfolio changed after this instruction was calculated. Refresh and recalculate before recording a trade or completing the review.",
       ACTION_STALE_INPUTS:"This instruction no longer matches current prices or strategy settings. Recalculate first. If you already traded, record the actual broker fill using historical transaction import or reconciliation.",

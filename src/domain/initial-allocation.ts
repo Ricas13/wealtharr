@@ -19,9 +19,17 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
     targets=[{exposure:String(config.targetExposure),weight:new Decimal(String(config.initialTargetRatio??"0.6"))}];
   } else return null;
   if(targets.length<1||targets.some(x=>!x.exposure||!x.weight.isFinite()||x.weight.lte(0)))return null;
-  const totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
-  if(totalWeight.gt(1))return null;
-  if(engine==="FIXED_ALLOCATION"&&!totalWeight.eq(1))return null;
+  let totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
+  if(engine==="FIXED_ALLOCATION"){
+    // validateConfig accepts weights within 1e-8 of 1; apply the same tolerance here and put the
+    // residue on the last leg so the plan still allocates the whole amount.
+    const residue=new Decimal(1).minus(totalWeight);
+    if(residue.abs().gt("0.00000001"))return null;
+    const last=targets[targets.length-1];
+    targets[targets.length-1]={exposure:last.exposure,weight:last.weight.plus(residue)};
+    totalWeight=new Decimal(1);
+    if(targets[targets.length-1].weight.lte(0))return null;
+  }else if(totalWeight.gt(1))return null;
   const orders:AllocationLine[]=[];
   let allocated=new Decimal(0);
   for(let i=0;i<targets.length;i++){

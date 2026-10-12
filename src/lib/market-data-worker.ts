@@ -1,9 +1,30 @@
 import "server-only";
+import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
-import { getMarketDataProvider } from "@/lib/market-data";
-import { classifyFreshness } from "@/domain/market-freshness";
+import { getMarketDataProvider, type RejectedQuote } from "@/lib/market-data";
+import { assessFreshness } from "@/domain/market-freshness";
 import { runBounded } from "@/lib/work-pool";
 import { assessQuote } from "@/domain/quote-plausibility";
+
+/** MARKET_MAX_QUOTE_MOVE as an exact decimal; anything unset, malformed or non-positive uses the default. */
+function configuredMaxMove(): Decimal | undefined {
+  try {
+    const value = new Decimal(String(process.env.MARKET_MAX_QUOTE_MOVE ?? "").trim());
+    return value.isFinite() && value.gt(0) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Remember the newest refused quote for a line; an older rejection never replaces a newer one. */
+async function recordRejection(tradingLineId: string, rejected: RejectedQuote) {
+  await sql.unsafe(
+    "INSERT INTO market_data_rejections (trading_line_id,observed_at,price,currency,provider,reason) VALUES ($1,$2,$3,$4,$5,$6) " +
+    "ON CONFLICT (trading_line_id) DO UPDATE SET observed_at=EXCLUDED.observed_at,price=EXCLUDED.price,currency=EXCLUDED.currency," +
+    "provider=EXCLUDED.provider,reason=EXCLUDED.reason,rejected_at=now() WHERE market_data_rejections.observed_at<=EXCLUDED.observed_at",
+    [tradingLineId, rejected.observedAt, rejected.price, rejected.currency, rejected.provider, rejected.code]
+  );
+}
 
 // `deadline` (epoch ms) stops new lookups once reached; lines not refreshed are reported as skipped
 // so a slow provider shows up as a degraded run instead of silently eating the whole worker.
@@ -41,13 +62,25 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
       { concurrency: options.concurrency ?? 5, shouldStop: () => options.deadline != null && Date.now() >= options.deadline },
       async (line) => {
         try {
-          const observation = await provider.currentPrice(String(line.provider_symbol));
+          const symbol = String(line.provider_symbol);
+          const detailed = provider.currentPriceDetailed
+            ? await provider.currentPriceDetailed(symbol)
+            : { observation: await provider.currentPrice(symbol), rejected: undefined };
+          const observation = detailed.observation;
           if (!observation) {
+            if (detailed.rejected) {
+              // Refused as implausible by the provider layer (e.g. an unrecorded split): remember it so
+              // calculations fail closed instead of falling back to the older, different-share-count price.
+              await recordRejection(String(line.id), detailed.rejected);
+              failed += 1;
+              failures.push({ tradingLineId: String(line.id), code: detailed.rejected.code });
+              return;
+            }
             failed += 1;
             failures.push({ tradingLineId: String(line.id), code: "NO_QUOTE" });
             return;
           }
-          if (classifyFreshness(observation.observedAt) !== "CURRENT") {
+          if (assessFreshness(observation.observedAt, new Date()) !== "CURRENT") {
             failed += 1;
             failures.push({ tradingLineId: String(line.id), code: "STALE_OR_INVALID_QUOTE" });
             return;
@@ -57,18 +90,30 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
             failures.push({ tradingLineId: String(line.id), code: "CURRENCY_MISMATCH" });
             return;
           }
+          // The reference is the previous accepted quote, except that one older than a recorded stock
+          // split (SPLIT ledger event, not reversed) describes a different share count and is no
+          // reference for the post-split price.
           const previous = await sql.unsafe(
-            "SELECT price,observed_at FROM market_data_observations WHERE trading_line_id=$1 AND observed_at<$2 ORDER BY observed_at DESC LIMIT 1",
+            "SELECT m.price,m.observed_at FROM market_data_observations m WHERE m.trading_line_id=$1 AND m.observed_at<$2 " +
+            "AND NOT EXISTS (SELECT 1 FROM ledger_events s JOIN trading_lines t ON t.id=m.trading_line_id " +
+            "WHERE s.instrument_id=t.instrument_id AND s.event_type='SPLIT' AND s.occurred_at>m.observed_at " +
+            "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) " +
+            "ORDER BY m.observed_at DESC LIMIT 1",
             [line.id, observation.observedAt]
           );
-          const maxMove = Number(process.env.MARKET_MAX_QUOTE_MOVE);
           const assessment = assessQuote(
-            Number(observation.price),
-            previous[0] ? { price: Number(previous[0].price), observedAt: new Date(previous[0].observed_at) } : null,
+            observation.price,
+            previous[0] ? { price: String(previous[0].price), observedAt: new Date(previous[0].observed_at) } : null,
             new Date(),
-            Number.isFinite(maxMove) && maxMove > 0 ? maxMove : undefined
+            configuredMaxMove()
           );
           if (!assessment.ok) {
+            if (assessment.code === "IMPLAUSIBLE_MOVE") {
+              await recordRejection(String(line.id), {
+                code: "IMPLAUSIBLE_MOVE", price: observation.price, currency: observation.currency,
+                observedAt: observation.observedAt, provider: observation.provider
+              });
+            }
             failed += 1;
             failures.push({ tradingLineId: String(line.id), code: assessment.code });
             return;
@@ -76,6 +121,11 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
           await sql.unsafe(
             "INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness) VALUES ($1,$2,$3,$4,$5,'CURRENT') ON CONFLICT (trading_line_id,observed_at,provider) DO NOTHING",
             [line.id, observation.observedAt, observation.price, observation.currency, observation.provider]
+          );
+          // An accepted quote at least as new as a recorded rejection supersedes it.
+          await sql.unsafe(
+            "DELETE FROM market_data_rejections WHERE trading_line_id=$1 AND observed_at<=$2",
+            [line.id, observation.observedAt]
           );
           refreshed += 1;
         } catch {

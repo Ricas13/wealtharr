@@ -80,7 +80,18 @@ describe.skipIf(!url)("quote -> action -> notification",()=>{
     expect(await observations()).toEqual([100]);
     const run=(await sql!.unsafe("SELECT details FROM worker_runs WHERE worker_key='market-data-refresh' ORDER BY started_at DESC LIMIT 1"))[0];
     expect(JSON.stringify(run.details)).toContain("IMPLAUSIBLE_MOVE");
+    // The refused quote is remembered: the older accepted price must not silently keep sizing
+    // actions while the newest provider quote is known to be wrong.
+    expect((await sql!.unsafe("SELECT 1 FROM market_data_rejections WHERE trading_line_id=$1",[lineId])).length).toBe(1);
+    const { calculateAction }=await import("@/lib/action-service");
+    const blocked=await calculateAction(instanceId);
+    const blockedAction=(await sql!.unsafe("SELECT action_type FROM actions WHERE id=$1",[blocked.actionId]))[0];
+    expect(blockedAction.action_type).toBe("DATA_REQUIRED");
+    // A sane newer quote supersedes the rejection and calculation resumes.
     feed.price="100";
+    const recovered=await refreshMarketData();
+    expect(recovered.refreshed).toBeGreaterThanOrEqual(1);
+    expect((await sql!.unsafe("SELECT 1 FROM market_data_rejections WHERE trading_line_id=$1",[lineId])).length).toBe(0);
   });
 
   it("calculates an action from the stored quote and creates its notification",async()=>{

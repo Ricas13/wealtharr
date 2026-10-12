@@ -166,6 +166,79 @@ describe("trade execution validation", () => {
 });
 
 
+describe("broker cash consideration", () => {
+  // 0.123456789 x 10.25: 0.123456789 x 10 = 1.23456789; 0.123456789 x 0.25 = 0.03086419725;
+  // total 1.26543208725 (11 decimals, so it cannot be stored as cash without the broker's figure).
+  const base = { side: "BUY" as const, price: "10.25", quantity: "0.123456789", fee: "0.01", availableCash: "2", heldQuantity: "0" };
+
+  it("still refuses an unrepresentable product when no consideration is supplied", () => {
+    expect(() => validateExecution({ ...base, proposedAmount: "1.27" })).toThrow("EXECUTION_PRECISION_UNSUPPORTED");
+  });
+
+  it("stores the exact quantity and the broker's 2 dp consideration as cash", () => {
+    // |1.27 - 1.26543208725| = 0.00456791275 <= 0.005, so the rounded broker figure is accepted.
+    const result = validateExecution({ ...base, proposedAmount: "1.27", considerationAmount: "1.27" });
+    expect(result.quantity.toString()).toBe("0.123456789");
+    expect(result.ledgerQuantity.toString()).toBe("0.123456789");
+    expect(result.grossNotional.toString()).toBe("1.27");
+    expect(result.cashAmount.toString()).toBe("-1.27");
+    expect(result.fee.toString()).toBe("0.01");
+  });
+
+  it("requires the consideration to be within half a penny of quantity x price", () => {
+    // 1.28 - 1.26543208725 = 0.01456791275 and 1.26 is 0.00543208725 away: both outside 0.005.
+    for (const considerationAmount of ["1.28", "1.26"]) {
+      expect(() => validateExecution({ ...base, proposedAmount: "1.27", considerationAmount })).toThrow("EXECUTION_CONSIDERATION_MISMATCH");
+    }
+  });
+
+  it("checks cash against consideration plus fee", () => {
+    // 1.27 + 0.01 = 1.28 > 1.27 available.
+    expect(() => validateExecution({ ...base, proposedAmount: "1.27", considerationAmount: "1.27", availableCash: "1.27" })).toThrow("INSUFFICIENT_CASH");
+  });
+
+  it("rejects a malformed consideration", () => {
+    expect(() => validateExecution({ ...base, proposedAmount: "1.27", considerationAmount: "0" })).toThrow("INVALID_CONSIDERATION");
+    expect(() => validateExecution({ ...base, proposedAmount: "1.27", considerationAmount: "abc" })).toThrow();
+  });
+
+  it("credits the broker consideration on a sell", () => {
+    const result = validateExecution({ ...base, side: "SELL", proposedAmount: "1.27", considerationAmount: "1.27", heldQuantity: "1" });
+    expect(result.cashAmount.toString()).toBe("1.27");
+    expect(result.ledgerQuantity.toString()).toBe("-0.123456789");
+  });
+});
+
+describe("fill price and quantity against the sizing quote", () => {
+  // Instruction sized at 10 per unit for 10 units (100 notional).
+  const sized = { side: "BUY" as const, proposedAmount: "100", sizingPrice: "10", instructedQuantity: "10", availableCash: "1000", heldQuantity: "0" };
+
+  it("refuses price/10 with quantity x10, which keeps the notional equal to the instruction", () => {
+    // 100 x 1 = 100 = proposed, so the old 2% notional tolerance accepted this.
+    expect(() => validateExecution({ ...sized, price: "1", quantity: "100" })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+  });
+
+  it("accepts a fill 14% from the sizing price and refuses 16%", () => {
+    // |11.4 / 10 - 1| = 0.14 <= 0.15; |11.6 / 10 - 1| = 0.16 > 0.15.
+    expect(validateExecution({ ...sized, price: "11.4", quantity: "10" }).grossNotional.toString()).toBe("114");
+    expect(() => validateExecution({ ...sized, price: "11.6", quantity: "10" })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+  });
+
+  it("validates quantity against the instructed quantity separately", () => {
+    // Upper bound is 10 x 1.02 = 10.2 inclusive.
+    expect(validateExecution({ ...sized, price: "10", quantity: "10.2" }).quantity.toString()).toBe("10.2");
+    expect(() => validateExecution({ ...sized, price: "10", quantity: "10.3" })).toThrow("EXECUTION_QUANTITY_MISMATCH");
+    // Lower bound is 10 x 0.98 = 9.8 for a full fill.
+    expect(() => validateExecution({ ...sized, price: "10", quantity: "9.7" })).toThrow("EXECUTION_QUANTITY_MISMATCH");
+  });
+
+  it("lets an explicitly partial fill be smaller but never escape the price band", () => {
+    expect(validateExecution({ ...sized, price: "10", quantity: "4", allowPartial: true }).grossNotional.toString()).toBe("40");
+    expect(() => validateExecution({ ...sized, price: "1", quantity: "4", allowPartial: true })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+    expect(() => validateExecution({ ...sized, price: "10", quantity: "4" })).toThrow("EXECUTION_QUANTITY_MISMATCH");
+  });
+});
+
 describe("execution currency invariant", () => {
   it("accepts the same currency and returns a canonical code", () => {
     expect(assertExecutionCurrencyMatch("gbp", "GBP")).toBe("GBP");

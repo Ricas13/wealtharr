@@ -138,7 +138,13 @@ export const fixedAllocationEngine: StrategyEngine = {
     });
     legs.forEach((leg,index)=>explanation.push({label:"Full plan, step "+(index+1),value:(leg.side==="SELL"?"Sell ":"Buy ")+money(leg.amount)+" "+ctx.baseCurrency+" of "+leg.exposure,kind:"text"}));
 
-    const underweight=[...rows].filter((row)=>row.delta.gt(0)).sort((a,b)=>b.delta.cmp(a.delta))[0];
+    // A cash buy that the account cannot practically place (below one share, the minimum trade or the
+    // spendable cash) must not block the sale that would fund the underweight leg: skip such legs.
+    const cashBuyBlocked=(exposure:string)=>{
+      const limit=ctx.unaffordableCashBuys?.[exposure];
+      return limit!==undefined&&ctx.cash.lte(limit);
+    };
+    const underweight=[...rows].filter((row)=>row.delta.gt(0)&&!cashBuyBlocked(row.exposure)).sort((a,b)=>b.delta.cmp(a.delta))[0];
     if(underweight&&ctx.cash.gt(0)){
       const amount=Decimal.min(underweight.delta,ctx.cash);
       const projected=rows.map((row)=>row.exposure===underweight.exposure?{...row,current:row.current.plus(amount)}:row);

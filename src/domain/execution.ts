@@ -20,7 +20,23 @@ export type ExecutionInput = {
   heldQuantity: Decimal.Value;
   maxNotionalDeviation?: Decimal.Value;
   allowPartial?: boolean;
+  /**
+   * The broker's reported cash consideration for the fill, EXCLUDING the fee (what the confirmation
+   * shows as "trade value"). When supplied it is what the ledger stores as cash, so recorded cash
+   * equals the broker's figure rather than a recomputed quantity x price.
+   */
+  considerationAmount?: Decimal.Value | null;
+  /** Price the instruction was sized with (the stored quote). Enables the price band. */
+  sizingPrice?: Decimal.Value | null;
+  /** Quantity the instruction asked for. Validated separately from the price when supplied. */
+  instructedQuantity?: Decimal.Value | null;
+  maxPriceDeviation?: Decimal.Value;
 };
+
+/** Half of the smallest unit (0.01) of a two-decimal currency: how far a rounded consideration may sit from quantity x price. */
+export const CONSIDERATION_TOLERANCE = new LedgerDecimal("0.005");
+/** A fill price further than this from the price the instruction was sized with is refused (pence/pound x100 etc.). */
+export const EXECUTION_PRICE_BAND = new LedgerDecimal("0.15");
 
 export type ValidatedExecution = {
   quantity: Decimal;
@@ -165,20 +181,49 @@ export function validateExecution(input: ExecutionInput): ValidatedExecution {
     : new LedgerDecimal(input.quantity);
   if (!quantity.isFinite() || quantity.lte(0)) throw new Error("INVALID_QUANTITY");
 
-  const grossNotional = quantity.mul(price);
+  const computedNotional = quantity.mul(price);
   // PostgreSQL otherwise silently rounds these fields, making the recorded
-  // cash differ from the broker fill that passed the balance check. Preserve
-  // the same exact-storage contract as historical broker imports.
-  if (quantity.decimalPlaces()>12 || price.decimalPlaces()>10 || fee.decimalPlaces()>8 || grossNotional.decimalPlaces()>8)
+  // cash differ from the broker fill that passed the balance check. The exact
+  // quantity and price are always stored as given. Cash is quantity x price
+  // when that is exactly representable; otherwise (a 9-decimal fractional
+  // quantity, say) the broker's own cash consideration must be supplied and
+  // is recorded as the cash, validated against quantity x price below.
+  if (quantity.decimalPlaces()>12 || price.decimalPlaces()>10 || fee.decimalPlaces()>8)
     throw new Error("EXECUTION_PRECISION_UNSUPPORTED");
+  let grossNotional = computedNotional;
+  if (input.considerationAmount != null) {
+    const consideration = new LedgerDecimal(input.considerationAmount);
+    if (!consideration.isFinite() || consideration.lte(0)) throw new Error("INVALID_CONSIDERATION");
+    if (consideration.decimalPlaces()>8) throw new Error("EXECUTION_PRECISION_UNSUPPORTED");
+    if (consideration.minus(computedNotional).abs().gt(CONSIDERATION_TOLERANCE)) throw new Error("EXECUTION_CONSIDERATION_MISMATCH");
+    grossNotional = consideration;
+  } else if (computedNotional.decimalPlaces()>8) {
+    throw new Error("EXECUTION_PRECISION_UNSUPPORTED");
+  }
   if (quantity.gte("1000000000000000000") || price.gte("100000000000000") ||
       fee.gte("10000000000000000") || grossNotional.gte("10000000000000000"))
     throw new Error("EXECUTION_AMOUNT_TOO_LARGE");
-  const deviation = grossNotional.minus(proposed).abs().div(proposed);
-  if (input.allowPartial) {
-    if (grossNotional.gt(proposed.mul(new LedgerDecimal(1).plus(maxDeviation)))) throw new Error("EXECUTION_NOTIONAL_MISMATCH");
-  } else if (deviation.gt(maxDeviation)) {
-    throw new Error("EXECUTION_NOTIONAL_MISMATCH");
+
+  if (input.sizingPrice != null && input.instructedQuantity != null) {
+    // The instruction was sized from a stored quote. Validate quantity against the instructed
+    // quantity and the fill price against that quote independently: the 2% notional tolerance
+    // alone lets price/100 with quantity x100 through. A partial fill may be smaller, never larger.
+    const sizing = new LedgerDecimal(input.sizingPrice);
+    const instructed = new LedgerDecimal(input.instructedQuantity);
+    if (!sizing.isFinite() || sizing.lte(0)) throw new Error("INVALID_PRICE");
+    if (!instructed.isFinite() || instructed.lte(0)) throw new Error("INVALID_QUANTITY");
+    const band = new LedgerDecimal(input.maxPriceDeviation ?? EXECUTION_PRICE_BAND);
+    if (price.div(sizing).minus(1).abs().gt(band)) throw new Error("EXECUTION_PRICE_OUT_OF_BAND");
+    const upper = instructed.mul(new LedgerDecimal(1).plus(maxDeviation));
+    if (quantity.gt(upper)) throw new Error("EXECUTION_QUANTITY_MISMATCH");
+    if (!input.allowPartial && quantity.lt(instructed.mul(new LedgerDecimal(1).minus(maxDeviation)))) throw new Error("EXECUTION_QUANTITY_MISMATCH");
+  } else {
+    const deviation = grossNotional.minus(proposed).abs().div(proposed);
+    if (input.allowPartial) {
+      if (grossNotional.gt(proposed.mul(new LedgerDecimal(1).plus(maxDeviation)))) throw new Error("EXECUTION_NOTIONAL_MISMATCH");
+    } else if (deviation.gt(maxDeviation)) {
+      throw new Error("EXECUTION_NOTIONAL_MISMATCH");
+    }
   }
 
   if (input.side === "BUY") {

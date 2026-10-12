@@ -58,6 +58,26 @@ describe("YahooMarketDataProvider.currentPrice", () => {
     expect(await provider.currentPrice("X", NOW)).toBeNull();
   });
 
+  it("refuses an exact 2:1 split or doubling against the references and reports the rejection", async () => {
+    // 25 / 50 = 0.5 exactly and 100 / 50 = 2 exactly: the band is exclusive at both ends.
+    for (const price of [25, 100]) {
+      stubFetch(chartBody({ regularMarketPrice: price, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: 50 }));
+      expect(await provider.currentPrice("X", NOW), String(price)).toBeNull();
+      stubFetch(chartBody({ regularMarketPrice: price, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: 50 }));
+      const detailed = await provider.currentPriceDetailed("X", NOW);
+      expect(detailed.observation).toBeNull();
+      expect(detailed.rejected).toMatchObject({ code: "IMPLAUSIBLE_MOVE", price: String(price), currency: "USD", provider: "yahoo" });
+    }
+    // 26 / 50 = 0.52 is inside the band and is accepted.
+    stubFetch(chartBody({ regularMarketPrice: 26, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: 50 }));
+    expect(await provider.currentPrice("X", NOW)).toMatchObject({ price: "26" });
+  });
+
+  it("does not report a rejection for a quote that simply has no usable reference", async () => {
+    stubFetch(chartBody({ regularMarketPrice: 50, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: null }));
+    expect(await provider.currentPriceDetailed("X", NOW)).toEqual({ observation: null });
+  });
+
   it("accepts a normal 1% move and checks references in the same currency unit", async () => {
     stubFetch(chartBody({ regularMarketPrice: 50.5, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: 50 }));
     expect(await provider.currentPrice("X", NOW)).toMatchObject({ price: "50.5" });

@@ -1,7 +1,8 @@
 import "server-only";
 import Decimal from "decimal.js";
 import { z } from "zod";
-import type { MarketDataProvider, PriceObservation } from "@/lib/market-data";
+import type { MarketDataProvider, PriceObservation, RejectedQuote } from "@/lib/market-data";
+import { FUTURE_SKEW_MS } from "@/domain/market-freshness";
 
 /**
  * Yahoo Finance chart provider.
@@ -15,7 +16,7 @@ import type { MarketDataProvider, PriceObservation } from "@/lib/market-data";
 export const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 export const YAHOO_PROVIDER_NAME = "yahoo";
 const USER_AGENT = "Wealtharr-market-data/1.0 (portfolio rebalancing app; unofficial Yahoo chart client)";
-const FUTURE_TOLERANCE_MS = 5 * 60_000;
+const FUTURE_TOLERANCE_MS = FUTURE_SKEW_MS;
 const DAY_SECONDS = 86_400;
 
 // Letters, digits and the few punctuation characters real Yahoo symbols use (e.g. VWRL.L, ^FTSE, GBPUSD=X).
@@ -115,31 +116,46 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   }
 
   async currentPrice(providerSymbol: string, now = new Date()): Promise<PriceObservation | null> {
+    return (await this.currentPriceDetailed(providerSymbol, now)).observation;
+  }
+
+  /**
+   * Same as currentPrice, but a quote that was well-formed and then refused as implausible against the
+   * provider's own references (a stock split, pence/pound x100) is reported in `rejected` so the worker
+   * can record it and keep actions failing closed instead of silently reusing an older price.
+   */
+  async currentPriceDetailed(providerSymbol: string, now = new Date()): Promise<{ observation: PriceObservation | null; rejected?: RejectedQuote }> {
     const result = await this.fetchChart(providerSymbol, "range=5d&interval=1d");
-    if (!result) return null;
+    if (!result) return { observation: null };
     const { regularMarketPrice, regularMarketTime, currency } = result.meta;
-    if (typeof regularMarketPrice !== "number" || typeof regularMarketTime !== "number") return null;
+    if (typeof regularMarketPrice !== "number" || typeof regularMarketTime !== "number") return { observation: null };
     const observation = toObservation(regularMarketPrice, currency, regularMarketTime, "LAST", "TRADE", now);
-    if (!observation) return null;
+    if (!observation) return { observation: null };
 
     // First-quote sanity check: compare with the provider's own previous/last closes, converted
     // with the same currency rule. No reference at all means it cannot be checked, so fail closed.
     const normalised = normaliseYahooCurrency(currency);
-    if (!normalised) return null;
+    if (!normalised) return { observation: null };
     const lastClose = [...(result.indicators?.quote?.[0]?.close ?? [])].reverse().find((c) => c != null && Number.isFinite(c));
     const references: number[] = [];
     for (const candidate of [result.meta.chartPreviousClose, result.meta.previousClose, lastClose]) {
       if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) references.push(candidate);
     }
-    if (references.length === 0) return null;
+    if (references.length === 0) return { observation: null };
     const current = new Decimal(observation.price);
     for (const raw of references) {
       let reference = new Decimal(String(raw));
       if (normalised.hundredths) reference = reference.div(100);
       const ratio = current.div(reference);
-      if (ratio.lt(REFERENCE_MIN_RATIO) || ratio.gt(REFERENCE_MAX_RATIO)) return null;
+      // Exclusive band: an exact 2:1 split (ratio 0.5) or doubling (ratio 2) is refused too.
+      if (ratio.lte(REFERENCE_MIN_RATIO) || ratio.gte(REFERENCE_MAX_RATIO)) {
+        return {
+          observation: null,
+          rejected: { code: "IMPLAUSIBLE_MOVE", price: observation.price, currency: observation.currency, observedAt: observation.observedAt, provider: YAHOO_PROVIDER_NAME }
+        };
+      }
     }
-    return observation;
+    return { observation };
   }
 
   async historicalPrice(providerSymbol: string, at: Date, now = new Date()): Promise<PriceObservation | null> {

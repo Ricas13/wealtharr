@@ -10,6 +10,7 @@ import { normalizeContributionPlan } from "@/domain/contribution-plan";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
+import { latestPublishedVersionSelect } from "@/lib/strategy-version-sql";
 
 export type CreateStrategyInput = {
   requestKey?: string;
@@ -34,10 +35,7 @@ export async function listAvailableStrategies(options: { includeDisabled?: boole
   return sql.unsafe(
     "SELECT d.id,d.key,d.name,d.family,d.description,d.engine,d.enabled,d.proprietary,d.supported_regions,d.supported_wrappers,"+
     "v.id AS version_id,v.version,v.config,v.input_schema,v.release_notes,v.engine_key "+
-    "FROM strategy_definitions d JOIN LATERAL ("+
-    " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
-    " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
-    " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
+    "FROM strategy_definitions d JOIN LATERAL ("+latestPublishedVersionSelect("v","d.id")+
     ") v ON true WHERE (d.enabled=true OR $1::boolean) ORDER BY d.name",
     [options.includeDisabled===true]
   );
@@ -63,10 +61,7 @@ export async function getStrategyForUser(userId: string, instanceId: string) {
     "JOIN strategy_versions v ON v.id=i.strategy_version_id LEFT JOIN accounts a ON a.id=i.account_id "+
     "JOIN strategy_states s ON s.strategy_instance_id=i.id "+
     "LEFT JOIN LATERAL ("+
-    " SELECT nv.id,nv.version,nv.release_notes,nv.upgrade_policy,nv.input_schema,nv.config FROM strategy_versions nv"+
-    " WHERE nv.strategy_definition_id=i.strategy_definition_id AND nv.lifecycle_status='PUBLISHED'"+
-    " AND nv.effective_from<=current_date AND (nv.effective_to IS NULL OR nv.effective_to>=current_date)"+
-    " ORDER BY nv.effective_from DESC,nv.published_at DESC NULLS LAST LIMIT 1"+
+    latestPublishedVersionSelect("nv","i.strategy_definition_id","nv.id,nv.version,nv.release_notes,nv.upgrade_policy,nv.input_schema,nv.config")+
     ") latest ON true WHERE i.id=$1 AND i.user_id=$2 LIMIT 1",
     [instanceId,userId]
   );
@@ -108,9 +103,7 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     const definitions = await tx.unsafe(
       "SELECT d.id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,d.required_inputs,"+
       "v.id AS version_id,v.engine_key,v.config,v.input_schema FROM strategy_definitions d JOIN LATERAL ("+
-      " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
-      " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
-      " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
+      latestPublishedVersionSelect("v","d.id")+
       // A disabled definition is startable only by an administrator (server-derived snapshot flag) and
       // only through its PUBLISHED, in-window version above; a DRAFT can never be pinned to an instance.
       ") v ON true WHERE d.key=$1 AND (d.enabled=true OR $2::boolean) LIMIT 1",

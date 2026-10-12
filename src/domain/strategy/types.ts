@@ -31,6 +31,13 @@ export type EngineContext = {
   dataHealth: DataHealth;
   /** Must be populated by an authenticated licensed market-data adapter, never user settings. */
   trustedHistory?: TrustedHistoricalSeries[];
+  /**
+   * Exposures whose purchase with the cash on hand was already found impracticable (below one whole
+   * share, the minimum trade, or the spendable cash). The value is the cash balance at which that
+   * was found; an engine must not propose a cash-funded buy of that exposure while its cash is at or
+   * below it. Absent means no such finding.
+   */
+  unaffordableCashBuys?: Record<string, Decimal>;
 };
 
 export type ExplanationRow = {

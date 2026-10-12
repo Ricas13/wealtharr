@@ -335,6 +335,16 @@ export const marketDataObservations = pgTable("market_data_observations", {
   index("market_observation_latest_idx").on(t.tradingLineId, t.observedAt)
 ]);
 
+export const marketDataRejections = pgTable("market_data_rejections", {
+  tradingLineId: uuid("trading_line_id").primaryKey().references(() => tradingLines.id, { onDelete: "cascade" }),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  price: numeric("price", { precision: 24, scale: 10 }).notNull(),
+  currency: text("currency").notNull(),
+  provider: text("provider").notNull(),
+  reason: text("reason").notNull(),
+  rejectedAt: timestamp("rejected_at", { withTimezone: true }).notNull().defaultNow()
+});
+
 export const actions = pgTable("actions", {
   id: uuid("id").primaryKey().defaultRandom(),
   strategyInstanceId: uuid("strategy_instance_id").notNull().references(() => strategyInstances.id, { onDelete: "cascade" }),

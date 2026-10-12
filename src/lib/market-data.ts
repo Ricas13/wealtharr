@@ -14,10 +14,21 @@ export type PriceObservation = {
   corporateActionsAdjusted?: boolean;
 };
 
+/** A well-formed quote the provider layer itself refused (e.g. a 2:1 split halving the price). */
+export type RejectedQuote = {
+  code: "IMPLAUSIBLE_MOVE";
+  price: string;
+  currency: string;
+  observedAt: Date;
+  provider: string;
+};
+
 export interface MarketDataProvider {
   name: string;
   configured: boolean;
   currentPrice(providerSymbol: string): Promise<PriceObservation | null>;
+  /** Optional richer variant that also reports a refused-as-implausible quote. */
+  currentPriceDetailed?(providerSymbol: string): Promise<{ observation: PriceObservation | null; rejected?: RejectedQuote }>;
   historicalPrice(providerSymbol: string, at: Date): Promise<PriceObservation | null>;
 }
 
