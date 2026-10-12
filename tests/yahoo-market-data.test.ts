@@ -9,7 +9,12 @@ const NOW = new Date("2026-10-12T12:00:00Z");
 const nowSeconds = Math.floor(NOW.getTime() / 1000);
 
 function chartBody(meta: Record<string, unknown>, extra: Record<string, unknown> = {}) {
-  return { chart: { result: [{ meta, ...extra }], error: null } };
+  // Current quotes need a reference price; default it to the quote itself unless the test sets
+  // chartPreviousClose explicitly (use null to model a payload with no reference).
+  const withRef = "regularMarketPrice" in meta && !("chartPreviousClose" in meta)
+    ? { ...meta, chartPreviousClose: meta.regularMarketPrice }
+    : meta;
+  return { chart: { result: [{ meta: withRef, ...extra }], error: null } };
 }
 function stubFetch(body: unknown, status = 200) {
   const fn = vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
@@ -37,11 +42,36 @@ describe("YahooMarketDataProvider.currentPrice", () => {
   });
 
   it("returns null for unknown subunits and malformed currencies instead of guessing", async () => {
-    for (const currency of ["ZAc", "ZAC", "ILA", "gBp", "EURO", "", "US"]) {
+    for (const currency of ["ZAc", "ZAC", "ILA", "gBp", "gbp", "gbx", "usd", "EURO", "", "US"]) {
       stubFetch(chartBody({ regularMarketPrice: 10, regularMarketTime: nowSeconds, currency }));
       expect(await provider.currentPrice("X", NOW), currency).toBeNull();
     }
     stubFetch(chartBody({ regularMarketPrice: 10, regularMarketTime: nowSeconds }));
+    expect(await provider.currentPrice("X", NOW)).toBeNull();
+  });
+
+  it("fails closed on a 100x spike against the provider's own references", async () => {
+    stubFetch(chartBody({ regularMarketPrice: 5000, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: 50 }));
+    expect(await provider.currentPrice("X", NOW)).toBeNull();
+    stubFetch(chartBody({ regularMarketPrice: 5000, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: null },
+      { indicators: { quote: [{ close: [49, 50, null] }] } }));
+    expect(await provider.currentPrice("X", NOW)).toBeNull();
+  });
+
+  it("accepts a normal 1% move and checks references in the same currency unit", async () => {
+    stubFetch(chartBody({ regularMarketPrice: 50.5, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: 50 }));
+    expect(await provider.currentPrice("X", NOW)).toMatchObject({ price: "50.5" });
+    // Pence-labelled line: both the quote and the references are in pence, so the ratio is 1.01.
+    stubFetch(chartBody({ regularMarketPrice: 5050, regularMarketTime: nowSeconds, currency: "GBp", chartPreviousClose: 5000, previousClose: 5000 },
+      { indicators: { quote: [{ close: [4990, 5000, null] }] } }));
+    expect(await provider.currentPrice("X.L", NOW)).toMatchObject({ price: "50.5", currency: "GBP" });
+  });
+
+  it("returns null when the payload has no reference price at all", async () => {
+    stubFetch(chartBody({ regularMarketPrice: 50, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: null }));
+    expect(await provider.currentPrice("X", NOW)).toBeNull();
+    stubFetch(chartBody({ regularMarketPrice: 50, regularMarketTime: nowSeconds, currency: "USD", chartPreviousClose: null },
+      { indicators: { quote: [{ close: [null, null] }] } }));
     expect(await provider.currentPrice("X", NOW)).toBeNull();
   });
 
@@ -83,7 +113,7 @@ describe("YahooMarketDataProvider.currentPrice", () => {
 
   it("rejects unsafe symbols before any request is made", async () => {
     const fn = stubFetch(chartBody({ regularMarketPrice: 5, regularMarketTime: nowSeconds, currency: "USD" }));
-    for (const symbol of ["A/B", "..", "A..B", "A B", "A?x=1", "", "A".repeat(25), "../etc"]) {
+    for (const symbol of [".", "=", "^", "A/B", "..", "A..B", "A B", "A?x=1", "", "A".repeat(25), "../etc"]) {
       expect(await provider.currentPrice(symbol, NOW), symbol).toBeNull();
     }
     expect(fn).not.toHaveBeenCalled();
@@ -124,6 +154,17 @@ describe("YahooMarketDataProvider.historicalPrice", () => {
     expect(quote?.corporateActionsAdjusted).toBeUndefined();
   });
 
+  it("ignores a bar whose session is still in progress at the requested instant", async () => {
+    stubFetch(chartBody(
+      { currency: "GBp" },
+      { timestamp: [base, base + day], indicators: { quote: [{ close: [100, 200] }] } }
+    ));
+    const midSession = new Date((base + day + 4 * 3600) * 1000);
+    const quote = await provider.historicalPrice("VWRL.L", midSession, NOW);
+    expect(quote?.price).toBe("1");
+    expect(quote?.observedAt.getTime()).toBe(base * 1000);
+  });
+
   it("returns null when no bar exists at or before the instant", async () => {
     stubFetch(chartBody({ currency: "USD" }, { timestamp: [base + day], indicators: { quote: [{ close: [10] }] } }));
     expect(await provider.historicalPrice("X", new Date(base * 1000), NOW)).toBeNull();
@@ -141,6 +182,8 @@ describe("normaliseYahooCurrency", () => {
     expect(normaliseYahooCurrency("GBp")).toEqual({ code: "GBP", hundredths: true });
     expect(normaliseYahooCurrency("GBX")).toEqual({ code: "GBP", hundredths: true });
     expect(normaliseYahooCurrency("GBP")).toEqual({ code: "GBP", hundredths: false });
+    expect(normaliseYahooCurrency("gbp")).toBeNull();
+    expect(normaliseYahooCurrency("gbx")).toBeNull();
     expect(normaliseYahooCurrency("ZAc")).toBeNull();
     expect(normaliseYahooCurrency("ILA")).toBeNull();
   });

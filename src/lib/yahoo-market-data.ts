@@ -19,7 +19,13 @@ const FUTURE_TOLERANCE_MS = 5 * 60_000;
 const DAY_SECONDS = 86_400;
 
 // Letters, digits and the few punctuation characters real Yahoo symbols use (e.g. VWRL.L, ^FTSE, GBPUSD=X).
-const SYMBOL_PATTERN = /^[A-Za-z0-9.^=-]{1,24}$/;
+// At least one letter or digit, so "." and "=" alone are never sent.
+const SYMBOL_PATTERN = /^(?=.*[A-Za-z0-9])[A-Za-z0-9.^=-]{1,24}$/;
+const MAX_BODY_CHARS = 1_000_000;
+// A first quote has no history to compare with, so it must sit within this band of the
+// provider's own previous/closing prices in the same response (guards pence/pound x100 errors).
+const REFERENCE_MIN_RATIO = new Decimal("0.5");
+const REFERENCE_MAX_RATIO = new Decimal(2);
 
 export function isAllowedYahooSymbol(symbol: string) {
   return typeof symbol === "string" && SYMBOL_PATTERN.test(symbol) && !symbol.includes("..");
@@ -36,19 +42,20 @@ export function normaliseYahooCurrency(raw: unknown): { code: string; hundredths
   if (typeof raw !== "string") return null;
   const value = raw.trim();
   if (value === "GBp") return { code: "GBP", hundredths: true };
-  if (/^[A-Z]{3}$/.test(value) || /^[a-z]{3}$/.test(value)) {
-    const code = value.toUpperCase();
-    if (code === "GBX") return { code: "GBP", hundredths: true };
-    if (UNSUPPORTED_SUBUNITS.has(code)) return null;
-    return { code, hundredths: false };
+  if (value === "GBX") return { code: "GBP", hundredths: true };
+  if (/^[A-Z]{3}$/.test(value)) {
+    if (UNSUPPORTED_SUBUNITS.has(value)) return null;
+    return { code: value, hundredths: false };
   }
-  return null; // mixed case ("ZAc"), wrong length or non-letters: unknown subunit, do not guess
+  return null; // lowercase/mixed case ("ZAc", "gbp"), wrong length or non-letters: do not guess
 }
 
 const resultSchema = z.object({
   meta: z.object({
     regularMarketPrice: z.number().optional().nullable(),
     regularMarketTime: z.number().optional().nullable(),
+    chartPreviousClose: z.number().optional().nullable(),
+    previousClose: z.number().optional().nullable(),
     currency: z.string().optional().nullable()
   }).passthrough(),
   timestamp: z.array(z.number()).optional().nullable(),
@@ -95,7 +102,11 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     });
     if (response.status === 404) return null;
     if (!response.ok) throw new Error("MARKET_DATA_HTTP_" + response.status);
-    const parsed = payloadSchema.safeParse(await response.json());
+    const text = await response.text();
+    if (text.length > MAX_BODY_CHARS) throw new Error("MARKET_DATA_INVALID_RESPONSE");
+    let json: unknown;
+    try { json = JSON.parse(text); } catch { throw new Error("MARKET_DATA_INVALID_RESPONSE"); }
+    const parsed = payloadSchema.safeParse(json);
     if (!parsed.success) throw new Error("MARKET_DATA_INVALID_RESPONSE");
     const chart = parsed.data.chart;
     if (chart.error) return null;
@@ -108,7 +119,27 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     if (!result) return null;
     const { regularMarketPrice, regularMarketTime, currency } = result.meta;
     if (typeof regularMarketPrice !== "number" || typeof regularMarketTime !== "number") return null;
-    return toObservation(regularMarketPrice, currency, regularMarketTime, "LAST", "TRADE", now);
+    const observation = toObservation(regularMarketPrice, currency, regularMarketTime, "LAST", "TRADE", now);
+    if (!observation) return null;
+
+    // First-quote sanity check: compare with the provider's own previous/last closes, converted
+    // with the same currency rule. No reference at all means it cannot be checked, so fail closed.
+    const normalised = normaliseYahooCurrency(currency);
+    if (!normalised) return null;
+    const lastClose = [...(result.indicators?.quote?.[0]?.close ?? [])].reverse().find((c) => c != null && Number.isFinite(c));
+    const references: number[] = [];
+    for (const candidate of [result.meta.chartPreviousClose, result.meta.previousClose, lastClose]) {
+      if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) references.push(candidate);
+    }
+    if (references.length === 0) return null;
+    const current = new Decimal(observation.price);
+    for (const raw of references) {
+      let reference = new Decimal(String(raw));
+      if (normalised.hundredths) reference = reference.div(100);
+      const ratio = current.div(reference);
+      if (ratio.lt(REFERENCE_MIN_RATIO) || ratio.gt(REFERENCE_MAX_RATIO)) return null;
+    }
+    return observation;
   }
 
   async historicalPrice(providerSymbol: string, at: Date, now = new Date()): Promise<PriceObservation | null> {
@@ -124,7 +155,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     for (let i = 0; i < Math.min(timestamps.length, closes.length); i += 1) {
       const ts = timestamps[i];
       const close = closes[i];
-      if (close == null || !Number.isFinite(close) || ts * 1000 > at.getTime()) continue;
+      // A daily bar is stamped at its session open. Approximating "the day has completed" as
+      // open + 24h <= at keeps an in-progress session's partial close (really the live price) out.
+      if (close == null || !Number.isFinite(close) || ts + DAY_SECONDS > atSeconds) continue;
       if (!best || ts > best.ts) best = { ts, close };
     }
     if (!best) return null;
