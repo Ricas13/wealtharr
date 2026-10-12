@@ -21,5 +21,5 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   expect(source).not.toContain("unattestedCustomerStrategies()");
   expect(source).toContain("paidCheckoutBlockers(process.env)");
   expect(source).toContain("WEALTHARR_PAID_LAUNCH_ENABLED");
- });;
+ });
 });
