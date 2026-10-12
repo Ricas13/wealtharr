@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 
 // Real database, real worker route; only the per-strategy calculation is replaced so failures can be
 // scripted. Proves that persistently failing strategies rotate to the back instead of starving the rest.
-const state = vi.hoisted(() => ({ mine: new Set<string>(), poison: new Set<string>(), attempted: [] as string[] }));
+const state = vi.hoisted(() => ({ mine: new Set<string>(), poison: new Set<string>(), attempted: [] as string[], enforced: [] as string[] }));
 vi.mock("@/lib/action-service", () => ({
   calculateAction: async (id: string) => {
     if (state.mine.has(id)) state.attempted.push(id);
@@ -14,10 +14,12 @@ vi.mock("@/lib/action-service", () => ({
 vi.mock("@/lib/notification-service", () => ({ createPendingDeliveries: async () => 0, processDeliveryBacklog: async () => ({ sent: 0, claimed: 0, exhausted: true }) }));
 vi.mock("@/lib/aggregate-service", () => ({ rebuildAnonymousAggregates: async () => ({ written: 0 }) }));
 vi.mock("@/lib/market-data-worker", () => ({ refreshMarketData: async () => ({ provider: "mock", configured: true, refreshed: 0, failed: 0, skipped: 0 }) }));
-vi.mock("@/lib/entitlement-service", () => ({ enforceStrategyEntitlements: async () => ({ paused: 0 }) }));
+vi.mock("@/lib/entitlement-service", () => ({ enforceStrategyEntitlements: async (userId: string) => { state.enforced.push(userId); return { paused: 0 }; } }));
 vi.mock("@/lib/account-deletion", () => ({ finishPendingAccountDeletions: async () => ({ completed: 0, stalled: 0 }) }));
 vi.mock("@/lib/billing-reconciliation", () => ({ reconcileStripeSubscriptions: async () => ({ configured: true, checked: 0, failed: 0, deferred: 0, hasMore: false }) }));
 vi.mock("@/lib/ops-monitor", () => ({ runOpsCheck: async () => undefined }));
+// Retention is covered by its own database test; here it must not delete from the shared database.
+vi.mock("@/lib/retention", () => ({ runRetention: async () => ({ deleted: {}, failed: {}, deferred: 0 }) }));
 
 const url = process.env.DATABASE_URL;
 const sql = url ? postgres(url, { max: 4, prepare: false }) : null;
@@ -88,5 +90,28 @@ describe.skipIf(!url)("hourly worker fairness", () => {
     }
     expect(newPerRun).toEqual([10, 10, 5]);
     expect(everSeen.size).toBe(25);
+  });
+
+  it("checks entitlements for the least recently checked owners first and stamps every check", async () => {
+    const savedConcurrency = process.env.CRON_CONCURRENCY;
+    process.env.CRON_CONCURRENCY = "1"; // sequential, so the order of checks is the order of the queue
+    try {
+      await sql!.unsafe("UPDATE users SET entitlement_checked_at=now() WHERE id = ANY($1::uuid[])", [userIds]);
+      await sql!.unsafe("UPDATE users SET entitlement_checked_at=now()-interval '5 hours' WHERE id=$1", [userIds[7]]);
+      await sql!.unsafe("UPDATE users SET entitlement_checked_at=now()-interval '2 hours' WHERE id=$1", [userIds[2]]);
+      await sql!.unsafe("UPDATE users SET entitlement_checked_at=NULL WHERE id=$1", [userIds[4]]);
+      state.enforced.length = 0;
+      await sql!.unsafe("UPDATE worker_runs SET status='SUCCESS',finished_at=now() WHERE worker_key='cron-actions' AND status='RUNNING'");
+      const startedAt = Date.now();
+      await cycle();
+      const ours = state.enforced.filter((id) => userIds.includes(id));
+      // Never checked first, then the oldest checks; the rest were all just checked.
+      expect(ours.slice(0, 3)).toEqual([userIds[4], userIds[7], userIds[2]]);
+      expect(new Set(ours).size).toBe(userIds.length);
+      const unstamped = await sql!.unsafe("SELECT count(*)::int AS n FROM users WHERE id = ANY($1::uuid[]) AND (entitlement_checked_at IS NULL OR entitlement_checked_at < $2)", [userIds, new Date(startedAt - 1_000)]);
+      expect(Number(unstamped[0].n)).toBe(0);
+    } finally {
+      if (savedConcurrency === undefined) delete process.env.CRON_CONCURRENCY; else process.env.CRON_CONCURRENCY = savedConcurrency;
+    }
   });
 });

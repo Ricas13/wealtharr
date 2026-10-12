@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
 import { sql } from "@/lib/db";
 import { foldLedger } from "@/domain/ledger";
@@ -137,7 +138,7 @@ export async function switchStrategy(
     );
     await tx.unsafe(
       "UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() "+
-      "WHERE strategy_instance_id=$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",
+      "WHERE strategy_instance_id=$1 AND status IN ("+EXECUTABLE_ACTION_STATUS_SQL+")",
       [strategyInstanceId]
     );
 

@@ -104,7 +104,10 @@ export async function POST(request:Request){
   }catch(error){const denied=authFailure(error);if(denied)return denied;
     if(error instanceof z.ZodError)return Response.json({error:"Invalid strategy version."},{status:400});
     const message=error instanceof Error?error.message:"FAILED";
-    return Response.json({error:message.startsWith("INVALID_")||message.includes("REQUIRES")||message.includes("WEIGHTS")||message==="ENGINE_NOT_CUSTOMER_VERIFIED"?"Strategy configuration failed validation.":"Could not create strategy version."},{status:400});
+    // A validation failure is the caller's to fix (400); anything else is a server fault (500).
+    if(message.startsWith("INVALID_")||message.includes("REQUIRES")||message.includes("WEIGHTS")||message==="ENGINE_NOT_CUSTOMER_VERIFIED")
+      return Response.json({error:"Strategy configuration failed validation."},{status:400});
+    return Response.json({error:"Could not create strategy version."},{status:500});
   }
 }
 
@@ -264,6 +267,11 @@ export async function PATCH(request:Request){
     // The partial unique index is the last line of defence against two published versions with the same date.
     if((error as {code?:string})?.code==="23505")return Response.json({error:"Another published version already has that effective date."},{status:409});
     const message=error instanceof Error?error.message:"FAILED";
-    return Response.json({error:message.startsWith("INVALID_")||message.includes("REQUIRES")||message.includes("WEIGHTS")?"Strategy configuration failed validation.":"Could not update strategy version."},{status:400});
+    // The database trigger that makes published versions immutable (migration 0014) is a state conflict.
+    if((error as {code?:string})?.code==="23514")return Response.json({error:"Published strategy versions are immutable. Create a new version instead."},{status:409});
+    // A validation failure is the caller's to fix (400); anything else is a server fault (500).
+    if(message.startsWith("INVALID_")||message.includes("REQUIRES")||message.includes("WEIGHTS"))
+      return Response.json({error:"Strategy configuration failed validation."},{status:400});
+    return Response.json({error:"Could not update strategy version."},{status:500});
   }
 }

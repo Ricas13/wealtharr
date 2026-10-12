@@ -10,6 +10,8 @@ const REFRESH_MS = 15_000;
 const originalEnv = new Map<string, string | undefined>();
 let lastLoad = 0;
 let inflight: Promise<void> | null = null;
+// Counts loads started; lets a forced refresh tell a load that began after it was called from an older one.
+let loadSeq = 0;
 
 function applyToEnvironment(rows: Array<{ key: string; value: string }>) {
   const stored = new Map(rows.map((r) => [r.key, r.value]));
@@ -42,19 +44,41 @@ async function loadRows() {
 
 /** Refreshes the in-process view of the saved settings at most every few seconds. Never throws. */
 export async function ensureSettings(force = false): Promise<void> {
-  if (!force && Date.now() - lastLoad < REFRESH_MS) return;
-  if (inflight) return inflight;
-  inflight = (async () => {
-    try {
-      applyToEnvironment(await loadRows());
-      lastLoad = Date.now();
-    } catch {
-      // Database unavailable: keep serving with what is already applied.
-    } finally {
-      inflight = null;
+  if (!force) {
+    if (Date.now() - lastLoad < REFRESH_MS) return;
+    if (inflight) return inflight;
+    return startLoad();
+  }
+  // A forced refresh follows a write (or must see one). A load already in flight may have read the table
+  // before that write committed, so joining it could return stale settings. Only a load that began
+  // after this call is acceptable: wait out an older one, then start (or join) a newer one.
+  const calledAt = loadSeq;
+  for (;;) {
+    if (inflight && loadSeq > calledAt) return inflight;
+    if (inflight) {
+      await inflight; // never rejects
+      continue;
     }
-  })();
-  return inflight;
+    return startLoad();
+  }
+}
+
+async function loadOnce(): Promise<void> {
+  try {
+    applyToEnvironment(await loadRows());
+    lastLoad = Date.now();
+  } catch {
+    // Database unavailable: keep serving with what is already applied.
+  }
+}
+
+function startLoad(): Promise<void> {
+  loadSeq += 1;
+  const run: Promise<void> = loadOnce().then(() => {
+    if (inflight === run) inflight = null;
+  });
+  inflight = run;
+  return run;
 }
 
 export type SettingView = {

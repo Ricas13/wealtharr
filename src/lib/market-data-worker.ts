@@ -30,10 +30,15 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
 
   try {
     const lines = await sql.unsafe(
-      "SELECT DISTINCT tl.id,tl.provider_symbol,tl.currency FROM trading_lines tl " +
+      // Least recently attempted first (never-attempted lines lead). Every attempt is stamped, so a
+      // deadline-cut run resumes with the lines it did not reach and a symbol that keeps failing rotates
+      // to the back instead of holding a slot ahead of healthy ones. The predicates are EXISTS-only, so
+      // each trading line appears once without DISTINCT.
+      "SELECT tl.id,tl.provider_symbol,tl.currency FROM trading_lines tl " +
       "WHERE tl.provider_symbol IS NOT NULL AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) " +
       "AND (EXISTS (SELECT 1 FROM ledger_events l JOIN strategy_instances si ON si.id=l.strategy_instance_id WHERE l.instrument_id=tl.instrument_id AND si.status='ACTIVE') " +
-      "OR EXISTS (SELECT 1 FROM regional_instrument_mappings m WHERE m.trading_line_id=tl.id AND m.enabled=true AND m.effective_from<=current_date AND (m.effective_to IS NULL OR m.effective_to>=current_date)))"
+      "OR EXISTS (SELECT 1 FROM regional_instrument_mappings m WHERE m.trading_line_id=tl.id AND m.enabled=true AND m.effective_from<=current_date AND (m.effective_to IS NULL OR m.effective_to>=current_date))) " +
+      "ORDER BY tl.quote_attempted_at ASC NULLS FIRST,tl.id"
     );
 
     const pool = await runBounded(
@@ -41,6 +46,7 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
       { concurrency: options.concurrency ?? 5, shouldStop: () => options.deadline != null && Date.now() >= options.deadline },
       async (line) => {
         try {
+          await sql.unsafe("UPDATE trading_lines SET quote_attempted_at=now() WHERE id=$1", [line.id]);
           const observation = await provider.currentPrice(String(line.provider_symbol));
           if (!observation) {
             failed += 1;

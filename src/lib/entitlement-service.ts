@@ -1,3 +1,4 @@
+import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
 import type { Sql } from "postgres";
 import { sql } from "@/lib/db";
@@ -87,7 +88,7 @@ export async function enforceStrategyEntitlements(userId: string, snapshot?: Ent
   await sql.begin(async (tx) => {
     await tx.unsafe("UPDATE strategy_instances SET status='PAUSED',paused_at=now(),updated_at=now() WHERE user_id=$1 AND id=ANY($2::uuid[]) AND status='ACTIVE'",[userId,ids]);
     await tx.unsafe(
-      "UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() WHERE strategy_instance_id=ANY($1::uuid[]) AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",
+      "UPDATE actions SET status='CANCELLED',cancelled_at=now(),updated_at=now() WHERE strategy_instance_id=ANY($1::uuid[]) AND status IN ("+EXECUTABLE_ACTION_STATUS_SQL+")",
       [ids]
     );
     await tx.unsafe(

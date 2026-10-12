@@ -14,6 +14,8 @@ vi.mock("@/lib/entitlement-service", () => ({ enforceStrategyEntitlements: async
 vi.mock("@/lib/account-deletion", () => ({ finishPendingAccountDeletions: async () => ({ completed: 0, stalled: 0 }) }));
 vi.mock("@/lib/billing-reconciliation", () => ({ reconcileStripeSubscriptions: async () => ({ configured: true, checked: 0, failed: 0, deferred: 0, hasMore: false }) }));
 vi.mock("@/lib/ops-monitor", () => ({ runOpsCheck: async () => undefined }));
+// Retention is covered by its own database test; here it must not delete from the shared database.
+vi.mock("@/lib/retention", () => ({ runRetention: async () => ({ deleted: {}, failed: {}, deferred: 0 }) }));
 
 const url = process.env.DATABASE_URL;
 const sql = url ? postgres(url, { max: 4, prepare: false }) : null;

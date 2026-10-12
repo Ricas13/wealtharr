@@ -31,7 +31,8 @@ async function disconnectBilling(userId: string) {
   if (!hasStripe) return;
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_NOT_CONFIGURED");
-  const stripe = new Stripe(key);
+  // Bounded like the billing reconciliation client: a hung Stripe call must not hold the hourly run.
+  const stripe = new Stripe(key, { timeout: 8_000, maxNetworkRetries: 0 });
   try {
     if (customerId) await stripe.customers.del(customerId);
     else if (subscriptionId) {
@@ -63,6 +64,9 @@ export async function beginAccountDeletion(userId: string): Promise<BeginOutcome
 }
 
 export async function finishAccountDeletion(userId: string): Promise<FinishOutcome> {
+  // Stamp every attempt, successful or not, so a deletion that keeps stalling rotates behind the ones
+  // that have not been tried instead of occupying a slot of the hourly worker forever.
+  await sql.unsafe("UPDATE users SET deletion_attempted_at=now() WHERE id=$1 AND deleted_at IS NOT NULL", [userId]).catch(() => {});
   try {
     await disconnectBilling(userId);
   } catch (error) {
@@ -95,16 +99,31 @@ export async function finishAccountDeletion(userId: string): Promise<FinishOutco
 
 // Completes deletions that stalled. The grace period keeps the worker from racing a request that
 // is still finishing its own deletion.
-export async function finishPendingAccountDeletions(limit = 25) {
+//
+// Fairness: least recently attempted first (never attempted ahead of everything), then oldest deletion
+// request. Each attempt is stamped, so permanently stalled accounts cannot occupy every slot and block
+// newer deletions. `deadline` (epoch ms) stops new attempts when the cron phase budget is spent; the
+// untouched ones are reported as `deferred` and lead the queue next run.
+export async function finishPendingAccountDeletions(limit = 25, options: { deadline?: number } = {}) {
   const pending = await sql.unsafe(
-    "SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '2 minutes' ORDER BY deleted_at LIMIT $1",
+    "SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '2 minutes' " +
+    "ORDER BY deletion_attempted_at ASC NULLS FIRST, deleted_at ASC, id LIMIT $1",
     [limit]
   );
   let completed = 0;
   let stalled = 0;
-  for (const row of pending) {
-    if ((await finishAccountDeletion(String(row.id))) === "DELETED") completed += 1;
-    else stalled += 1;
+  let deferred = 0;
+  for (let index = 0; index < pending.length; index += 1) {
+    if (options.deadline != null && Date.now() >= options.deadline) {
+      deferred = pending.length - index;
+      break;
+    }
+    try {
+      if ((await finishAccountDeletion(String(pending[index].id))) === "DELETED") completed += 1;
+      else stalled += 1;
+    } catch {
+      stalled += 1;
+    }
   }
-  return { completed, stalled };
+  return { completed, stalled, deferred };
 }

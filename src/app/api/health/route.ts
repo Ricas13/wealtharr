@@ -38,7 +38,10 @@ export async function GET(){
         process.env.MARKET_DATA_PROVIDER==="http"&&
         process.env.MARKET_DATA_HTTP_BASE_URL&&
         process.env.MARKET_DATA_HTTP_TOKEN)
-      )
+      ),
+      // Yahoo needs no credentials and is not licensed for commercial use, so it is never reported as
+      // the licensed `marketData` capability; it is surfaced here so operators can see it is in use.
+      ...(process.env.MARKET_DATA_PROVIDER==="yahoo"?{marketDataProvider:"yahoo: configured (unlicensed)"}:{})
     };
 
     return Response.json(
