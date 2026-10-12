@@ -42,6 +42,15 @@ describe("strategy catalogue consistency",()=>{
   expect(seed).not.toMatch(/exposure:"US_SMALL_CAP_VALUE"/);
  });
 
+ it("every later code release (9Sig 1.1) passes its engine's own validation",()=>{
+  for(const plugin of STRATEGY_PLUGINS){
+   for(const later of plugin.codeRelease?.laterVersions??[]){
+    expect(()=>validateEngineConfig(plugin.codeRelease!.engine,{...later.config}),plugin.key+" "+later.version).not.toThrow();
+    expect(later.version,plugin.key).not.toBe("1.0");
+   }
+  }
+ });
+
  it("every fixed-allocation catalogue config passes its engine's own validation and sums to 100%",()=>{
   for(const s of RESEARCH_STRATEGIES.filter((x)=>x.engine==="FIXED_ALLOCATION"&&x.config)){
    expect(()=>validateEngineConfig("FIXED_ALLOCATION",s.config!),s.key).not.toThrow();

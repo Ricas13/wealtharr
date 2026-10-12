@@ -56,5 +56,10 @@ Steps to add a strategy:
 
 Changing an existing strategy:
 - Published versions are immutable (database trigger, migration 0014). Corrections are new versions, never in-place edits.
-- `assertCuratedRules` compares every stored version of a key with the single rule set in its plugin, so editing a plugin's `config` in place makes installed versions read "Stored rules need code review". A genuinely different rule set (for example a regional variant) is added as its own plugin with its own key and its own spec card and golden tests, as described in `docs/strategy-specs/README.md`.
+- `assertCuratedRules` compares every stored version of a key with the rule set in its plugin, so editing a plugin's `config` in place makes installed versions read "Stored rules need code review". A genuinely different rule set (for example a regional variant) is added as its own plugin with its own key and its own spec card and golden tests, as described in `docs/strategy-specs/README.md`.
+- A corrected method for the **same** strategy is added as a later version on a code-released plugin. 9Sig 1.1 is the first example. It goes in `codeRelease.laterVersions`, as `{version, effectiveFrom, config, summary, releaseNotes, disclosure}`:
+  - `assertCuratedRules(key, engine, config, inputSchema, version)` accepts a later config only for exactly its own version string. With any other version string, or none, only the base `config` is accepted. Every call site passes the stored version.
+  - The seed inserts each later version as an OPTIONAL **DRAFT**, insert-only. An administrator must ATTEST and PUBLISH it.
+  - Existing instances stay pinned until the user upgrades through the audited version flow (`migrateStrategyVersion`).
+  - A behaviour change in a shared engine must be selected by an explicit config key (for 9Sig 1.1, `methodRevision`), so the earlier version's calculation is byte-for-byte unchanged.
 - Metadata-only changes (sources, risks, spec-card or golden-test paths, descriptions) do not alter rules and can be edited in the plugin file directly. The seed does not rewrite installed definitions (except the guarded research-only realignment above), so seed-definition edits generally only affect fresh installs.

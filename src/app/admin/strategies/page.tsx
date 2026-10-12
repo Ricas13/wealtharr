@@ -43,7 +43,7 @@ export default async function StrategiesAdmin(){
    if(release.attested!==true)return {...base,status:"NO_SIGNOFF",reason:"An independent methodology specification and golden-case sign-off must be recorded."};
    try{
      assertCustomerPublishableEngine(String(release.engine_key));
-     assertCuratedRules(key,String(release.engine_key),release.config,release.input_schema);
+     assertCuratedRules(key,String(release.engine_key),release.config,release.input_schema,String(release.version));
    }catch{
      return {...base,status:"NEEDS_REVIEW",reason:"Stored rules or engine do not match the code-reviewed version."};
    }

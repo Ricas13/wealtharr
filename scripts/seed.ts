@@ -60,6 +60,16 @@ async function main(){
         "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) VALUES ($1,'1.0','2026-01-01',$2,$3,'OPTIONAL',$6::text::jsonb,$4::text::jsonb,$5,CASE WHEN $3='PUBLISHED' THEN now() ELSE NULL END) ON CONFLICT (strategy_definition_id,version) DO NOTHING",
         [id,engine,lifecycle,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]
       );
+
+      // Later reviewed rule releases (plugin.codeRelease.laterVersions) are always seeded as DRAFT,
+      // insert-only and OPTIONAL. Publishing needs ATTEST + PUBLISH by an administrator; instances
+      // pinned to an earlier version are never migrated by the seed.
+      for(const later of plugin.codeRelease?.laterVersions??[]){
+        await sql.unsafe(
+          "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,release_notes,published_at) VALUES ($1,$2,$3,$4,'DRAFT','OPTIONAL','[]'::jsonb,$5::text::jsonb,$6,$7,NULL) ON CONFLICT (strategy_definition_id,version) DO NOTHING",
+          [id,later.version,later.effectiveFrom,engine,JSON.stringify(later.config),later.disclosure,later.releaseNotes]
+        );
+      }
     }
 
     // Persist *all* research names for admin inventory without exposing any as an executable release.

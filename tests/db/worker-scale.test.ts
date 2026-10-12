@@ -30,7 +30,7 @@ describe.skipIf(!url)("worker at 10,000 active strategies", () => {
     process.env.CRON_MAX_INSTANCES = String(CAP);
     process.env.CRON_CONCURRENCY = "8";
     process.env.CRON_TIME_BUDGET_MS = "600000";
-    const [definition] = await sql!.unsafe("SELECT d.id,v.id AS version_id FROM strategy_definitions d JOIN strategy_versions v ON v.strategy_definition_id=d.id WHERE d.key='9sig' LIMIT 1");
+    const [definition] = await sql!.unsafe("SELECT d.id,v.id AS version_id FROM strategy_definitions d JOIN strategy_versions v ON v.strategy_definition_id=d.id WHERE d.key='9sig' AND v.lifecycle_status='PUBLISHED' LIMIT 1");
     await sql!.unsafe("UPDATE strategy_instances SET last_calculation_attempt_at=now()+interval '1 day' WHERE status='ACTIVE'");
     await sql!.unsafe("INSERT INTO users (email,password_hash) SELECT $1||'-'||g||'@example.test','x' FROM generate_series(1,$2) g", [prefix, TOTAL]);
     await sql!.unsafe("INSERT INTO accounts (user_id,name,wrapper,country,currency) SELECT id,'a','ISA','GB','GBP' FROM users WHERE email LIKE $1", [prefix + "-%"]);

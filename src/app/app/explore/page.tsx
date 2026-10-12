@@ -37,7 +37,7 @@ export default async function ExplorePage() {
     let marketVerified = false;
     if (release) {
       try {
-        assertCuratedRules(plugin.key, String(release.engine_key), release.config, release.input_schema);
+        assertCuratedRules(plugin.key, String(release.engine_key), release.config, release.input_schema, String(release.version));
         rulesVerified = true;
       } catch { rulesVerified = false; }
       if (rulesVerified) {

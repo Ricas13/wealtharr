@@ -1,8 +1,8 @@
 import {describe,expect,it} from "vitest";
 import {existsSync,readdirSync,readFileSync} from "node:fs";
 import {RESEARCH_STRATEGIES,LEVERAGE_DISCLOSURE,type StrategyProfile} from "@/domain/strategy/research-catalog";
-import {STRATEGY_PLUGINS,curatedRelease,getStrategyPlugin,isBuiltInStrategy} from "@/domain/strategy/catalog";
-import {assertCuratedRules,CANONICAL_9SIG_CONFIG} from "@/domain/strategy/curated-release";
+import {STRATEGY_PLUGINS,curatedRelease,curatedReleaseForVersion,getStrategyPlugin,isBuiltInStrategy} from "@/domain/strategy/catalog";
+import {assertCuratedRules,CANONICAL_9SIG_CONFIG,CANONICAL_9SIG_V1_1_CONFIG} from "@/domain/strategy/curated-release";
 import {CANONICAL_9SIG_CONFIG as PLUGIN_9SIG_CONFIG} from "@/domain/strategy/catalog/9sig";
 
 /**
@@ -237,6 +237,13 @@ const CANONICAL_9SIG_LITERAL={
   maxCashUse:"0.90",tolerance:"0.01",reviewFrequency:"QUARTERLY",reviewCutoffLocal:"16:00",
   businessDayConvention:"PREVIOUS",marketHolidays:[]
 };
+/** 9Sig 1.1, written by hand from docs/strategy-specs/9sig.md (added with the 1.1 release). */
+const CANONICAL_9SIG_V1_1_LITERAL={
+  targetExposure:"NASDAQ_100_3X_LONG",methodRevision:"KELLY_SIGNAL_2026_10",
+  initialTargetRatio:"0.60",targetRate:"0.09",contributionTargetRatio:"0.50",
+  reviewBuyCapRatio:"0.90",tolerance:"0",reviewFrequency:"QUARTERLY",reviewSchedule:"CALENDAR_QUARTER_END",
+  reviewTimezone:"America/New_York",reviewCutoffLocal:"16:00",businessDayConvention:"PREVIOUS",marketHolidays:[]
+};
 
 type SeedPin={name:string;family:string;description:string;engine:string;proprietary:boolean;enabled:boolean;
   initialVersion:"PUBLISHED"|"DRAFT"|null;realign:boolean};
@@ -316,6 +323,27 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
     expect(curatedRelease(nine)?.summary).toBe(
       "Quarterly signal-based value targeting; full source-methodology audit remains outstanding.");
     expect(RESEARCH_STRATEGIES.some(p=>p.key==="9sig")).toBe(false);
+  });
+
+  it("adds 9Sig 1.1 as a separate, version-bound DRAFT release and leaves 1.0 untouched",()=>{
+    const nine=getStrategyPlugin("9sig")!;
+    const later=nine.codeRelease?.laterVersions??[];
+    expect(later.map(v=>v.version)).toEqual(["1.1"]);
+    expect(later[0].config).toBe(CANONICAL_9SIG_V1_1_CONFIG);
+    expect(CANONICAL_9SIG_V1_1_CONFIG).toEqual(CANONICAL_9SIG_V1_1_LITERAL);
+    expect(canonical(CANONICAL_9SIG_V1_1_CONFIG)).toBe(canonical(CANONICAL_9SIG_V1_1_LITERAL));
+    expect(later[0].effectiveFrom).not.toBe("2026-01-01");
+    expect(later[0].disclosure).toBe(PRE_REFACTOR_LEVERAGE_DISCLOSURE);
+    expect(curatedReleaseForVersion(nine,"1.1")?.config).toBe(CANONICAL_9SIG_V1_1_CONFIG);
+    expect(curatedReleaseForVersion(nine,"1.0")?.config).toBe(CANONICAL_9SIG_CONFIG);
+    expect(curatedReleaseForVersion(nine,undefined)?.config).toBe(CANONICAL_9SIG_CONFIG);
+    expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_LITERAL,[],"1.1")).not.toThrow();
+    expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_LITERAL,[])).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+    // No other plugin declares a later release.
+    expect(STRATEGY_PLUGINS.filter(p=>p.codeRelease?.laterVersions?.length).map(p=>p.key)).toEqual(["9sig"]);
+    const seed=readFileSync("scripts/seed.ts","utf8");
+    expect(seed).toContain("laterVersions");
+    expect(seed).toMatch(/INSERT INTO strategy_versions[^;]*?'DRAFT','OPTIONAL'[^;]*?ON CONFLICT \(strategy_definition_id,version\) DO NOTHING/s);
   });
 
   it("curated-rule enforcement accepts exactly the pinned rules and nothing else",()=>{

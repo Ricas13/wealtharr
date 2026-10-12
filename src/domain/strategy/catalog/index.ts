@@ -29,9 +29,9 @@ import {plugin as vaa} from "./vaa";
 import {plugin as threeSig} from "./3sig";
 import {plugin as sixSig} from "./6sig";
 
-export type {StrategyEngineKey,StrategyPlugin,StrategyProfile,SeedDefinition,CodeRelease} from "./plugin";
+export type {StrategyEngineKey,StrategyPlugin,StrategyProfile,SeedDefinition,CodeRelease,LaterCodeRelease} from "./plugin";
 export {LEVERAGE_DISCLOSURE} from "./plugin";
-export {CANONICAL_9SIG_CONFIG} from "./9sig";
+export {CANONICAL_9SIG_CONFIG,CANONICAL_9SIG_V1_1_CONFIG} from "./9sig";
 
 /**
  * Every strategy the portal knows about, in display/seed order. The profiles of the plugins that
@@ -76,4 +76,16 @@ export function curatedRelease(plugin:StrategyPlugin):CuratedRelease|null{
       disclosure:undefined,summary:plugin.codeRelease.summary};
   }
   return null;
+}
+
+/**
+ * The reviewed rules for one stored version string. A version listed in `codeRelease.laterVersions`
+ * gets exactly that release's rules; any other version string (or none) gets the base release above,
+ * so a caller that does not pass the version can never accept a later release's rules.
+ */
+export function curatedReleaseForVersion(plugin:StrategyPlugin,version?:string|null):CuratedRelease|null{
+  const base=curatedRelease(plugin);
+  if(!base||version==null)return base;
+  const later=plugin.codeRelease?.laterVersions?.find(release=>release.version===version);
+  return later?{...base,config:later.config,disclosure:later.disclosure,summary:later.summary}:base;
 }

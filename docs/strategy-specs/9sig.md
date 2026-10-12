@@ -6,6 +6,8 @@ Reviewer: PENDING; independent approval: NO.
 
 ## Engine
 VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See `docs/9SIG_IMPLEMENTATION_GAP.md` for how the code differs from this card.
+- **Version 1.0** (published, `CANONICAL_9SIG_CONFIG`) uses the legacy calculation in `src/domain/strategy/value-target.ts`. It is unchanged.
+- **Version 1.1** (DRAFT, `CANONICAL_9SIG_V1_1_CONFIG`, `methodRevision:"KELLY_SIGNAL_2026_10"`) implements this card's Confirmed and author-sourced rules in `src/domain/strategy/kelly-signal.ts`. Its golden tests are in `tests/kelly-signal-golden.test.ts`. It is seeded as an OPTIONAL draft and is not attested, published or enabled. Existing instances stay on 1.0 until the user upgrades through the audited version flow.
 
 ## Who / what
 - **Author:** Jason Kelly. The base method is the "3% Signal", from his book *The 3% Signal* (publication year not verified here), now usually called 3Sig. 6Sig and 9Sig are leveraged variants that he runs in his paid newsletter, The Kelly Letter. Kelly says the variants work within the same signal framework [S2, S3].
@@ -58,6 +60,38 @@ VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See 
 | R15 | Reset to the base allocation when bonds grow too large (">30% bonds"). | S5 (a 3Sig spreadsheet note); S8 contradicts itself on whether this is Kelly's rule | **Unverified** for 9Sig (Q6) |
 | R16 | Withdrawals / decumulation. | Not found for 9Sig | **Unverified** (Q7) |
 | R17 | No floor on the TQQQ weight: repeated sells may take it below 60%. | S6 | **Single source** (primary) |
+
+## Implementation status in version 1.1 (DRAFT, not published)
+
+| # | Status on this card | In 1.1 | How |
+|---|---------------------|--------|-----|
+| R1 | Confirmed (fund type) | **Partly** | The leveraged sleeve is `NASDAQ_100_3X_LONG`. The safe sleeve is still the strategy's **cash** balance, not a bond fund. A bond holding still returns "A holding needs classification". The specific bond fund is Q1. |
+| R2 | Confirmed | Yes | Line × 1.09 once per elapsed calendar quarter. |
+| R3 | Confirmed | Yes | Calendar quarter ends (`reviewSchedule: CALENDAR_QUARTER_END`).<br>Review point: 16:00 America/New_York on the last weekday of Mar/Jun/Sep/Dec. The exact day and price are Wealtharr choices (R13/Q4).<br>`marketHolidays` is empty; the NYSE calendar is not yet source-verified.<br>A forced recalculation inside a quarter whose review is closed (resume, version upgrade, imported trade) returns NO_ACTION. It applies no growth and makes no trade. |
+| R4 | Single source (author) | Yes, **flagged** | When a review closes, the actual post-order balance is stored as `anchorValue`, and the next line is built from it. Q9 stays open. |
+| R5 | Confirmed | Yes | Half of the quarter's new cash is added. |
+| R6 | Confirmed | Yes | New cash is `CONTRIBUTION`, `DIVIDEND`, `DISTRIBUTION` and `INTEREST` rows. `TAX` and withholding are not netted. |
+| R7 | Single source (author) | Yes | Each ledger row is counted in exactly one quarter, by when it was **recorded** (`created_at`). A backdated entry counts in the quarter in which it was entered and is never lost. |
+| R8 | Confirmed | Yes | No tolerance band (`tolerance:"0"`, which the 1.1 calculation never reads). Amounts are rounded to whole cents.<br>The user's execution settings (whole shares, minimum trade, cash buffer) still apply. When they make the rest of an order untradeable, the review closes with a HOLD instead of looping. |
+| R9 | Single source (author, 2018) | Yes, **flagged** | `reviewBuyCapRatio: 0.90` of cash, sized **once** when the review's order is first executed. Partial fills continue the same frozen order. The source may be outdated (Q2b). |
+| R10 | Confirmed | Yes | A capped or cash-limited quarter closes with a HOLD, never with DATA_REQUIRED. Outside cash is never requested. |
+| R11 | Unverified as current | **Convention only** | The 60% initial allocation is inherited from 1.0. There is no base reset (Q2). |
+| R12 | Unverified | **No** | 30 Down is not implemented (Q3). |
+| R13 | Unverified / conflicting | **No** | Uses the latest stored quote, with the existing freshness checks (Q4). |
+| R14 | Single source (author, 2018) | **No** | The spike reset is excluded until the current guide is confirmed (Q5). |
+| R15 | Unverified | **No** | (Q6) |
+| R16 | Unverified | **No** | Withdrawals reduce cash only. They never change the line (Q7). |
+| R17 | Single source (author) | Yes | No floor on the stock weight. |
+
+Wealtharr conventions in 1.1 (the sources are silent; each one is tested):
+- The first review counts as the review of the calendar quarter in progress. The first 9% step is therefore applied at the end of the first full calendar quarter.
+- Upgrading a 1.0 instance:
+  - Its last confirmed 1.0 review counts for the calendar quarter in which it happened.
+  - Its committed 1.0 target is the first anchor, because 1.0 stored no post-order balance.
+  - The upgrade itself never counts as a review or adds growth.
+- A missed quarter compounds: anchor × 1.09^n.
+- An empty portfolio (no cash, no holdings) and a zero line return DATA_REQUIRED. A zero target is never committed.
+- A target override replaces the previous-quarter reference for **one** review. It is deactivated, with an audit row, in the transaction that closes that review.
 
 ## Hand-worked examples
 
@@ -134,6 +168,21 @@ Spike reset check (R14), illustrative: suppose instead that Q1 had returned +100
 
 ## Golden tests required before publication
 Use independently computed expected values for Example A Q1–Q2 and Example B Q1–Q4. Add one case for each rule once the owner confirms it: R12 (30 Down skip), R14 (spike reset), a distribution counted as new cash, and a withdrawal. Record the workings next to the test.
+
+Version 1.1: `tests/kelly-signal-golden.test.ts` has the following cases, with the workings shown in comments:
+- Example A Q1–Q2.
+- Example B start and Q1–Q4, chained through execute and recalculate.
+- A partial fill inside the cap.
+- Cash running out mid-review.
+- No cash at review start.
+- A resume mid-quarter.
+- A 1.0 upgrade.
+- A contribution plus a dividend.
+- Missed quarters.
+- An empty portfolio.
+- A one-review override.
+
+These tests were **not run** when written (no Node toolchain); CI is the first run. R12, R14 and withdrawal cases remain to be added once the owner confirms those rules.
 
 ## Sign-off
 Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______

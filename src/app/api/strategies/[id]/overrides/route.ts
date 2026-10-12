@@ -34,7 +34,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       if(p.fieldKey==="strategy_state.targetValue"){
         if(String(strategy[0].engine_key)!=="VALUE_TARGET")throw new Error("OVERRIDE_FIELD_NOT_APPLICABLE");
         const state=(strategy[0].state??{}) as Record<string,unknown>;
-        automaticValue=state.targetValue??null;
+        // 9Sig v1.1 overrides the previous quarter's reference (anchorValue); v1.0 has no anchorValue.
+        automaticValue=state.anchorValue??state.targetValue??null;
       }else{
         const instrumentId=p.fieldKey.slice("market_price:".length);
         const market=await tx.unsafe(

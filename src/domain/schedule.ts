@@ -159,3 +159,39 @@ export function nextCalendarQuarterDueAt(input:{
   }
   throw new Error("CALENDAR_QUARTER_DATE_UNAVAILABLE");
 }
+
+/** One calendar-quarter review point. `index` is year*4 + (quarter-1), so Q1 2026 is 8104. */
+export type CalendarQuarterEnd={index:number;nominalDate:string;businessDate:string;cutoff:Date};
+type QuarterCalendar={timeZone:string;cutoffLocal?:string;holidays?:string[];convention?:"PREVIOUS"|"NEXT"};
+
+/** The review point of calendar quarter `index`, rolled by the same rules as nextCalendarQuarterDueAt. */
+export function calendarQuarterEndAt(index:number,input:QuarterCalendar):CalendarQuarterEnd{
+  if(!Number.isSafeInteger(index)||index<0)throw new Error("INVALID_CALENDAR_QUARTER_INDEX");
+  const year=Math.floor(index/4);
+  const month=(index-year*4+1)*3;
+  const nominalDate=[String(year).padStart(4,"0"),String(month).padStart(2,"0"),String(daysInMonth(year,month)).padStart(2,"0")].join("-");
+  const businessDate=rollBusinessDay(nominalDate,input.holidays??[],input.convention??"PREVIOUS");
+  return {index,nominalDate,businessDate,cutoff:zonedLocalDateTimeToUtc(businessDate,input.cutoffLocal??"16:00",input.timeZone)};
+}
+
+/** The index of the first calendar-quarter review point strictly later than `instant`. */
+export function calendarQuarterIndexAfter(instant:Date,input:QuarterCalendar):number{
+  const {year,month}=parseDate(localDateInZone(instant,input.timeZone));
+  const containing=year*4+Math.ceil(month/3)-1;
+  for(let n=-1;n<4;n++){
+    const end=calendarQuarterEndAt(containing+n,input);
+    if(end.cutoff.getTime()>instant.getTime())return end.index;
+  }
+  throw new Error("CALENDAR_QUARTER_DATE_UNAVAILABLE");
+}
+
+/** The most recent calendar-quarter review point at or before `now`. */
+export function latestCalendarQuarterEnd(input:QuarterCalendar&{now:Date}):CalendarQuarterEnd{
+  const {year,month}=parseDate(localDateInZone(input.now,input.timeZone));
+  const containing=year*4+Math.ceil(month/3)-1;
+  for(let n=0;n<4;n++){
+    const end=calendarQuarterEndAt(containing-n,input);
+    if(end.cutoff.getTime()<=input.now.getTime())return end;
+  }
+  throw new Error("CALENDAR_QUARTER_DATE_UNAVAILABLE");
+}

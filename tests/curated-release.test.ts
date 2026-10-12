@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {assertCuratedRules,CANONICAL_9SIG_CONFIG} from "@/domain/strategy/curated-release";
+import {assertCuratedRules,CANONICAL_9SIG_CONFIG,CANONICAL_9SIG_V1_1_CONFIG} from "@/domain/strategy/curated-release";
 import {RESEARCH_STRATEGIES} from "@/domain/strategy/research-catalog";
 const hfea=RESEARCH_STRATEGIES.find(p=>p.key==="hfea")!;
 describe("curated strategy rules cannot be edited through admin configuration",()=>{
@@ -30,5 +30,17 @@ describe("curated strategy rules cannot be edited through admin configuration",(
  it("does not permit an administrator to alter 9Sig growth targets without a reviewed code release",()=>{
   expect(()=>assertCuratedRules("9sig","VALUE_TARGET",{...CANONICAL_9SIG_CONFIG,targetRate:"0.50"},[]))
     .toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+ });
+ it("accepts the reviewed 9Sig 1.1 rules only for version string 1.1, and rejects any drift",()=>{
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_CONFIG,[],"1.1")).not.toThrow();
+  // Without a version, or under any other version string, only the 1.0 rules are accepted.
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_CONFIG,[])).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_CONFIG,[],"1.0")).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_CONFIG,[],"1.2")).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_CONFIG,[],"1.0")).not.toThrow();
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_CONFIG,[],"1.1")).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+  for(const drift of [{reviewBuyCapRatio:"1"},{tolerance:"0.01"},{targetRate:"0.10"},{reviewTimezone:"Europe/London"},{methodRevision:undefined}])
+    expect(()=>assertCuratedRules("9sig","VALUE_TARGET",{...CANONICAL_9SIG_V1_1_CONFIG,...drift},[],"1.1")).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+  expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_V1_1_CONFIG,[{key:"x",type:"number"}],"1.1")).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
  });
 });

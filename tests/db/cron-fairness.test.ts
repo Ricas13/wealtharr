@@ -32,7 +32,7 @@ describe.skipIf(!url)("hourly worker fairness", () => {
     process.env.CRON_SECRET = "fairness-secret-long-enough";
     process.env.CRON_MAX_INSTANCES = "10";
     process.env.CRON_CONCURRENCY = "2";
-    const [definition] = await sql!.unsafe("SELECT d.id,v.id AS version_id FROM strategy_definitions d JOIN strategy_versions v ON v.strategy_definition_id=d.id WHERE d.key='9sig' LIMIT 1");
+    const [definition] = await sql!.unsafe("SELECT d.id,v.id AS version_id FROM strategy_definitions d JOIN strategy_versions v ON v.strategy_definition_id=d.id WHERE d.key='9sig' AND v.lifecycle_status='PUBLISHED' LIMIT 1");
     // Park every pre-existing active strategy so only this test's strategies compete for the 10 slots.
     await sql!.unsafe("UPDATE strategy_instances SET last_calculation_attempt_at=now()+interval '1 day' WHERE status='ACTIVE'");
     for (let i = 0; i < 25; i += 1) {

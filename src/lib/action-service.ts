@@ -21,6 +21,7 @@ import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
 import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
+import { isKellySignalConfig, kellyLedgerWindow, kellyNewCashEventTypesSql, KELLY_ANCHOR_OVERRIDE_KEY, KELLY_CONSUMED_OVERRIDE_KEY } from "@/domain/strategy/kelly-signal";
 
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
 type CalculationScenario={
@@ -84,11 +85,14 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     [calculationDefinitionId,calculationEffectiveFrom]
   );
   if(calculationDefinitionId===String(instance.strategy_definition_id)){
-    const targetOverride=await sql.unsafe("SELECT manual_value FROM overrides WHERE strategy_instance_id=$1 AND field_key='strategy_state.targetValue' AND active=true ORDER BY created_at DESC LIMIT 1",[strategyInstanceId]);
+    const targetOverride=await sql.unsafe("SELECT id,manual_value FROM overrides WHERE strategy_instance_id=$1 AND field_key='strategy_state.targetValue' AND active=true ORDER BY created_at DESC LIMIT 1",[strategyInstanceId]);
     if(targetOverride[0]?.manual_value!=null){
       const candidate=new Decimal(String(targetOverride[0].manual_value));
       if(!candidate.isFinite()||candidate.lt(0)||candidate.gt("999999999999"))throw new Error("INVALID_TARGET_OVERRIDE");
-      state.targetValue=candidate.toString();
+      // 9Sig v1.1: the override replaces the previous quarter's reference for ONE review and is
+      // consumed when that review closes (executeAction). v1.0 keeps its permanent replacement.
+      if(isKellySignalConfig(config))state[KELLY_ANCHOR_OVERRIDE_KEY]={id:String(targetOverride[0].id),value:candidate.toString()};
+      else state.targetValue=candidate.toString();
     }
   }
 
@@ -169,6 +173,31 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     ?[{amount:"0"}]
     :await sql.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview]);
   const contributionsSinceReview=new Decimal(String(contributionRows[0]?.amount??0)).plus(new Decimal(scenario?.contributionDelta??0));
+  // 9Sig v1.1 only. New cash = contributions plus distributions, classified by when each row was
+  // RECORDED (created_at), so a backdated entry still counts exactly once. Fills = gross notional
+  // recorded since the open review started. Corrected rows are excluded, as above.
+  let signalLedger:{newCash:Decimal;filledBuy:Decimal;filledSell:Decimal}|undefined;
+  if(isKellySignalConfig(config)){
+    if(scenario?.resetTimeline){
+      signalLedger={newCash:new Decimal(0),filledBuy:new Decimal(0),filledSell:new Decimal(0)};
+    }else{
+      const ledgerWindow=kellyLedgerWindow({state,config,now:new Date(),startedAt:new Date(instance.started_at)});
+      if(ledgerWindow){
+        const totals=await sql.unsafe(
+          "SELECT COALESCE(sum(l.cash_amount) FILTER (WHERE l.event_type IN ("+kellyNewCashEventTypesSql()+") AND l.created_at>$2 AND l.created_at<=$3),0) AS new_cash,"+
+          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='BUY' AND l.created_at>COALESCE($4::timestamptz,'infinity'::timestamptz)),0) AS filled_buy,"+
+          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='SELL' AND l.created_at>COALESCE($4::timestamptz,'infinity'::timestamptz)),0) AS filled_sell "+
+          "FROM ledger_events l WHERE l.strategy_instance_id=$1 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",
+          [strategyInstanceId,ledgerWindow.newCashFrom,ledgerWindow.newCashTo,ledgerWindow.fillsFrom]
+        );
+        signalLedger={
+          newCash:new Decimal(String(totals[0]?.new_cash??0)),
+          filledBuy:new Decimal(String(totals[0]?.filled_buy??0)),
+          filledSell:new Decimal(String(totals[0]?.filled_sell??0))
+        };
+      }
+    }
+  }
   const engine=getStrategyEngine(calculationEngineKey);
   const fullyEligibleAccountIds=new Set<string>();
   // Do not start a partial implementation. The next leg alone may map (e.g. SPY3 in a
@@ -195,7 +224,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12):undefined;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,signalLedger,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
 
   let tradingLineId:string|null=null;
   let executionTicker:string|null=null;
@@ -319,7 +348,15 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
             BELOW_MINIMUM_TRADE:"This action is below your minimum trade size.",
             NO_HOLDINGS:"The strategy wants to reduce this exposure, but no matching holding is recorded."
           } as const;
-          proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
+          const fallback=proposal.unexecutableFallback;
+          if(fallback&&(practical.reason==="BELOW_ONE_SHARE"||practical.reason==="BELOW_MINIMUM_TRADE"||practical.reason==="INSUFFICIENT_SPENDABLE_CASH")){
+            // 9Sig v1.1 only: an untradeable remainder closes the quarter's review (buy what you can)
+            // instead of leaving it open forever. Selling disabled / no holdings still need the user.
+            proposal={...fallback,instruction:fallback.instruction+" "+messages[practical.reason],
+              explanation:[...fallback.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}]};
+          }else{
+            proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
+          }
         }else{
           const quantityText=practical.quantity.toDecimalPlaces(6,Decimal.ROUND_DOWN).toString();
           const amountText=practical.amount.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
@@ -380,7 +417,11 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   // An estimated BUY/SELL is never proof that target weights were achieved.
   // Keep this cycle due until the broker's real fills and fees are recorded and
   // the engine recalculates. A HOLD acknowledgement can then close the review.
-  const nextState=postActionReviewState(proposal,state,new Date());
+  // 9Sig v1.1: the injected one-review override is never persisted into strategy state.
+  const persistedBase=isKellySignalConfig(config)?(()=>{
+    const copy={...state};delete copy[KELLY_ANCHOR_OVERRIDE_KEY];delete copy[KELLY_CONSUMED_OVERRIDE_KEY];return copy;
+  })():state;
+  const nextState=postActionReviewState(proposal,persistedBase,new Date());
   const totalValue=exposurePositions.reduce((sum,p)=>sum.plus(p.value),effectiveCash);
   return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker};
 }
@@ -852,9 +893,26 @@ export async function executeAction(
         [actionId]
       );
     }else{
+      const storedNext=(action.next_state??{}) as Record<string,unknown>;
+      const consumedOverrideId=actionType==="HOLD"?storedNext[KELLY_CONSUMED_OVERRIDE_KEY]:undefined;
+      let stateToWrite:Record<string,unknown>=storedNext;
+      if(typeof consumedOverrideId==="string"){
+        // 9Sig v1.1 only: a target override applies to exactly one review. Deactivate it in the
+        // same transaction that closes that review, so growth resumes from the next quarter.
+        stateToWrite={...storedNext};
+        delete stateToWrite[KELLY_CONSUMED_OVERRIDE_KEY];
+        const consumed=await tx.unsafe(
+          "UPDATE overrides SET active=false,restored_at=now(),updated_at=now() WHERE id::text=$1 AND strategy_instance_id=$2 AND field_key='strategy_state.targetValue' AND active=true RETURNING id",
+          [consumedOverrideId,action.strategy_instance_id]
+        );
+        for(const row of consumed)await tx.unsafe(
+          "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'strategy.override-consumed','override',$2,$3::jsonb)",
+          [userId,String(row.id),JSON.stringify({strategyInstanceId:String(action.strategy_instance_id),actionId,fieldKey:"strategy_state.targetValue"})]
+        );
+      }
       await tx.unsafe(
         "UPDATE strategy_states SET state=$1::jsonb,calculated_at=now(),confidence=$2 WHERE strategy_instance_id=$3",
-        [JSON.stringify(action.next_state??{}),action.confidence,action.strategy_instance_id]
+        [JSON.stringify(stateToWrite),action.confidence,action.strategy_instance_id]
       );
       await tx.unsafe(
         "UPDATE actions SET status='EXECUTED',executed_at=now(),updated_at=now() WHERE id=$1",

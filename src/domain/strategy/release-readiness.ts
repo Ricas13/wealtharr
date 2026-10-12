@@ -23,7 +23,7 @@ export function researchGate(
   let rulesMatch=false;
   if(profile.config&&evidence?.config&&evidence.engineKey){
     try{
-      assertCuratedRules(profile.key,evidence.engineKey,evidence.config,evidence.inputSchema);
+      assertCuratedRules(profile.key,evidence.engineKey,evidence.config,evidence.inputSchema,evidence.version);
       rulesMatch=true;
     }catch{rulesMatch=false;}
   }

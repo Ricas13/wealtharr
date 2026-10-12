@@ -107,7 +107,7 @@ export async function createStrategy(userId: string, country: string, rawInput: 
 
     const definitions = await tx.unsafe(
       "SELECT d.id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,d.required_inputs,"+
-      "v.id AS version_id,v.engine_key,v.config,v.input_schema FROM strategy_definitions d JOIN LATERAL ("+
+      "v.id AS version_id,v.version,v.engine_key,v.config,v.input_schema FROM strategy_definitions d JOIN LATERAL ("+
       " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
       " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
       " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+

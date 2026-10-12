@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import type { EngineContext, ProposedAction, StrategyEngine } from "./types";
+import { calculateKellySignal, isKellySignalConfig, validateKellySignalConfig } from "./kelly-signal";
 
 function num(config: Record<string, unknown>, key: string, fallback: string) {
   return new Decimal(String(config[key] ?? fallback));
@@ -21,8 +22,15 @@ export const valueTargetEngine: StrategyEngine = {
     if (!["MONTHLY","QUARTERLY","ANNUAL"].includes(frequency)) throw new Error("INVALID_VALUE_TARGET_CONFIG:reviewFrequency");
     const cutoff = String(config.reviewCutoffLocal ?? "16:00");
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(cutoff)) throw new Error("INVALID_VALUE_TARGET_CONFIG:reviewCutoffLocal");
+    // 9Sig v1.1 selects the author's signal method explicitly (kelly-signal.ts). Absent = legacy v1.0.
+    if (config.methodRevision !== undefined) {
+      if (!isKellySignalConfig(config)) throw new Error("INVALID_VALUE_TARGET_CONFIG:methodRevision");
+      validateKellySignalConfig(config);
+    }
   },
   calculate(ctx: EngineContext): ProposedAction {
+    // The legacy body below is the v1.0 calculation and is intentionally left unchanged.
+    if (isKellySignalConfig(ctx.config)) return calculateKellySignal(ctx);
     if (ctx.dataHealth.status !== "CURRENT") {
       return { actionType:"DATA_REQUIRED",title:"Data needs attention",instruction:ctx.dataHealth.message ?? "Current source data is not reliable enough to calculate a financial action.",explanation:[{label:"Data status",value:ctx.dataHealth.status,kind:"text"}],nextState:ctx.state,confidence:"LOW",dueAt:ctx.nextReviewAt };
     }

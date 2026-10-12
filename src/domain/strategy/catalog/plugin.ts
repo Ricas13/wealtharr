@@ -74,6 +74,23 @@ export type CodeRelease = {
   config: Readonly<Record<string, unknown>>;
   /** One-line description shown in the admin inventory when no profile exists. */
   summary: string;
+  /**
+   * Later, separately reviewed rule releases of the same strategy, each bound to its own version
+   * string. `assertCuratedRules` accepts one of these configs only for a stored version with exactly
+   * that version string; every other version string must match `config` above. The seed inserts each
+   * as a DRAFT (insert-only); an administrator must ATTEST and PUBLISH it through the normal gates.
+   */
+  laterVersions?: readonly LaterCodeRelease[];
+};
+
+export type LaterCodeRelease = {
+  version: string;
+  /** Seeded effective date; must differ from every other version's date (one published per date). */
+  effectiveFrom: string;
+  config: Readonly<Record<string, unknown>>;
+  summary: string;
+  releaseNotes: string;
+  disclosure: string;
 };
 
 export type StrategyPlugin = {

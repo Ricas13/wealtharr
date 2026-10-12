@@ -90,7 +90,7 @@ export async function POST(request:Request){
     assertEngine(engineKey);
     validateEngineConfig(engineKey,p.config);
     parseInputSchema(inputSchema);
-    assertCuratedRules(p.strategyKey,engineKey,p.config,inputSchema);
+    assertCuratedRules(p.strategyKey,engineKey,p.config,inputSchema,p.version);
     const rows=await sql.unsafe(
       "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,effective_to,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,release_notes)"+
       " VALUES ($1,$2,$3,$4,$5,'DRAFT',$6,$7::jsonb,$8::jsonb,$9,$10) RETURNING id",
@@ -130,7 +130,7 @@ export async function PATCH(request:Request){
         if(!definitions[0])throw new LifecycleConflict("Strategy is not installed in the database.",404);
         if(p.enabled){
           const releases=await tx.unsafe(
-            "SELECT v.id,v.engine_key,v.config,v.input_schema,a.strategy_version_id AS attestation_id "+
+            "SELECT v.id,v.version,v.engine_key,v.config,v.input_schema,a.strategy_version_id AS attestation_id "+
             "FROM strategy_versions v LEFT JOIN strategy_version_attestations a ON a.strategy_version_id=v.id "+
             "WHERE v.strategy_definition_id=$1 AND v.lifecycle_status='PUBLISHED' "+
             "AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
@@ -144,7 +144,7 @@ export async function PATCH(request:Request){
           try{
             assertCustomerPublishableEngine(String(release.engine_key));
             assertCuratedRules(p.strategyKey,String(release.engine_key),
-              release.config,release.input_schema);
+              release.config,release.input_schema,String(release.version));
           }catch{
             throw new LifecycleConflict("The release does not match the built-in reviewed strategy method.",409);
           }
@@ -189,7 +189,7 @@ export async function PATCH(request:Request){
         const inputSchema=p.inputSchema??(Array.isArray(current.input_schema)?current.input_schema:[]);
         assertEngine(engineKey);validateEngineConfig(engineKey,config);parseInputSchema(inputSchema);
         if(isBuiltInStrategy(String(current.strategy_key)))
-          assertCuratedRules(String(current.strategy_key),engineKey,config,inputSchema);
+          assertCuratedRules(String(current.strategy_key),engineKey,config,inputSchema,String(current.version));
         const updated=await tx.unsafe(
           "UPDATE strategy_versions SET effective_from=$1,effective_to=$2,engine_key=$3,upgrade_policy=$4,input_schema=$5::jsonb,config=$6::jsonb,disclosure=$7,release_notes=$8 WHERE id=$9 AND lifecycle_status='DRAFT' RETURNING id",
           [p.effectiveFrom??current.effective_from,p.effectiveTo===undefined?current.effective_to:p.effectiveTo,engineKey,p.upgradePolicy??current.upgrade_policy,JSON.stringify(inputSchema),JSON.stringify(config),p.disclosure??current.disclosure,p.releaseNotes??current.release_notes,p.versionId]
@@ -223,7 +223,7 @@ export async function PATCH(request:Request){
         validateEngineConfig(String(current.engine_key),(current.config??{}) as Record<string,unknown>);
         parseInputSchema(current.input_schema);
         if(isBuiltInStrategy(String(current.strategy_key)))
-          assertCuratedRules(String(current.strategy_key),String(current.engine_key),current.config,current.input_schema);
+          assertCuratedRules(String(current.strategy_key),String(current.engine_key),current.config,current.input_schema,String(current.version));
         const duplicate=await tx.unsafe(
           "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND lifecycle_status='PUBLISHED' AND effective_from=$2 AND id<>$3 LIMIT 1",
           [current.strategy_definition_id,current.effective_from,p.versionId]

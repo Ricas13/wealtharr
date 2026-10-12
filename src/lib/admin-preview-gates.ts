@@ -15,12 +15,14 @@ type Db = Pick<Sql, "unsafe">;
  */
 export async function assertDisabledStrategyPreviewGates(
   db: Db,
-  // A database row: the fields read below are key, enabled, version_id, engine_key, config, input_schema.
+  // A database row: the fields read below are key, enabled, version_id, version, engine_key, config, input_schema.
   definition: Record<string, unknown>
 ) {
   if (definition.enabled === true) return;
   assertCustomerPublishableEngine(String(definition.engine_key));
-  assertCuratedRules(String(definition.key), String(definition.engine_key), definition.config, definition.input_schema);
+  // Without the version string only the base release can match (fail closed for later releases).
+  assertCuratedRules(String(definition.key), String(definition.engine_key), definition.config, definition.input_schema,
+    definition.version == null ? null : String(definition.version));
   const attested = await db.unsafe(
     "SELECT 1 FROM strategy_version_attestations WHERE strategy_version_id=$1 LIMIT 1",
     [String(definition.version_id)]

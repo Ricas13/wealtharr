@@ -31,6 +31,13 @@ export type EngineContext = {
   dataHealth: DataHealth;
   /** Must be populated by an authenticated licensed market-data adapter, never user settings. */
   trustedHistory?: TrustedHistoricalSeries[];
+  /**
+   * Ledger totals for the 9Sig v1.1 signal method (`methodRevision`), populated by the action service
+   * only for that revision; every other engine and revision ignores it. newCash: contributions and
+   * distributions recorded (created_at) inside the quarter's window. filledBuy/filledSell: gross
+   * notional of BUY/SELL rows recorded since the open review was started.
+   */
+  signalLedger?: { newCash: Decimal; filledBuy: Decimal; filledSell: Decimal };
 };
 
 export type ExplanationRow = {
@@ -52,6 +59,12 @@ export type ProposedAction = {
   confidence: "HIGH" | "MEDIUM" | "LOW";
   dueAt?: Date | null;
   completesReview?: boolean;
+  /**
+   * Only set by the 9Sig v1.1 signal method on BUY/SELL: the review-closing HOLD to use instead of
+   * DATA_REQUIRED when the user's execution constraints make the remaining order untradeable
+   * (below one share, below the minimum trade, or no spendable cash).
+   */
+  unexecutableFallback?: ProposedAction;
 };
 
 export interface StrategyEngine {

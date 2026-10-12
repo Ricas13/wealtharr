@@ -47,6 +47,38 @@ The code implements four things correctly: the 9% compounding growth, half of co
 | 19 | Initial review with mid-review cash | Not covered by sources | Further cash during the first review is multiplied by 0.60, not 0.50 (`value-target.ts:69`; test `value-target.test.ts:50-57`) | Cannot tell (product convention) | Keep, but label it a Wealtharr convention in the spec card |
 | 20 | Strategy metadata | Spec card required (CLAUDE.md) | `specCard: null` (`catalog/9sig.ts:24`). Seeded `PUBLISHED`, `enabled:true` (`catalog/9sig.ts:20-22`) | Gap | Point `specCard` at `docs/strategy-specs/9sig.md` once it is reviewed. `docs/STATUS.md:116` ("no spec card") becomes partly stale with this doc and should be updated in the follow-up PR |
 
+## Verdict after version 1.1 (DRAFT, 2026-10-12)
+The table above describes version 1.0, which is published and unchanged. Version 1.1 is added as a separate DRAFT version, selected by `methodRevision:"KELLY_SIGNAL_2026_10"` (`src/domain/strategy/kelly-signal.ts`). The second column below is its verdict for each row.
+
+| Row | 1.1 verdict |
+|-----|-------------|
+| 1 Leveraged sleeve | Matches (unchanged) |
+| 2 Safe sleeve | **Still differs.** Cash is the safe sleeve; a bond fund is still unclassified (Q1) |
+| 3 Growth rate | Matches |
+| 4 Target anchor | **Fixed** (R4, author single source; Q9 open). The anchor is the actual post-order balance |
+| 5 Contributions | Matches |
+| 6 Distributions | **Fixed.** DIVIDEND, DISTRIBUTION and INTEREST count as new cash |
+| 7 Carry-over | Matches. Rows are classified by `created_at`, so backdated entries count once |
+| 8 Tolerance | **Fixed.** No band. Execution settings still apply; an untradeable remainder closes the review |
+| 9 90% throttle | **Fixed** (author single source, possibly outdated; Q2b). The cap is sized once per review and the order is frozen across partial fills |
+| 10 Under-funded buy | **Fixed.** A capped or cash-limited quarter closes with a HOLD |
+| 11 Review timing | **Fixed**, with conventions (see below).<br>Reviews are at calendar quarter ends, 16:00 America/New_York.<br>A resume or upgrade inside a closed quarter gives NO_ACTION, so pausing and resuming no longer adds 9%.<br>Holidays are empty (Q4) |
+| 12 Signal price | Unchanged (Q4) |
+| 13 Initial allocation | 60% kept as an inherited convention (Q2) |
+| 14 30 Down | Not implemented (Q3) |
+| 15 Spike reset | Not implemented (Q5) |
+| 16 Base reset | Not implemented (Q6) |
+| 17 No floor | Matches |
+| 18 Withdrawals | Unchanged: they reduce cash only (Q7) |
+| 19 Mid-review cash | Changed. The order is frozen at review start, and cash recorded after the quarter-end cutoff counts in the next quarter |
+| 20 Metadata | Spec card exists (DRAFT). `specCard` stays `null` until sign-off |
+
+Also new in 1.1, outside the rows above:
+- An empty portfolio returns DATA_REQUIRED; a zero target is never committed.
+- A target override is consumed by the review that uses it. In 1.0 it still applies on every calculation.
+
+Version 1.0 keeps all of its listed differences, including the per-fill 90% cap, the 1% band, the 3-month schedule and the committable zero target.
+
 ## Worked check: the code vs the sources on spec Example B
 Example B: 10,000 start, 0% bond return, TQQQ moves +20%, −30%, −50%, +10%. Cash stands in for bonds.
 
