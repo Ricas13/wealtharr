@@ -27,7 +27,7 @@ import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
 const QUOTE_REJECTED_MESSAGE="The latest market price for a held instrument was rejected as implausible (for example an unrecorded stock split). Check the instrument, record a split or enter a manual price before financial actions resume.";
 /** The provider's newest quote was refused and nothing newer has been accepted since: do not fall back to the older price. */
-function latestQuoteRejected(row:{observed_at?:unknown;rejected_observed_at?:unknown}|undefined){
+function latestQuoteRejected(row:Record<string,unknown>|null|undefined){
   if(!row?.rejected_observed_at)return false;
   const rejectedAt=new Date(row.rejected_observed_at as string|number|Date).getTime();
   if(!Number.isFinite(rejectedAt))return true;

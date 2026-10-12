@@ -78,14 +78,14 @@ describe.skipIf(!url)("stock split ledger event", () => {
     // 10 units x 2 - 10 = +10.
     const result = await split({ instrumentId, ratio: "2", occurredAt: "2026-01-10T10:00:00Z", requestKey: randomUUID() });
     expect(result.status).toBe(200);
-    const row = (await sql!.unsafe("SELECT event_type,cash_amount,fee_amount,quantity,metadata FROM ledger_events WHERE id=$1", [result.json.id]))[0];
+    const row = (await sql!.unsafe("SELECT event_type,cash_amount,fee_amount,quantity,metadata FROM ledger_events WHERE id=$1", [String(result.json.id)]))[0];
     expect(String(row.event_type)).toBe("SPLIT");
     expect(Number(row.cash_amount)).toBe(0);
     expect(Number(row.fee_amount)).toBe(0);
     expect(Number(row.quantity)).toBe(10);
     expect(String((row.metadata as { ratio: string }).ratio)).toBe("2");
     expect(await units()).toBe(20);
-    const audit = await sql!.unsafe("SELECT 1 FROM audit_events WHERE entity_id=$1 AND action='ledger.split-recorded'", [result.json.id]);
+    const audit = await sql!.unsafe("SELECT 1 FROM audit_events WHERE entity_id=$1 AND action='ledger.split-recorded'", [String(result.json.id)]);
     expect(audit.length).toBe(1);
   });
 
