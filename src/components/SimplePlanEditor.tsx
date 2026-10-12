@@ -71,7 +71,7 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
  }
  return <form className="glass form-card" onSubmit={save}>
   <h2>Plan configuration</h2>
-  <p className="help">Choose a plan and configure it without JSON. Changes to limits can pause affected strategies; their history remains intact.</p>
+  <p className="help">Choose a plan and configure it without JSON. You can publish 0–5 plans on the homepage; hide or archive another before publishing a sixth. Changes to limits can pause affected strategies; their history remains intact.</p>
   <div className="field"><label htmlFor="admin-plan-select">Edit existing or add new</label>
    <select id="admin-plan-select" value={selection} onChange={e=>choose(e.target.value)}>
     {initialPlans.map(p=><option key={p.slug} value={p.slug}>{p.displayName} ({p.slug})</option>)}
