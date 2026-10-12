@@ -8,6 +8,7 @@ import {recalculateAfterMutation} from "@/lib/action-service";
 import {exchangeTradingDate,historicalBrokerFill} from "@/domain/historical-trade";
 import {sql} from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
+import { assertNoSplitAfter } from "@/lib/ledger-timeline";
 
 const decimal=z.string().regex(/^\d+(?:\.\d{1,12})?$/);
 const inputSchema=z.object({
@@ -132,6 +133,9 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
         }
       }
 
+      // A fill dated before a recorded stock split would be counted in pre-split units after the split.
+      await assertNoSplitAfter(tx,id,input.accountId,String(line.instrument_id),executedAt);
+
       const inserted=await tx.unsafe(
         "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,"+
         "instrument_id,quantity,unit_price,fee_amount,provenance,confidence,metadata,request_key,created_by) "+
@@ -181,6 +185,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       TRADE_TRADING_LINE_AMBIGUOUS_OR_MISSING:"No unique instrument line matched this exchange, currency and trading date.",
       TRADE_REQUEST_KEY_CONFLICT:"The retry key was already used for a different trade.",
       TRADE_INSUFFICIENT_HISTORICAL_CASH:"Record the funding contribution before this trade; cash would be negative on a historical date.",
+      SPLIT_AFTER_ENTRY_DATE:"A stock split for this instrument is recorded after this trade's date. Date the trade after the split (in post-split units) or reverse the split first.",
       TRADE_INSUFFICIENT_HISTORICAL_HOLDINGS:"The historical trade sequence would sell more units than were held.",
       TRADE_RECONCILIATION_REQUIRED:"Finish the opening holdings reconciliation before importing trades.",
       STRATEGY_CLOSED:"Closed strategies are read-only.",

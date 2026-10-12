@@ -1,28 +1,40 @@
 import { describe, expect, it } from "vitest";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { assertLedgerEvent, foldAccountLedger, foldLedger, ledgerRowToEvent, ledgerRowsForAccount, splitQuantityDelta } from "../src/domain/ledger";
 
 describe("stock split ledger event", () => {
   it("computes the unit delta of a forward split exactly", () => {
-    // 2:1 on 10 units: 10 x 2 - 10 = +10. 3:2 on 10 units: 10 x 1.5 - 10 = +5.
-    expect(splitQuantityDelta("10", "2").toString()).toBe("10");
-    expect(splitQuantityDelta("10", "1.5").toString()).toBe("5");
-    // 2:1 on 0.123456789012 units: x 2 = 0.246913578024, delta 0.123456789012.
-    expect(splitQuantityDelta("0.123456789012", "2").toString()).toBe("0.123456789012");
+    // 2-for-1 on 10 units: 10 x 2 / 1 - 10 = +10. 3-for-2 on 10 units: 10 x 3 / 2 - 10 = +5.
+    expect(splitQuantityDelta("10", 2, 1).toString()).toBe("10");
+    expect(splitQuantityDelta("10", 3, 2).toString()).toBe("5");
+    // 2-for-1 on 0.12345678 units: x 2 = 0.24691356, delta 0.12345678.
+    expect(splitQuantityDelta("0.12345678", 2, 1).toString()).toBe("0.12345678");
   });
 
   it("computes a negative delta for a reverse split", () => {
-    // 1:10 on 50 units: 50 x 0.1 - 50 = -45.
-    expect(splitQuantityDelta("50", "0.1").toString()).toBe("-45");
+    // 1-for-10 on 50 units: 50 x 1 / 10 - 50 = 5 - 50 = -45. 1-for-3 on 12 units: 4 - 12 = -8.
+    expect(splitQuantityDelta("50", 1, 10).toString()).toBe("-45");
+    expect(splitQuantityDelta("12", 1, 3).toString()).toBe("-8");
   });
 
-  it("fails closed on a ratio that has no clean effect, a missing holding or sub-quantity precision", () => {
-    expect(() => splitQuantityDelta("10", "1")).toThrow("SPLIT_RATIO_INVALID");
-    expect(() => splitQuantityDelta("10", "0")).toThrow("SPLIT_RATIO_INVALID");
-    expect(() => splitQuantityDelta("10", "-2")).toThrow("SPLIT_RATIO_INVALID");
-    expect(() => splitQuantityDelta("10", "100000")).toThrow("SPLIT_RATIO_INVALID");
-    expect(() => splitQuantityDelta("0", "2")).toThrow("SPLIT_NO_HOLDING");
-    // 0.000000000001 (1e-12) x 0.5 = 5e-13 needs 13 decimals.
-    expect(() => splitQuantityDelta("0.000000000001", "0.5")).toThrow("SPLIT_PRECISION_UNSUPPORTED");
+  it("refuses a 1-for-3 reverse split that would leave a repeating fraction, instead of rounding", () => {
+    // 10 / 3 = 3.3333... is not exact to 8 decimals (the old 0.33333333 ratio gave 99.999999 from 300).
+    expect(() => splitQuantityDelta("10", 1, 3)).toThrow("SPLIT_NOT_EXACT");
+    // 1-for-8 on 3 units = 0.375 is exact and allowed; 1-for-16 on 1 unit = 0.0625 is exact too.
+    expect(splitQuantityDelta("3", 1, 8).toString()).toBe("-2.625");
+    expect(splitQuantityDelta("1", 1, 16).toString()).toBe("-0.9375");
+    // 1-for-2^9 on 1 unit = 0.001953125 has 9 decimals: refused.
+    expect(() => splitQuantityDelta("1", 1, 512)).toThrow("SPLIT_NOT_EXACT");
+  });
+
+  it("fails closed on terms that are not whole positive different numbers, or a missing holding", () => {
+    expect(() => splitQuantityDelta("10", 1, 1)).toThrow("SPLIT_RATIO_INVALID");
+    expect(() => splitQuantityDelta("10", 0, 1)).toThrow("SPLIT_RATIO_INVALID");
+    expect(() => splitQuantityDelta("10", -2, 1)).toThrow("SPLIT_RATIO_INVALID");
+    expect(() => splitQuantityDelta("10", 1.5, 1)).toThrow("SPLIT_RATIO_INVALID");
+    expect(() => splitQuantityDelta("10", 2000000, 1)).toThrow("SPLIT_RATIO_INVALID");
+    expect(() => splitQuantityDelta("0", 2, 1)).toThrow("SPLIT_NO_HOLDING");
   });
 
   it("is a quantity-only event: no cash, no fee, an instrument and a non-zero delta", () => {
@@ -39,7 +51,7 @@ describe("stock split ledger event", () => {
     const position = foldLedger([
       { eventType: "CONTRIBUTION", currency: "GBP", cashAmount: "1000" },
       { eventType: "BUY", currency: "GBP", cashAmount: "-1000", instrumentId: "asset", quantity: "10" },
-      { eventType: "SPLIT", currency: "GBP", cashAmount: "0", instrumentId: "asset", quantity: splitQuantityDelta("10", "2") },
+      { eventType: "SPLIT", currency: "GBP", cashAmount: "0", instrumentId: "asset", quantity: splitQuantityDelta("10", 2, 1) },
       { eventType: "SELL", currency: "GBP", cashAmount: "300", instrumentId: "asset", quantity: "-5" }
     ], "GBP");
     expect(position.quantities.get("asset")?.toString()).toBe("15");
@@ -53,6 +65,26 @@ describe("stock split ledger event", () => {
       { eventType: "CORRECTION", currency: "GBP", cashAmount: "0", instrumentId: "asset", quantity: "-10" }
     ], "GBP");
     expect(position.quantities.get("asset")?.toString()).toBe("10");
+  });
+});
+
+describe("ledger event_type vocabulary in the 0039 migration", () => {
+  // Every event_type literal the application writes (grep of INSERT INTO ledger_events in src/).
+  const WRITTEN = [
+    "CONTRIBUTION", "WITHDRAWAL", "DIVIDEND", "DISTRIBUTION", "INTEREST", "FEE", "TAX", "BUY", "SELL",
+    "CORRECTION", "OPENING_CASH", "OPENING_POSITION", "BROKER_ADJUSTMENT", "SPLIT"
+  ];
+  const migrationsDir = join(process.cwd(), "db", "migrations");
+  const file = existsSync(migrationsDir) ? readdirSync(migrationsDir).find((name) => /^0039_.*\.sql$/.test(name)) : undefined;
+
+  it("lists every literal the code writes, when that migration exists in this checkout", () => {
+    if (!file) return; // 0039 lives on another branch; nothing to check here
+    const sqlText = readFileSync(join(migrationsDir, file), "utf8");
+    // The statement(s) that mention event_type for ledger_events, up to the next semicolon.
+    const statements = [...sqlText.matchAll(/ledger_events[^;]*?event_type[^;]*;/gis)].map((match) => match[0]);
+    if (statements.length === 0) return; // this migration does not constrain ledger_events.event_type
+    const allowed = new Set(statements.flatMap((statement) => [...statement.matchAll(/'([A-Z_]+)'/g)].map((match) => match[1])));
+    for (const literal of WRITTEN) expect(allowed.has(literal), literal + " missing from " + file).toBe(true);
   });
 });
 

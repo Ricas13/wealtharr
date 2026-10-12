@@ -84,27 +84,31 @@ export function assertLedgerEvent(event: LedgerEvent) {
   }
 }
 
-const SPLIT_RATIO_MIN = "0.0001";
-const SPLIT_RATIO_MAX = "10000";
+const SPLIT_TERM_MAX = "1000000";
+/** Decimal places the post-split unit count may carry; anything finer cannot be a clean broker share count. */
+const SPLIT_UNITS_DECIMALS = 8;
 
 /**
- * Signed unit change that a split of `ratio` new units per old unit (2 for a 2:1 forward split, 0.1
- * for a 1:10 reverse split) makes to `held` units: held x ratio - held. Exact decimal arithmetic; a
- * result that would need more than the ledger's 12 quantity decimals is refused rather than rounded,
- * so a recorded split can always be reconciled with the broker's share count.
+ * Signed unit change of a split stated as integers: `to` new units for every `from` old units (2 and 1
+ * for a 2-for-1 split, 1 and 3 for a 1-for-3 reverse split). Computes held x to / from with exact
+ * decimal arithmetic and REQUIRES the result to be exact to 8 decimal places: a reverse split that
+ * would leave a repeating fraction (10 units 1-for-3 = 3.3333...) is refused, because a broker
+ * pays cash in lieu for the fraction and only the broker's resulting count can be recorded.
  */
-export function splitQuantityDelta(held: Decimal.Value, ratio: Decimal.Value): Decimal {
+export function splitQuantityDelta(held: Decimal.Value, to: Decimal.Value, from: Decimal.Value): Decimal {
   const units = new LedgerDecimal(held);
-  const factor = new LedgerDecimal(ratio);
+  const numerator = new LedgerDecimal(to);
+  const denominator = new LedgerDecimal(from);
   if (!units.isFinite() || units.lte(0)) throw new Error("SPLIT_NO_HOLDING");
-  if (!factor.isFinite() || factor.lte(0) || factor.eq(1) || factor.lt(SPLIT_RATIO_MIN) || factor.gt(SPLIT_RATIO_MAX)) {
-    throw new Error("SPLIT_RATIO_INVALID");
+  for (const term of [numerator, denominator]) {
+    if (!term.isFinite() || !term.isInteger() || term.lte(0) || term.gt(SPLIT_TERM_MAX)) throw new Error("SPLIT_RATIO_INVALID");
   }
-  const after = units.mul(factor);
-  if (after.decimalPlaces() > 12 || after.gte("1000000000000000000")) throw new Error("SPLIT_PRECISION_UNSUPPORTED");
-  const delta = after.minus(units);
-  if (delta.eq(0)) throw new Error("SPLIT_RATIO_INVALID");
-  return delta;
+  if (numerator.eq(denominator)) throw new Error("SPLIT_RATIO_INVALID");
+  const scaled = units.mul(numerator);
+  const after = scaled.div(denominator);
+  if (!after.mul(denominator).eq(scaled) || after.decimalPlaces() > SPLIT_UNITS_DECIMALS) throw new Error("SPLIT_NOT_EXACT");
+  if (after.gte("1000000000000000000")) throw new Error("SPLIT_PRECISION_UNSUPPORTED");
+  return after.minus(units);
 }
 
 /** A `ledger_events` database row, as returned by the driver (snake_case, numerics as strings). */

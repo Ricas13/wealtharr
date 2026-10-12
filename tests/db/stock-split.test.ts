@@ -68,29 +68,37 @@ describe.skipIf(!url)("stock split ledger event", () => {
   });
 
   it("refuses a split of something that is not held, and a ratio with no effect", async () => {
-    expect((await split({ instrumentId: otherInstrumentId, ratio: "2", occurredAt: "2026-01-10T10:00:00Z" })).status).toBe(409);
-    expect((await split({ instrumentId, ratio: "1", occurredAt: "2026-01-10T10:00:00Z" })).status).toBe(400);
-    expect((await split({ instrumentId, ratio: "2", occurredAt: new Date(Date.now() + 5 * 86_400_000).toISOString() })).status).toBe(400);
+    expect((await split({ instrumentId: otherInstrumentId, to: 2, from: 1, occurredAt: "2026-01-10T10:00:00Z" })).status).toBe(409);
+    expect((await split({ instrumentId, to: 1, from: 1, occurredAt: "2026-01-10T10:00:00Z" })).status).toBe(400);
+    expect((await split({ instrumentId, to: 2, from: 1, occurredAt: new Date(Date.now() + 5 * 86_400_000).toISOString() })).status).toBe(400);
+    expect(await units()).toBe(10);
+  });
+
+  it("refuses a 1-for-3 reverse split of 10 units instead of recording a rounded count", async () => {
+    // 10 / 3 = 3.333... is not exact to 8 decimals.
+    const result = await split({ instrumentId, to: 1, from: 3, occurredAt: "2026-01-10T10:00:00Z" });
+    expect(result.status).toBe(409);
+    expect(result.json.error).toContain("not exact");
     expect(await units()).toBe(10);
   });
 
   it("records a 2:1 split as a quantity-only delta of +10 with no cash", async () => {
     // 10 units x 2 - 10 = +10.
-    const result = await split({ instrumentId, ratio: "2", occurredAt: "2026-01-10T10:00:00Z", requestKey: randomUUID() });
+    const result = await split({ instrumentId, to: 2, from: 1, occurredAt: "2026-01-10T10:00:00Z", requestKey: randomUUID() });
     expect(result.status).toBe(200);
     const row = (await sql!.unsafe("SELECT event_type,cash_amount,fee_amount,quantity,metadata FROM ledger_events WHERE id=$1", [String(result.json.id)]))[0];
     expect(String(row.event_type)).toBe("SPLIT");
     expect(Number(row.cash_amount)).toBe(0);
     expect(Number(row.fee_amount)).toBe(0);
     expect(Number(row.quantity)).toBe(10);
-    expect(String((row.metadata as { ratio: string }).ratio)).toBe("2");
+    expect(String((row.metadata as { ratio: string }).ratio)).toBe("2:1");
     expect(await units()).toBe(20);
     const audit = await sql!.unsafe("SELECT 1 FROM audit_events WHERE entity_id=$1 AND action='ledger.split-recorded'", [String(result.json.id)]);
     expect(audit.length).toBe(1);
   });
 
   it("refuses a split dated before later activity in the same instrument", async () => {
-    expect((await split({ instrumentId, ratio: "2", occurredAt: "2026-01-08T10:00:00Z" })).status).toBe(409);
+    expect((await split({ instrumentId, to: 2, from: 1, occurredAt: "2026-01-08T10:00:00Z" })).status).toBe(409);
     expect(await units()).toBe(20);
   });
 
@@ -98,5 +106,35 @@ describe.skipIf(!url)("stock split ledger event", () => {
     const id = String((await sql!.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND event_type='SPLIT'", [instanceId]))[0].id);
     expect(await reverse(id)).toBe(200);
     expect(await units()).toBe(10);
+  });
+
+  it("does not value post-split units at the pre-split quote until a newer quote is accepted", async () => {
+    const { calculateAction } = await import("@/lib/action-service");
+    const line = (await sql!.unsafe(
+      "INSERT INTO trading_lines (instrument_id,ticker,exchange,currency,exchange_timezone,effective_from) VALUES ($1,$2,'LSE','GBP','Europe/London','2020-01-01') RETURNING id",
+      [instrumentId, "SPL" + run.toUpperCase()]
+    ))[0];
+    await sql!.unsafe("INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness) VALUES ($1,now()-interval '1 minute',100,'GBP','split-fixture','CURRENT')", [line.id]);
+    expect((await split({ instrumentId, to: 2, from: 1 })).status).toBe(200);
+    expect(await units()).toBe(20);
+    const instructionOf = async () => {
+      const calc = await calculateAction(instanceId);
+      return String((await sql!.unsafe("SELECT action_type,instruction FROM actions WHERE id=$1", [calc.actionId]))[0].instruction);
+    };
+    // 20 post-split units x the pre-split 100 would be a doubled valuation: the strategy waits instead.
+    expect(await instructionOf()).toContain("stock split was recorded after the latest price");
+    // A post-split quote accepted after the split supersedes the block.
+    await sql!.unsafe("INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness) VALUES ($1,now()+interval '1 second',50,'GBP','split-fixture','CURRENT')", [line.id]);
+    expect(await instructionOf()).not.toContain("stock split was recorded after the latest price");
+  });
+
+  it("refuses to reverse a trade that predates an unreversed split, until the split is reversed", async () => {
+    const buyId = String((await sql!.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND event_type='BUY'", [instanceId]))[0].id);
+    const splitId = String((await sql!.unsafe(
+      "SELECT s.id FROM ledger_events s WHERE s.strategy_instance_id=$1 AND s.event_type='SPLIT' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)", [instanceId]
+    ))[0].id);
+    expect(await reverse(buyId)).toBe(409);
+    expect(await reverse(splitId)).toBe(200);
+    expect(await reverse(buyId)).toBe(200);
   });
 });

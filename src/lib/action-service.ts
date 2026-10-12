@@ -8,7 +8,8 @@ import { safeErrorCode } from "@/lib/safe-error-code";
 import { latestPublishedVersionSelect } from "@/lib/strategy-version-sql";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
-import { assertExecutionCurrencyMatch, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
+import { assertNoSplitAfter } from "@/lib/ledger-timeline";
+import { assertExecutionCurrencyMatch, executionPriceBand, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
 import { nextReviewDueAt } from "@/domain/schedule";
 import { assessFreshness } from "@/domain/market-freshness";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
@@ -33,6 +34,18 @@ function latestQuoteRejected(row:Record<string,unknown>|null|undefined){
   if(!Number.isFinite(rejectedAt))return true;
   if(!row.observed_at)return true;
   return rejectedAt>new Date(row.observed_at as string|number|Date).getTime();
+}
+const SPLIT_AWAITING_QUOTE_MESSAGE="A stock split was recorded after the latest price; waiting for a post-split price.";
+/**
+ * A split recorded (and not reversed) in this strategy after the latest accepted quote means that
+ * quote is a pre-split price and would be multiplied by post-split units. No quote at all counts the same.
+ */
+function splitAfterQuote(row:{observed_at?:unknown;split_at?:unknown}|undefined){
+  if(!row?.split_at)return false;
+  const splitAt=new Date(row.split_at as string|number|Date).getTime();
+  if(!Number.isFinite(splitAt))return true;
+  if(!row.observed_at)return true;
+  return splitAt>new Date(row.observed_at as string|number|Date).getTime();
 }
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
 type CalculationScenario={
@@ -120,7 +133,9 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
     for(const [instrumentId,quantity] of position.quantities.entries()){
       if(quantity.eq(0))continue;
       const market=await sql.unsafe(
-        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id,q.rejected_observed_at "+
+        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id,q.rejected_observed_at,"+
+        "(SELECT max(s.occurred_at) FROM ledger_events s WHERE s.strategy_instance_id=$3 AND s.instrument_id=i.id AND s.event_type='SPLIT' "+
+        "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) AS split_at "+
         "FROM instruments i LEFT JOIN LATERAL ("+
         " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,o.price,o.observed_at,o.currency AS observation_currency,"+
         " (SELECT r.observed_at FROM market_data_rejections r WHERE r.trading_line_id=tl.id) AS rejected_observed_at"+
@@ -128,7 +143,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
         " WHERE tl.instrument_id=i.id AND upper(tl.currency)=upper($2) AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date)"+
         " ORDER BY o.observed_at DESC NULLS LAST,tl.id LIMIT 1"+
         ") q ON true WHERE i.id=$1 LIMIT 1",
-        [instrumentId,accountCurrency]
+        [instrumentId,accountCurrency,strategyInstanceId]
       );
       const m=market[0];
       const priceOverride=await sql.unsafe("SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[strategyInstanceId,"market_price:"+instrumentId]);
@@ -145,6 +160,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
         continue;
       }
       if(latestQuoteRejected(m)){dataStatus="MISSING";dataMessage=QUOTE_REJECTED_MESSAGE;continue;}
+      if(splitAfterQuote(m)){dataStatus="MISSING";dataMessage=SPLIT_AWAITING_QUOTE_MESSAGE;continue;}
       if(!m?.price){dataStatus="MISSING";dataMessage="A held instrument has no current market price in "+accountName+".";continue;}
       const observedAt=new Date(m.observed_at);
       if(assessFreshness(observedAt,new Date())!=="CURRENT"&&dataStatus!=="MISSING"){dataStatus="STALE";dataMessage="Market data is stale or invalid; financial actions are suppressed until data is current and verified.";}
@@ -215,6 +231,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   let blockedCashBuyExposure:string|null=null;
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
+  let sizingBand:Decimal|null=null;
   let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage},unaffordableCashBuys});
 
   let tradingLineId:string|null=null;
@@ -294,8 +311,12 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
 
     if(tradingLineId&&["BUY","SELL"].includes(proposal.actionType)&&proposal.amount){
       const quoteRows=await sql.unsafe(
-        "SELECT tl.ticker,tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency,(SELECT r.observed_at FROM market_data_rejections r WHERE r.trading_line_id=tl.id) AS rejected_observed_at FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
-        [tradingLineId]
+        "SELECT tl.ticker,tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency,(SELECT r.observed_at FROM market_data_rejections r WHERE r.trading_line_id=tl.id) AS rejected_observed_at,"+
+        "(SELECT ins.leverage FROM instruments ins WHERE ins.id=tl.instrument_id) AS instrument_leverage,"+
+        "(SELECT max(s.occurred_at) FROM ledger_events s WHERE s.strategy_instance_id=$2 AND s.instrument_id=tl.instrument_id AND s.event_type='SPLIT' "+
+        "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) AS split_at "+
+        "FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
+        [tradingLineId,strategyInstanceId]
       );
       const quote=quoteRows[0];
       executionTicker=quote?.ticker?String(quote.ticker):null;
@@ -317,6 +338,8 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
         // The newest provider quote was refused as implausible (e.g. a split). Never fall back to the
         // older accepted price: it describes a different share count than the broker now shows.
         proposal={actionType:"DATA_REQUIRED",title:"Price needs checking",instruction:QUOTE_REJECTED_MESSAGE,explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
+      }else if(chosenOverride?.manual_value==null&&splitAfterQuote(quote)){
+        proposal={actionType:"DATA_REQUIRED",title:"Price needs checking",instruction:SPLIT_AWAITING_QUOTE_MESSAGE,explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(assessFreshness(priceObservedAt,new Date())!=="CURRENT"){
         proposal={actionType:"DATA_REQUIRED",title:"Price is out of date",instruction:"Refresh market data before using this trade instruction.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else{
@@ -347,6 +370,11 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
         }else{
           sizingPrice=effectivePrice;
           instructedQuantity=practical.quantity;
+          // Allowed fill deviation from this quote: wider for leveraged exposures and older quotes.
+          sizingBand=executionPriceBand({
+            leverage:quote.instrument_leverage==null?null:String(quote.instrument_leverage),
+            quoteAgeMs:priceObservedAt?Date.now()-new Date(priceObservedAt).getTime():null
+          });
           const quantityText=practical.quantity.toDecimalPlaces(6,Decimal.ROUND_DOWN).toString();
           const amountText=practical.amount.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
           proposal={
@@ -368,9 +396,17 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
       }
     }
   }
-  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,blockedCashBuyExposure};
+  // Say so when a cash buy was set aside, so the instruction does not look like it ignored the cash.
+  const skippedBuys=Object.keys(unaffordableCashBuys);
+  if(skippedBuys.length&&proposal.actionType!=="DATA_REQUIRED"){
+    proposal={...proposal,explanation:[
+      ...proposal.explanation,
+      ...skippedBuys.map((exposure)=>({label:"Buy of "+exposure+" skipped",value:"below one whole share, your minimum trade or your spendable cash",kind:"text" as const}))
+    ]};
+  }
+  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand,blockedCashBuyExposure};
   };
-  const {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity}=
+  const {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand}=
     await settleCashBuyFallback(resolveProposal,effectiveCash);
 
   const stableHoldings=accounts.flatMap((account)=>{
@@ -412,7 +448,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   // the engine recalculates. A HOLD acknowledgement can then close the review.
   const nextState=postActionReviewState(proposal,state,new Date());
   const totalValue=exposurePositions.reduce((sum,p)=>sum.plus(p.value),effectiveCash);
-  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker,sizingPrice,instructedQuantity};
+  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker,sizingPrice,instructedQuantity,sizingBand};
 }
 
 export async function previewCashScenario(
@@ -739,7 +775,7 @@ export async function recalculateAfterMutation(
 export async function executeAction(
   userId:string,
   actionId:string,
-  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string;considerationAmount?:string}
+  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string;considerationAmount?:string;acceptPriceOutsideBand?:boolean;priceBandReason?:string}
 ){
   const result=await sql.begin(async(tx)=>{
     const ownership=await tx.unsafe(
@@ -816,6 +852,11 @@ export async function executeAction(
       if(actionType==="SELL"&&!constraints.allowSelling)throw new Error("SELLING_DISABLED");
       if(!constraints.fractionalShares&&!new Decimal(execution.quantity).isInteger())throw new Error("FRACTIONAL_SHARES_DISABLED");
       const spendableCash=Decimal.max(position.cash.minus(constraints.cashBufferAmount),0);
+      // Going outside the normal price band needs a stated reason (kept in the ledger metadata and audit).
+      const priceBandReason=typeof execution.priceBandReason==="string"?execution.priceBandReason.trim():"";
+      if(execution.acceptPriceOutsideBand===true&&priceBandReason.length<8)throw new Error("PRICE_BAND_REASON_REQUIRED");
+      // A fill dated before a recorded split would be counted in pre-split units after the split.
+      await assertNoSplitAfter(tx,String(action.strategy_instance_id),String(action.account_id),String(action.instrument_id),brokerExecutedAt);
       const validated=validateExecution({
         side:actionType as "BUY"|"SELL",
         proposedAmount:String(action.amount),
@@ -829,7 +870,10 @@ export async function executeAction(
         // The instruction was sized from this stored quote and quantity (the rebuild above matched the
         // action's fingerprint, so these are the values the person was shown).
         sizingPrice:current.sizingPrice,
-        instructedQuantity:current.instructedQuantity
+        instructedQuantity:current.instructedQuantity,
+        maxPriceDeviation:current.sizingBand??undefined,
+        // Only a stated reason widens the band, and never past the hard ceiling in validateExecution.
+        allowOutsideBand:execution.acceptPriceOutsideBand===true
       });
       if(!constraints.fractionalShares&&!validated.quantity.isInteger())throw new Error("FRACTIONAL_SHARES_DISABLED");
       if(validated.grossNotional.lt(constraints.minimumTradeAmount))throw new Error("BELOW_MINIMUM_TRADE");
@@ -853,6 +897,7 @@ export async function executeAction(
             proposedAmount:String(action.amount),
             actualNotional:validated.grossNotional.toString(),
             considerationSupplied:execution.considerationAmount!=null,
+            priceBandOverride:execution.acceptPriceOutsideBand===true?{reason:priceBandReason}:null,
             partial:Boolean(execution.partial),
             executedAt:brokerExecutedAt.toISOString()
           }),
@@ -870,7 +915,7 @@ export async function executeAction(
           userId,
           partial?"action.partially-executed":"action.executed",
           actionId,
-          JSON.stringify({ledgerEventId:String(inserted[0].id),actualNotional,quantity:validated.quantity.toString(),fee:validated.fee.toString(),executedAt:brokerExecutedAt.toISOString()})
+          JSON.stringify({ledgerEventId:String(inserted[0].id),actualNotional,quantity:validated.quantity.toString(),fee:validated.fee.toString(),executedAt:brokerExecutedAt.toISOString(),priceBandOverrideReason:execution.acceptPriceOutsideBand===true?priceBandReason:null})
         ]
       );
     }

@@ -30,13 +30,41 @@ export type ExecutionInput = {
   sizingPrice?: Decimal.Value | null;
   /** Quantity the instruction asked for. Validated separately from the price when supplied. */
   instructedQuantity?: Decimal.Value | null;
+  /** Price band as a fraction (see executionPriceBand); defaults to EXECUTION_PRICE_BAND. Never exceeds the hard ceiling. */
   maxPriceDeviation?: Decimal.Value;
+  /** The person confirmed a fill price outside the normal band; the hard ceiling still applies. */
+  allowOutsideBand?: boolean;
 };
 
 /** Half of the smallest unit (0.01) of a two-decimal currency: how far a rounded consideration may sit from quantity x price. */
 export const CONSIDERATION_TOLERANCE = new LedgerDecimal("0.005");
 /** A fill price further than this from the price the instruction was sized with is refused (pence/pound x100 etc.). */
 export const EXECUTION_PRICE_BAND = new LedgerDecimal("0.15");
+/** No fill price further than this from the sizing quote is ever accepted, override or not. */
+export const PRICE_BAND_HARD_CEILING = new LedgerDecimal("0.5");
+const QUOTE_AGE_WIDENING_MS = 36 * 3_600_000;
+
+/**
+ * Allowed fill-price deviation from the sizing quote: 15% for an unleveraged exposure, scaled by the
+ * exposure's leverage (a 3x ETP legitimately gaps 3x as far), and widened up to a further 2x as the
+ * sizing quote ages toward the 36 hour limit. Always capped at the hard ceiling (50%), so a x100 or
+ * pence/pound error is refused at any leverage and age. An unknown age is treated as the oldest.
+ */
+export function executionPriceBand(input: { leverage?: Decimal.Value | null; quoteAgeMs?: number | null }) {
+  let leverage = new LedgerDecimal(1);
+  if (input.leverage != null) {
+    try {
+      const parsed = new LedgerDecimal(input.leverage).abs();
+      if (parsed.isFinite() && parsed.gt(1)) leverage = parsed;
+    } catch {
+      // an unreadable leverage falls back to the unleveraged base
+    }
+  }
+  const rawAge = input.quoteAgeMs == null || !Number.isFinite(input.quoteAgeMs) ? QUOTE_AGE_WIDENING_MS : input.quoteAgeMs;
+  const age = Math.min(Math.max(rawAge, 0), QUOTE_AGE_WIDENING_MS);
+  const widening = new LedgerDecimal(1).plus(new LedgerDecimal(age).div(QUOTE_AGE_WIDENING_MS));
+  return LedgerDecimal.min(EXECUTION_PRICE_BAND.mul(leverage).mul(widening), PRICE_BAND_HARD_CEILING);
+}
 
 export type ValidatedExecution = {
   quantity: Decimal;
@@ -212,7 +240,11 @@ export function validateExecution(input: ExecutionInput): ValidatedExecution {
     const instructed = new LedgerDecimal(input.instructedQuantity);
     if (!sizing.isFinite() || sizing.lte(0)) throw new Error("INVALID_PRICE");
     if (!instructed.isFinite() || instructed.lte(0)) throw new Error("INVALID_QUANTITY");
-    const band = new LedgerDecimal(input.maxPriceDeviation ?? EXECUTION_PRICE_BAND);
+    // A confirmed override may widen the band, but never past the hard ceiling that still catches
+    // pence/pound and x100 errors.
+    const band = input.allowOutsideBand
+      ? PRICE_BAND_HARD_CEILING
+      : LedgerDecimal.min(new LedgerDecimal(input.maxPriceDeviation ?? EXECUTION_PRICE_BAND), PRICE_BAND_HARD_CEILING);
     if (price.div(sizing).minus(1).abs().gt(band)) throw new Error("EXECUTION_PRICE_OUT_OF_BAND");
     const upper = instructed.mul(new LedgerDecimal(1).plus(maxDeviation));
     if (quantity.gt(upper)) throw new Error("EXECUTION_QUANTITY_MISMATCH");

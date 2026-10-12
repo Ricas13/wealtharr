@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {assessQuote} from "@/domain/quote-plausibility";
+import {assessQuote,matchesRecordedSplit} from "@/domain/quote-plausibility";
 
 const now=new Date("2026-10-08T12:00:00Z");
 const prev=(price:number,daysAgo=1)=>({price,observedAt:new Date(now.getTime()-daysAgo*86_400_000)});
@@ -37,8 +37,35 @@ describe("assessQuote",()=>{
   expect(assessQuote("50.01",prev(100),now)).toEqual({ok:true});
   expect(assessQuote("149.99",prev(100),now)).toEqual({ok:true});
  });
+ it("keeps an old reference while an earlier bad quote for the line is unresolved",()=>{
+  // 30 days old: normally no reference (accepted), but with a recorded rejection it still applies.
+  expect(assessQuote(500,prev(100,30),now)).toEqual({ok:true});
+  expect(assessQuote(500,prev(100,30),now,0.5,{ignoreReferenceAge:true})).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+  expect(assessQuote(101,prev(100,30),now,0.5,{ignoreReferenceAge:true})).toEqual({ok:true});
+ });
  it("compares exactly with decimals rather than binary floating point",()=>{
   // 0.3 / 0.6 is exactly one half; 0.1 + 0.2 style float error must not move the verdict.
   expect(assessQuote("0.3",{price:"0.6",observedAt:prev(0).observedAt},now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+ });
+});
+
+describe("matchesRecordedSplit",()=>{
+ it("matches the price a recorded split explains, within 5%",()=>{
+  // 2-for-1 on 100: expected 100 x 1 / 2 = 50. 51 is +2%, 60 is +20%.
+  expect(matchesRecordedSplit(50,100,[{to:2,from:1}])).toBe(true);
+  expect(matchesRecordedSplit(51,100,[{to:2,from:1}])).toBe(true);
+  expect(matchesRecordedSplit(60,100,[{to:2,from:1}])).toBe(false);
+  // 1-for-10 reverse on 100: expected 100 x 10 / 1 = 1000.
+  expect(matchesRecordedSplit(1000,100,[{to:1,from:10}])).toBe(true);
+ });
+ it("does not let an unrelated recorded split excuse a different move",()=>{
+  // 3-for-1 expects 33.33; a 2:1 move to 50 is +50% from that.
+  expect(matchesRecordedSplit(50,100,[{to:3,from:1}])).toBe(false);
+  expect(matchesRecordedSplit(50,100,[])).toBe(false);
+  expect(matchesRecordedSplit(50,100,[{to:3,from:1},{to:2,from:1}])).toBe(true);
+ });
+ it("ignores malformed splits and prices",()=>{
+  expect(matchesRecordedSplit(50,100,[{to:0,from:1},{to:"x",from:1},{to:2,from:2}])).toBe(false);
+  expect(matchesRecordedSplit(0,100,[{to:2,from:1}])).toBe(false);
  });
 });

@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import { getMarketDataProvider, type RejectedQuote } from "@/lib/market-data";
 import { assessFreshness } from "@/domain/market-freshness";
 import { runBounded } from "@/lib/work-pool";
-import { assessQuote } from "@/domain/quote-plausibility";
+import { assessQuote, matchesRecordedSplit } from "@/domain/quote-plausibility";
 
 /** MARKET_MAX_QUOTE_MOVE as an exact decimal; anything unset, malformed or non-positive uses the default. */
 function configuredMaxMove(): Decimal | undefined {
@@ -90,22 +90,34 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
             failures.push({ tradingLineId: String(line.id), code: "CURRENCY_MISMATCH" });
             return;
           }
-          // The reference is the previous accepted quote, except that one older than a recorded stock
-          // split (SPLIT ledger event, not reversed) describes a different share count and is no
-          // reference for the post-split price.
+          // The reference is the previous accepted quote. It is dropped only when the move is what a
+          // recorded (not reversed) SPLIT explains, within tolerance: a person's record of a split
+          // must not switch the check off for a move it does not account for.
           const previous = await sql.unsafe(
-            "SELECT m.price,m.observed_at FROM market_data_observations m WHERE m.trading_line_id=$1 AND m.observed_at<$2 " +
-            "AND NOT EXISTS (SELECT 1 FROM ledger_events s JOIN trading_lines t ON t.id=m.trading_line_id " +
-            "WHERE s.instrument_id=t.instrument_id AND s.event_type='SPLIT' AND s.occurred_at>m.observed_at " +
-            "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) " +
-            "ORDER BY m.observed_at DESC LIMIT 1",
+            "SELECT price,observed_at FROM market_data_observations WHERE trading_line_id=$1 AND observed_at<$2 ORDER BY observed_at DESC LIMIT 1",
             [line.id, observation.observedAt]
           );
+          let reference = previous[0] ? { price: String(previous[0].price), observedAt: new Date(previous[0].observed_at) } : null;
+          if (reference) {
+            const splits = await sql.unsafe(
+              "SELECT DISTINCT s.metadata->>'to' AS split_to,s.metadata->>'from' AS split_from FROM ledger_events s " +
+              "JOIN trading_lines t ON t.id=$1 WHERE s.instrument_id=t.instrument_id AND s.event_type='SPLIT' AND s.occurred_at>$2 " +
+              "AND s.metadata->>'to' IS NOT NULL AND s.metadata->>'from' IS NOT NULL " +
+              "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)",
+              [line.id, reference.observedAt]
+            );
+            const recorded = splits.map((row) => ({ to: String(row.split_to), from: String(row.split_from) }));
+            if (recorded.length && matchesRecordedSplit(observation.price, reference.price, recorded)) reference = null;
+          }
+          // While an earlier quote for this line is still unresolved, the last accepted price stays the
+          // reference however old it is; waiting cannot make a recurring bad quote acceptable.
+          const unresolved = (await sql.unsafe("SELECT 1 FROM market_data_rejections WHERE trading_line_id=$1", [line.id])).length > 0;
           const assessment = assessQuote(
             observation.price,
-            previous[0] ? { price: String(previous[0].price), observedAt: new Date(previous[0].observed_at) } : null,
+            reference,
             new Date(),
-            configuredMaxMove()
+            configuredMaxMove(),
+            { ignoreReferenceAge: unresolved }
           );
           if (!assessment.ok) {
             if (assessment.code === "IMPLAUSIBLE_MOVE") {

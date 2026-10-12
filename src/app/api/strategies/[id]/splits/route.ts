@@ -7,16 +7,18 @@ import { sql } from "@/lib/db";
 import { assertLedgerEvent, foldAccountLedger, splitQuantityDelta } from "@/domain/ledger";
 import { authFailure } from "@/lib/api-auth";
 import { assertNotFuture } from "@/domain/ledger-time";
-import { assertLedgerTimelineNonNegative, invalidateValuationsFrom } from "@/lib/ledger-timeline";
+import { assertLedgerTimelineNonNegative } from "@/lib/ledger-timeline";
 
 // Records a stock split / reverse split as a quantity-only ledger event (event type SPLIT). The
-// split ratio is units after per unit before: 2 for a 2:1 split, 1.5 for 3:2, 0.1 for a 1:10 reverse
-// split. The signed unit change is computed from the units held at the effective time, so the
-// recorded quantity always reconciles with the broker's post-split share count. Reverse it with the
-// ordinary ledger correction route.
+// split is `to` new units for every `from` old units, as two positive integers: 2-for-1 is to=2,
+// from=1; a 1-for-3 reverse split is to=1, from=3. The signed unit change is computed exactly from
+// the units held at the effective time; a result that is not exact to 8 decimals is refused (enter
+// the broker's resulting quantity with a reconciliation instead). Reverse it with the ordinary
+// ledger correction route.
 const schema = z.object({
   instrumentId: z.string().uuid(),
-  ratio: z.string().regex(/^\d+(?:\.\d{1,8})?$/),
+  to: z.number().int().min(1).max(1_000_000),
+  from: z.number().int().min(1).max(1_000_000),
   occurredAt: z.string().datetime({ offset: true }).optional(),
   note: z.string().max(240).optional(),
   accountId: z.string().uuid().optional(),
@@ -43,7 +45,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (!locked[0]) throw new Error("STRATEGY_NOT_FOUND");
       if (String(locked[0].status) === "CLOSED") throw new Error("STRATEGY_CLOSED");
       if (input.requestKey) {
-        const existing = await tx.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND request_key=$2 LIMIT 1", [id, input.requestKey]);
+        const existing = await tx.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND request_key=$2 AND event_type='SPLIT' LIMIT 1", [id, input.requestKey]);
         if (existing[0]) return { eventId: String(existing[0].id), status: String(locked[0].status), duplicate: true };
       }
       const accountId = String(locked[0].account_id);
@@ -64,7 +66,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const position = foldAccountLedger(rows, accountId, primaryAccountId, String(locked[0].currency));
       const held = position.quantities.get(input.instrumentId);
       if (!held) throw new Error("SPLIT_NO_HOLDING");
-      const delta = splitQuantityDelta(held, input.ratio);
+      const delta = splitQuantityDelta(held, input.to, input.from);
+      const ratio = input.to + ":" + input.from;
       assertLedgerEvent({ eventType: "SPLIT", cashAmount: 0, instrumentId: input.instrumentId, quantity: delta });
 
       const inserted = await tx.unsafe(
@@ -72,16 +75,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         " VALUES ($1,$2,$3,'SPLIT',$4,0,$5,$6,0,'USER_ENTERED','VERIFIED',$7::jsonb,$8) RETURNING id",
         [
           id, accountId, occurredAt, String(locked[0].currency).toUpperCase(), input.instrumentId, delta.toString(),
-          JSON.stringify({ ratio: input.ratio, unitsBefore: held.toString(), unitsAfter: held.plus(delta).toString(), note: input.note ?? null }),
+          JSON.stringify({ ratio, to: input.to, from: input.from, unitsBefore: held.toString(), unitsAfter: held.plus(delta).toString(), note: input.note ?? null }),
           input.requestKey ?? null
         ]
       );
       const eventId = String(inserted[0].id);
       await assertLedgerTimelineNonNegative(tx, id, accountId);
-      await invalidateValuationsFrom(tx, id, occurredAt);
+      // Stored valuations before the split were correct in the units held then, so history is kept.
       await tx.unsafe(
         "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'ledger.split-recorded','ledger_event',$2,$3::jsonb)",
-        [user.id, eventId, JSON.stringify({ strategyInstanceId: id, instrumentId: input.instrumentId, ratio: input.ratio, unitsBefore: held.toString(), unitsAfter: held.plus(delta).toString() })]
+        [user.id, eventId, JSON.stringify({ strategyInstanceId: id, instrumentId: input.instrumentId, ratio, unitsBefore: held.toString(), unitsAfter: held.plus(delta).toString() })]
       );
       return { eventId, status: String(locked[0].status), duplicate: false };
     });
@@ -99,8 +102,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       LEDGER_EVENT_IN_FUTURE: ["The date cannot be in the future.", 400],
       LEDGER_EVENT_TIME_INVALID: ["The date cannot be in the future.", 400],
       SPLIT_NO_HOLDING: ["This account holds none of that instrument at that time, so there is nothing to split.", 409],
-      SPLIT_RATIO_INVALID: ["Enter the ratio of units after to units before, such as 2 for a 2-for-1 split or 0.1 for a 1-for-10 reverse split.", 400],
-      SPLIT_PRECISION_UNSUPPORTED: ["That ratio would leave a unit count with more decimals than the ledger stores. Record the broker's resulting units with a reconciliation instead.", 409],
+      SPLIT_RATIO_INVALID: ["Enter the split as two different whole numbers: new units for every old units, such as 2 for 1, or 1 for 10 for a reverse split.", 400],
+      SPLIT_NOT_EXACT: ["That split would leave a fractional unit count that is not exact to 8 decimal places (brokers pay cash in lieu of the fraction). Enter the quantity your broker shows after the split through a reconciliation or adjustment instead.", 409],
+      SPLIT_PRECISION_UNSUPPORTED: ["That split would leave a unit count larger than the ledger stores.", 409],
       SPLIT_HAS_LATER_ACTIVITY: ["There are later entries for this instrument. Record the split at the time it took effect, or reverse the later entries first.", 409],
       LEDGER_WOULD_OVERDRAW_CASH: ["That would take cash below zero on that date.", 409],
       LEDGER_WOULD_OVERSELL: ["That would leave a later sale without the units it sold.", 409]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertExecutionCurrencyMatch, planPracticalTrade, validateExecution } from "../src/domain/execution";
+import { assertExecutionCurrencyMatch, executionPriceBand, planPracticalTrade, validateExecution } from "../src/domain/execution";
 
 describe("trade execution validation", () => {
   it("preserves a hand-calculated fractional fill exactly at ledger precision", () => {
@@ -236,6 +236,53 @@ describe("fill price and quantity against the sizing quote", () => {
     expect(validateExecution({ ...sized, price: "10", quantity: "4", allowPartial: true }).grossNotional.toString()).toBe("40");
     expect(() => validateExecution({ ...sized, price: "1", quantity: "4", allowPartial: true })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
     expect(() => validateExecution({ ...sized, price: "10", quantity: "4" })).toThrow("EXECUTION_QUANTITY_MISMATCH");
+  });
+});
+
+describe("price band by leverage and quote age", () => {
+  const sized = { side: "BUY" as const, proposedAmount: "100", sizingPrice: "10", instructedQuantity: "10", availableCash: "1000", heldQuantity: "0", quantity: "10" };
+  const HOURS_36 = 36 * 3_600_000;
+
+  it("scales the base 15% by leverage and widens with quote age up to double, capped at 50%", () => {
+    // 0.15 x 1 x (1 + 0) = 0.15; 0.15 x 3 x 1 = 0.45; 0.15 x 1 x (1 + 1) = 0.30;
+    // 0.15 x 3 x 2 = 0.90 -> capped at 0.5; 0.15 x 10 = 1.5 -> capped at 0.5.
+    expect(executionPriceBand({ leverage: "1", quoteAgeMs: 0 }).toString()).toBe("0.15");
+    expect(executionPriceBand({ leverage: "3", quoteAgeMs: 0 }).toString()).toBe("0.45");
+    expect(executionPriceBand({ leverage: "1", quoteAgeMs: HOURS_36 }).toString()).toBe("0.3");
+    expect(executionPriceBand({ leverage: "3", quoteAgeMs: HOURS_36 }).toString()).toBe("0.5");
+    expect(executionPriceBand({ leverage: "10", quoteAgeMs: 0 }).toString()).toBe("0.5");
+    // Half the age window: 0.15 x 1 x 1.5 = 0.225.
+    expect(executionPriceBand({ leverage: "1", quoteAgeMs: HOURS_36 / 2 }).toString()).toBe("0.225");
+    // Unknown age is treated as the oldest quote; unreadable leverage is unleveraged.
+    expect(executionPriceBand({ leverage: null, quoteAgeMs: null }).toString()).toBe("0.3");
+    expect(executionPriceBand({ leverage: "abc", quoteAgeMs: 0 }).toString()).toBe("0.15");
+  });
+
+  it("accepts a 3x ETP fill 30% either side of a fresh sizing quote", () => {
+    const band = executionPriceBand({ leverage: "3", quoteAgeMs: 0 });
+    expect(validateExecution({ ...sized, price: "13", maxPriceDeviation: band }).grossNotional.toString()).toBe("130");
+    expect(validateExecution({ ...sized, price: "7", maxPriceDeviation: band }).grossNotional.toString()).toBe("70");
+    // The same 30% gap is refused for an unleveraged fund with a fresh quote.
+    expect(() => validateExecution({ ...sized, price: "13", maxPriceDeviation: executionPriceBand({ leverage: "1", quoteAgeMs: 0 }) })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+  });
+
+  it("still refuses x100 and /100 at any leverage, age or override", () => {
+    const widest = executionPriceBand({ leverage: "3", quoteAgeMs: HOURS_36 });
+    for (const price of ["1000", "0.1"]) {
+      expect(() => validateExecution({ ...sized, price, maxPriceDeviation: widest })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+      expect(() => validateExecution({ ...sized, price, maxPriceDeviation: widest, allowOutsideBand: true })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+      expect(() => validateExecution({ ...sized, price, maxPriceDeviation: "5", allowOutsideBand: true })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+    }
+  });
+
+  it("lets a confirmed override widen to the 50% ceiling and no further", () => {
+    // Unleveraged fresh band 0.15: +40% (14) is refused, accepted with the override; +60% (16) never.
+    const band = executionPriceBand({ leverage: "1", quoteAgeMs: 0 });
+    expect(() => validateExecution({ ...sized, price: "14", maxPriceDeviation: band })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+    expect(validateExecution({ ...sized, price: "14", maxPriceDeviation: band, allowOutsideBand: true }).grossNotional.toString()).toBe("140");
+    expect(() => validateExecution({ ...sized, price: "16", maxPriceDeviation: band, allowOutsideBand: true })).toThrow("EXECUTION_PRICE_OUT_OF_BAND");
+    // Exactly 50% (15) is inside the ceiling.
+    expect(validateExecution({ ...sized, price: "15", maxPriceDeviation: band, allowOutsideBand: true }).grossNotional.toString()).toBe("150");
   });
 });
 

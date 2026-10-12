@@ -12,6 +12,10 @@ const schema = z.object({
   fee: nonNegative.optional(),
   // The broker's cash consideration for the fill, excluding the fee, to two decimals as printed.
   considerationAmount: positive.optional(),
+  // Accept a fill price outside the normal band. A reason is required, and the hard ceiling
+  // (50% from the sizing quote) still applies, so x100 and pence/pound errors are never accepted.
+  acceptPriceOutsideBand: z.boolean().optional(),
+  priceBandReason: z.string().trim().min(8).max(240).optional(),
   partial: z.boolean().optional(),
   executedAt:z.string().datetime({offset:true}).optional()
 });
@@ -32,6 +36,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       EXECUTION_PRECISION_UNSUPPORTED:"These fill values exceed ledger precision (12 quantity, 10 price and 8 cash/fee decimal places). Check your broker confirmation; the fill has not been rounded or saved. If quantity x price needs more than 8 decimals, also enter the broker's trade value (excluding fees).",
       EXECUTION_CONSIDERATION_MISMATCH:"The cash amount does not match quantity x price to within half a penny. Enter the broker's trade value excluding fees.",
       EXECUTION_PRICE_OUT_OF_BAND:"The fill price is far from the price this instruction was sized with. Check the broker confirmation (pence versus pounds?) or recalculate with a corrected price.",
+      PRICE_BAND_REASON_REQUIRED:"Explain why the fill price is outside the normal range (at least 8 characters) to accept it.",
+      SPLIT_AFTER_ENTRY_DATE:"A stock split is recorded after this trade time for this instrument. Record the trade after the split, or reverse the split first.",
       EXECUTION_QUANTITY_MISMATCH:"The filled quantity differs too much from the calculated quantity. Mark a smaller fill as partial, or recalculate.",
       INVALID_CONSIDERATION:"Enter the broker's cash amount for the fill as a positive number.",
       EXECUTION_AMOUNT_TOO_LARGE:"These fill values exceed the supported ledger amount. Check your broker confirmation.",
