@@ -26,8 +26,7 @@ export default async function HomePage() {
         " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) " +
         " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1) v ON true " +
         "WHERE d.enabled=true AND d.proprietary=false " +
-        "AND EXISTS(SELECT 1 FROM strategy_version_attestations a WHERE a.strategy_version_id=v.id AND a.attested_by_email IS NOT NULL) " +
-        "ORDER BY CASE WHEN d.key='all-weather' THEN 0 WHEN d.key='60-40' THEN 1 " +
+                "ORDER BY CASE WHEN d.key='all-weather' THEN 0 WHEN d.key='60-40' THEN 1 " +
         "WHEN d.key='golden-butterfly' THEN 2 WHEN d.key='permanent-portfolio' THEN 3 ELSE 4 END,d.name LIMIT 40"
       ),
       sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)
@@ -35,7 +34,7 @@ export default async function HomePage() {
     const candidates = verifiedCandidates(mappingRows);
     const today = new Date().toISOString().slice(0,10);
     // Public carousel is GB/ISA/GBP for now, never a list of research or disabled drafts.
-    // Missing author evidence, a single portfolio leg or regional instrument removes the card.
+    // Missing executable code rules, any portfolio leg or exact ISA instrument removes the card.
     strategies = rows.filter(row => {
       try {
         assertCuratedRules(String(row.key),String(row.engine_key),row.config,row.input_schema);
