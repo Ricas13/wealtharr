@@ -32,15 +32,22 @@ const OVERRIDE_ID = "0b7c2a52-3d0e-4c4f-9a43-6f6f2a1b9c11";
 type Inputs = {
   now: string; state: Record<string, unknown>; cash: Decimal.Value; tqqq: Decimal.Value;
   newCash?: Decimal.Value; filledBuy?: Decimal.Value; filledSell?: Decimal.Value; reviewDue?: boolean;
-  config?: Record<string, unknown>;
+  newCashAfterCutoff?: Decimal.Value; filledBuyFees?: Decimal.Value; staleFilledBuy?: Decimal.Value; staleFilledSell?: Decimal.Value;
+  config?: Record<string, unknown>; startedAt?: string;
 };
+const ZERO_LEDGER = { newCash: d(0), newCashAfterCutoff: d(0), filledBuy: d(0), filledSell: d(0), filledBuyFees: d(0), staleFilledBuy: d(0), staleFilledSell: d(0) };
 function calc(o: Inputs): ProposedAction {
   return valueTargetEngine.calculate({
     strategyInstanceId: "i", strategyVersionId: "v1.1", now: new Date(o.now), baseCurrency: "USD", cash: d(o.cash),
     exposures: d(o.tqqq).eq(0) ? [] : [{ economicExposure: X, value: d(o.tqqq) }],
     contributionsSinceReview: d(0), state: o.state, config: o.config ?? CONFIG, settings: {},
     reviewDue: o.reviewDue ?? true, nextReviewAt: null, dataHealth: { status: "CURRENT" },
-    signalLedger: { newCash: d(o.newCash ?? 0), filledBuy: d(o.filledBuy ?? 0), filledSell: d(o.filledSell ?? 0) }
+    strategyStartedAt: o.startedAt ? new Date(o.startedAt) : undefined,
+    signalLedger: {
+      newCash: d(o.newCash ?? 0), newCashAfterCutoff: d(o.newCashAfterCutoff ?? 0),
+      filledBuy: d(o.filledBuy ?? 0), filledSell: d(o.filledSell ?? 0), filledBuyFees: d(o.filledBuyFees ?? 0),
+      staleFilledBuy: d(o.staleFilledBuy ?? 0), staleFilledSell: d(o.staleFilledSell ?? 0)
+    }
   });
 }
 /** What executeAction writes to strategy_states after the user confirms `proposal`. */
@@ -221,6 +228,54 @@ describe("9Sig v1.1 review closure under the cap and cash limits", () => {
     expect(overshoot.actionType).toBe("HOLD");
   });
 
+  it("freezes the post-order balance: confirming the closing HOLD after a price move does not move the anchor (M4)", () => {
+    // Order opened at TQQQ 3,564.30 and filled 1,898.46: post-order balance 3,564.30 + 1,898.46 = 5,462.76.
+    // Two days later TQQQ is worth 5,000.00 (-8.5%); the HOLD recalculated then still anchors 5,462.76.
+    const s = open();
+    const late = calc({ now: "2027-01-04T15:00:00Z", state: s, cash: "210.94", tqqq: "5000", filledBuy: "1898.46" });
+    expect(late.actionType).toBe("HOLD");
+    expect(late.nextState.anchorValue).toBe("5462.76");
+    expect(row(late, "Balance after recorded fills")).toBe("5462.76");
+    // And after a rise to 6,000.00 the anchor is still 5,462.76.
+    const up = calc({ now: "2027-01-05T15:00:00Z", state: s, cash: "210.94", tqqq: "6000", filledBuy: "1898.46" });
+    expect(up.nextState.anchorValue).toBe("5462.76");
+  });
+
+  it("an open review expires at the next quarter-end cutoff and the new quarter starts from it (L10)", () => {
+    // Q3 2026 (8106) opened a SELL of 660.00 at TQQQ 7,200.00, but selling is disabled, so it never filled.
+    const stuck = { targetValue: "6540", anchorValue: "6000", signalPeriodIndex: 8105, signalPeriodEnd: "2026-06-30",
+      newCashFrom: "2026-06-30T20:00:00.000Z", lastReviewAt: "2026-07-01T14:00:00.000Z", forceReview: true, reviewTargetValue: "6540",
+      [KELLY_REVIEW_STATE_KEY]: { periodIndex: 8106, periodEnd: "2026-09-30", newCashFrom: "2026-09-30T20:00:00.000Z", side: "SELL",
+        orderAmount: "660", signalLine: "6540", openValue: "7200", openedAt: "2026-09-30T21:00:00.000Z", initial: false, steps: 1 } };
+    // Mid-quarter it still asks for the sale.
+    expect(calc({ now: "2026-11-15T15:00:00Z", state: stuck, cash: "4000", tqqq: "7100" }).actionType).toBe("SELL");
+    // 31 Dec 2026 (8107): the Q3 review closes at its frozen balance 7,200.00 (no fills). Q4 line:
+    // 7,200.00 x 1.09 = 7,848.00. TQQQ 7,000.00, cash 4,000: buy 848.00 (cap 3,600.00).
+    const q4 = calc({ now: "2026-12-31T22:00:00Z", state: stuck, cash: "4000", tqqq: "7000" });
+    expect(q4.actionType).toBe("BUY");
+    expect(q4.amount?.toFixed(2)).toBe("848.00");
+    expect(row(q4, "Quarters of growth")).toBe("1");
+    expect(q4.instruction).toContain("unfinished review");
+    expect(q4.nextState[KELLY_REVIEW_STATE_KEY]).toMatchObject({ periodIndex: 8107, openValue: "7000" });
+    // With 300.00 of the sale recorded before it expired: frozen 7,200.00 - 300.00 = 6,900.00;
+    // line 6,900.00 x 1.09 = 7,521.00; TQQQ 7,000.00: buy 521.00.
+    const partly = calc({ now: "2026-12-31T22:00:00Z", state: stuck, cash: "4300", tqqq: "7000", staleFilledSell: "300" });
+    expect(partly.amount?.toFixed(2)).toBe("521.00");
+  });
+
+  it("sizes the cap from cash at the cutoff: excludes later new cash, adds back fees of recorded buys (L9)", () => {
+    // Line 6,000.00 x 1.09 = 6,540.00. Cash 5,000 of which 1,000 was contributed after the cutoff:
+    // starting cash 4,000; cap 0.90 x 4,000 = 3,600.00. TQQQ 2,000.00: shortfall 4,540.00 -> buy 3,600.00.
+    const closed = { targetValue: "6540", anchorValue: "6000", signalPeriodIndex: 8106, signalPeriodEnd: "2026-09-30",
+      newCashFrom: "2026-09-30T20:00:00.000Z", lastReviewAt: "2026-10-01T14:00:00.000Z", forceReview: false };
+    const late = calc({ now: "2026-12-31T22:00:00Z", state: closed, cash: "5000", tqqq: "2000", newCashAfterCutoff: "1000" });
+    expect(late.amount?.toFixed(2)).toBe("3600.00");
+    // An imported buy of 1,000.00 with a 10.00 fee: cash 4,000 - 1,000 - 10 = 2,990; starting cash
+    // 2,990 + 1,000 + 10 = 4,000; cap 3,600.00 - 1,000.00 = 2,600.00. TQQQ 3,000.00: shortfall 3,540.00 -> 2,600.00.
+    const fees = calc({ now: "2026-12-31T22:00:00Z", state: closed, cash: "2990", tqqq: "3000", filledBuy: "1000", filledBuyFees: "10" });
+    expect(fees.amount?.toFixed(2)).toBe("2600.00");
+  });
+
   it("offers a review-closing HOLD for a remainder the execution settings cannot trade", () => {
     const p = calc({ now: "2026-12-31T22:00:00Z", state: beforeQ3, cash: "2109.40", tqqq: "3564.30" });
     expect(p.unexecutableFallback?.actionType).toBe("HOLD");
@@ -282,7 +337,7 @@ describe("9Sig v1.1 periods: resume, migration and new cash", () => {
     // No open review: fills since max(last review 1 Oct, Q4 cutoff 31 Dec 21:00Z) = the Q4 cutoff.
     expect(kellyLedgerWindow({ state: closedQ3, config: CONFIG, now, startedAt })).toEqual({
       newCashFrom: new Date("2026-09-30T20:00:00.000Z"), newCashTo: new Date("2026-12-31T21:00:00.000Z"),
-      fillsFrom: new Date("2026-12-31T21:00:00.000Z")
+      fillsFrom: new Date("2026-12-31T21:00:00.000Z"), staleFrom: null, staleTo: null
     });
     // A review closed late, after the cutoff (2 Jan 2027): fills before that belong to the closed review.
     expect(kellyLedgerWindow({ state: { ...closedQ3, lastReviewAt: "2027-01-02T15:00:00.000Z" }, config: CONFIG,
@@ -291,10 +346,24 @@ describe("9Sig v1.1 periods: resume, migration and new cash", () => {
     expect(kellyLedgerWindow({ state: { targetValue: "1", lastReviewAt: "2026-08-15T14:00:00.000Z" }, config: CONFIG, now, startedAt })?.newCashFrom)
       .toEqual(new Date("2026-08-15T14:00:00.000Z"));
     const review = { periodIndex: 8107, periodEnd: "2026-12-31", newCashFrom: "2026-12-31T21:00:00.000Z", side: "BUY", orderAmount: "10",
-      signalLine: "100", openedAt: "2026-12-31T21:30:00.000Z", initial: false, steps: 1 };
+      signalLine: "100", openValue: "90", openedAt: "2026-12-31T21:30:00.000Z", initial: false, steps: 1 };
     expect(kellyLedgerWindow({ state: { ...closedQ3, [KELLY_REVIEW_STATE_KEY]: review }, config: CONFIG, now, startedAt })?.fillsFrom)
       .toEqual(new Date("2026-12-31T21:30:00.000Z"));
+    // The same review seen after the next cutoff (31 Mar 2027, 8108) has expired: its own fills run
+    // from its opening to that cutoff, and the new quarter's new cash starts at its period cutoff.
+    expect(kellyLedgerWindow({ state: { ...closedQ3, [KELLY_REVIEW_STATE_KEY]: review }, config: CONFIG,
+      now: new Date("2027-03-31T21:00:00Z"), startedAt })).toEqual({
+      newCashFrom: new Date("2026-12-31T21:00:00.000Z"), newCashTo: new Date("2027-03-31T20:00:00.000Z"),
+      fillsFrom: new Date("2027-03-31T20:00:00.000Z"), staleFrom: new Date("2026-12-31T21:30:00.000Z"), staleTo: new Date("2027-03-31T20:00:00.000Z")
+    });
+    // A 1.0 state upgraded before its first confirmed review: migration time replaces lastReviewAt.
+    expect(kellyLedgerWindow({ state: { targetValue: "6000", versionMigratedAt: "2026-08-15T14:00:00.000Z" }, config: CONFIG, now, startedAt }))
+      .toMatchObject({ newCashFrom: new Date("2026-08-15T14:00:00.000Z"), fillsFrom: new Date("2026-12-31T21:00:00.000Z") });
     expect(kellyLedgerWindow({ state: { ...closedQ3, newCashFrom: "not a date" }, config: CONFIG, now, startedAt })).toBeNull();
+    // A review saved without its opening value is unreadable: fail closed.
+    const withoutOpenValue: Record<string, unknown> = { ...review };
+    delete withoutOpenValue.openValue;
+    expect(kellyLedgerWindow({ state: { ...closedQ3, [KELLY_REVIEW_STATE_KEY]: withoutOpenValue }, config: CONFIG, now, startedAt })).toBeNull();
   });
 });
 
@@ -318,14 +387,49 @@ describe("9Sig v1.1 fails closed", () => {
     expect(noLedger.actionType).toBe("DATA_REQUIRED");
     const stale = valueTargetEngine.calculate({ strategyInstanceId: "i", strategyVersionId: "v", now: new Date(base.now), baseCurrency: "USD",
       cash: d(1000), exposures: [], contributionsSinceReview: d(0), state: base.state, config: CONFIG, settings: {}, reviewDue: true,
-      nextReviewAt: null, dataHealth: { status: "STALE", message: "stale" }, signalLedger: { newCash: d(0), filledBuy: d(0), filledSell: d(0) } });
+      nextReviewAt: null, dataHealth: { status: "STALE", message: "stale" }, signalLedger: ZERO_LEDGER });
     expect(stale.actionType).toBe("DATA_REQUIRED");
     const bond = valueTargetEngine.calculate({ strategyInstanceId: "i", strategyVersionId: "v", now: new Date(base.now), baseCurrency: "USD",
       cash: d(1000), exposures: [{ economicExposure: "US_AGGREGATE_BONDS", value: d(500) }], contributionsSinceReview: d(0), state: base.state,
       config: CONFIG, settings: {}, reviewDue: true, nextReviewAt: null, dataHealth: { status: "CURRENT" },
-      signalLedger: { newCash: d(0), filledBuy: d(0), filledSell: d(0) } });
+      signalLedger: ZERO_LEDGER });
     // A bond-fund safe sleeve is open question Q1: still unclassified in v1.1.
     expect(bond.title).toBe("A holding needs classification");
+  });
+  it("never offers the review-closing fallback on the first review, so a blocked first purchase stays DATA_REQUIRED (M5)", () => {
+    // Initial: 10,000.00 x 0.60 = 6,000.00 to buy. If execution blocks it, action-service has no
+    // fallback HOLD to use and keeps DATA_REQUIRED (closing would anchor the plan at 0).
+    const p = calc({ now: "2026-01-05T15:00:00Z", state: { forceReview: true }, cash: "10000", tqqq: "0" });
+    expect(p.actionType).toBe("BUY");
+    expect(p.unexecutableFallback).toBeUndefined();
+    // Continuing an open first review after a partial fill: still no fallback.
+    const s = persist(p, { forceReview: true }, "2026-01-05T15:00:00Z");
+    const next = calc({ now: "2026-01-05T15:30:00Z", state: s, cash: "7000", tqqq: "3000", filledBuy: "3000" });
+    expect(next.actionType).toBe("BUY");
+    expect(next.amount?.toFixed(2)).toBe("3000.00");
+    expect(next.unexecutableFallback).toBeUndefined();
+    // Cash of 0.01: line 0.006, adjustment 0.01, cap 0.9 x 0.01 = 0.009 -> 0.00: the first review
+    // would close at a balance of 0, so it stays DATA_REQUIRED instead of a HOLD.
+    const tiny = calc({ now: "2026-01-05T15:00:00Z", state: { forceReview: true }, cash: "0.01", tqqq: "0" });
+    expect(tiny.actionType).toBe("DATA_REQUIRED");
+    expect(tiny.nextState).not.toHaveProperty("anchorValue");
+  });
+  it("identifies the last review of a 1.0 state upgraded before its first confirmed review (L6)", () => {
+    // 1.0 wrote targetValue (override) on a BUY but never confirmed a HOLD, so there is no lastReviewAt.
+    // Migration on 15 Aug 2026 counts for Q3 (8106); 31 Dec 2026 (8107) is one step:
+    // 6,000.00 x 1.09 = 6,540.00; TQQQ 6,000.00, cash 2,000: buy 540.00 (cap 1,800.00).
+    const migrated = { targetValue: "6000", forceReview: true, versionMigratedAt: "2026-08-15T14:00:00.000Z" };
+    const p = calc({ now: "2026-12-31T22:00:00Z", state: migrated, cash: "2000", tqqq: "6000" });
+    expect(p.actionType).toBe("BUY");
+    expect(p.amount?.toFixed(2)).toBe("540.00");
+    expect(row(p, "Quarters of growth")).toBe("1");
+    // Neither lastReviewAt nor versionMigratedAt: the strategy start (10 Feb 2026 -> Q1, 8104) is used.
+    // 31 Dec 2026: three steps, 6,000.00 x 1.09^3 = 6,000.00 x 1.295029 = 7,770.174 (7,770.17).
+    const started = calc({ now: "2026-12-31T22:00:00Z", state: { targetValue: "6000" }, cash: "5000", tqqq: "6000", startedAt: "2026-02-10T15:00:00Z" });
+    expect(row(started, "Quarters of growth")).toBe("3");
+    expect(row(started, "Signal line")).toBe("7770.17");
+    // Nothing at all: fail closed.
+    expect(calc({ now: "2026-12-31T22:00:00Z", state: { targetValue: "6000" }, cash: "5000", tqqq: "6000" }).actionType).toBe("DATA_REQUIRED");
   });
 });
 

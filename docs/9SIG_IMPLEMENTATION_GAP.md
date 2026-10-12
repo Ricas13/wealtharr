@@ -77,6 +77,8 @@ Also new in 1.1, outside the rows above:
 - An empty portfolio returns DATA_REQUIRED; a zero target is never committed.
 - A target override is consumed by the review that uses it. In 1.0 it still applies on every calculation.
 
+The card lists three owner decisions on 1.1's conventions (M1 upgrade timing, M2 first quarter, M3 missed quarters) and the frozen-anchor residual for no-order HOLDs.
+
 Version 1.0 keeps all of its listed differences, including the per-fill 90% cap, the 1% band, the 3-month schedule and the committable zero target.
 
 ## Worked check: the code vs the sources on spec Example B

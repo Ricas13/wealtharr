@@ -21,6 +21,7 @@ import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
 import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
+import type { EngineContext } from "@/domain/strategy/types";
 import { isKellySignalConfig, kellyLedgerWindow, kellyNewCashEventTypesSql, KELLY_ANCHOR_OVERRIDE_KEY, KELLY_CONSUMED_OVERRIDE_KEY } from "@/domain/strategy/kelly-signal";
 
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
@@ -176,25 +177,35 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   // 9Sig v1.1 only. New cash = contributions plus distributions, classified by when each row was
   // RECORDED (created_at), so a backdated entry still counts exactly once. Fills = gross notional
   // recorded since the open review started. Corrected rows are excluded, as above.
-  let signalLedger:{newCash:Decimal;filledBuy:Decimal;filledSell:Decimal}|undefined;
+  // One calculation instant for the whole v1.1 calculation, taken from the DATABASE clock: ledger
+  // created_at is clock_timestamp(), and the open review's openedAt is compared with it.
+  let calculationNow=new Date();
+  let signalLedger:EngineContext["signalLedger"];
   if(isKellySignalConfig(config)){
+    const clock=await sql.unsafe("SELECT clock_timestamp() AS now");
+    calculationNow=new Date(clock[0]?.now);
+    const zero=new Decimal(0);
     if(scenario?.resetTimeline){
-      signalLedger={newCash:new Decimal(0),filledBuy:new Decimal(0),filledSell:new Decimal(0)};
+      signalLedger={newCash:zero,newCashAfterCutoff:zero,filledBuy:zero,filledSell:zero,filledBuyFees:zero,staleFilledBuy:zero,staleFilledSell:zero};
     }else{
-      const ledgerWindow=kellyLedgerWindow({state,config,now:new Date(),startedAt:new Date(instance.started_at)});
+      const ledgerWindow=kellyLedgerWindow({state,config,now:calculationNow,startedAt:new Date(instance.started_at)});
       if(ledgerWindow){
+        const types=kellyNewCashEventTypesSql();
         const totals=await sql.unsafe(
-          "SELECT COALESCE(sum(l.cash_amount) FILTER (WHERE l.event_type IN ("+kellyNewCashEventTypesSql()+") AND l.created_at>$2 AND l.created_at<=$3),0) AS new_cash,"+
-          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='BUY' AND l.created_at>COALESCE($4::timestamptz,'infinity'::timestamptz)),0) AS filled_buy,"+
-          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='SELL' AND l.created_at>COALESCE($4::timestamptz,'infinity'::timestamptz)),0) AS filled_sell "+
+          "SELECT COALESCE(sum(l.cash_amount) FILTER (WHERE l.event_type IN ("+types+") AND l.created_at>$2 AND l.created_at<=$3),0) AS new_cash,"+
+          "COALESCE(sum(l.cash_amount) FILTER (WHERE l.event_type IN ("+types+") AND l.created_at>$3),0) AS new_cash_after_cutoff,"+
+          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='BUY' AND l.created_at>$4),0) AS filled_buy,"+
+          "COALESCE(sum(l.fee_amount) FILTER (WHERE l.event_type='BUY' AND l.created_at>$4),0) AS filled_buy_fees,"+
+          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='SELL' AND l.created_at>$4),0) AS filled_sell,"+
+          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='BUY' AND l.created_at>COALESCE($5::timestamptz,'infinity'::timestamptz) AND l.created_at<=COALESCE($6::timestamptz,'-infinity'::timestamptz)),0) AS stale_buy,"+
+          "COALESCE(sum(abs(l.cash_amount)) FILTER (WHERE l.event_type='SELL' AND l.created_at>COALESCE($5::timestamptz,'infinity'::timestamptz) AND l.created_at<=COALESCE($6::timestamptz,'-infinity'::timestamptz)),0) AS stale_sell "+
           "FROM ledger_events l WHERE l.strategy_instance_id=$1 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",
-          [strategyInstanceId,ledgerWindow.newCashFrom,ledgerWindow.newCashTo,ledgerWindow.fillsFrom]
+          [strategyInstanceId,ledgerWindow.newCashFrom,ledgerWindow.newCashTo,ledgerWindow.fillsFrom,ledgerWindow.staleFrom,ledgerWindow.staleTo]
         );
-        signalLedger={
-          newCash:new Decimal(String(totals[0]?.new_cash??0)),
-          filledBuy:new Decimal(String(totals[0]?.filled_buy??0)),
-          filledSell:new Decimal(String(totals[0]?.filled_sell??0))
-        };
+        const total=(key:string)=>new Decimal(String(totals[0]?.[key]??0));
+        signalLedger={newCash:total("new_cash"),newCashAfterCutoff:total("new_cash_after_cutoff"),
+          filledBuy:total("filled_buy"),filledSell:total("filled_sell"),filledBuyFees:total("filled_buy_fees"),
+          staleFilledBuy:total("stale_buy"),staleFilledSell:total("stale_sell")};
       }
     }
   }
@@ -224,7 +235,7 @@ async function buildActionCalculation(strategyInstanceId:string,scenario?:Calcul
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12):undefined;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,signalLedger,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:calculationNow,baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,signalLedger,strategyStartedAt:new Date(instance.started_at),state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
 
   let tradingLineId:string|null=null;
   let executionTicker:string|null=null;

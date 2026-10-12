@@ -84,15 +84,42 @@ VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See 
 | R17 | Single source (author) | Yes | No floor on the stock weight. |
 
 Wealtharr conventions in 1.1 (the sources are silent; each one is tested):
-- The first review counts as the review of the calendar quarter in progress. The first 9% step is therefore applied at the end of the first full calendar quarter.
+- The first review counts as the review of the calendar quarter in progress at that moment, however little of that quarter remains. The first 9% step is therefore applied at the end of the **next** calendar quarter. Example: a start on 5 Jan 2026 or on 30 Mar 2026 gets its first step on 30 Jun 2026; a start on 31 Dec 2026 after the 16:00 cutoff gets it on 30 Jun 2027. This is owner question M2.
 - Upgrading a 1.0 instance:
-  - Its last confirmed 1.0 review counts for the calendar quarter in which it happened.
+  - Its last confirmed 1.0 review counts for the calendar quarter in which it happened (owner question M1). If it has no confirmed review, its migration time is used instead, and failing that the strategy start.
   - Its committed 1.0 target is the first anchor, because 1.0 stored no post-order balance.
   - The upgrade itself never counts as a review or adds growth.
-- A missed quarter compounds: anchor × 1.09^n.
-- One order per quarter, including broker fills imported through the trades route instead of the action. Those fills count against the quarter's single capped order: the cap is sized from cash before the recorded purchases. A recorded purchase is never followed by a sale in the same quarter, and a recorded sale is never followed by a purchase.
+- A missed quarter compounds: anchor × 1.09^n (owner question M3).
+- The order is sized at the first calculation the user executes, and partial fills continue that same frozen order.
+- The post-order balance of an open review is frozen: the value when the review opened, plus recorded buys, minus recorded sells, at their fill prices. Confirming the closing HOLD later does not move the next anchor with the market.
+  - **Known residual:** a HOLD that closes a quarter with no order at all (on the line, no cash, or a trade already recorded) is anchored on the value at the latest calculation before the user confirms it. A late confirmation can therefore still move the anchor. Fixing this needs a stored quarter-end price (Q4).
+- An open review expires at the next quarter-end cutoff. It closes at its frozen post-order balance and the new quarter's review starts from it, so a stuck order (for example a sale with selling disabled) never blocks later quarters. The first review does not expire this way.
+- The first review never closes through the "untradeable remainder" HOLD, and never closes at a zero balance. A blocked first purchase stays DATA_REQUIRED with an explanation of what to change.
+- One order per quarter, including broker fills imported through the trades route instead of the action:
+  - Those fills count against the quarter's single capped order.
+  - The cap is sized from cash at the cutoff: cash before the purchases already recorded this quarter (and their fees), excluding new cash recorded after the cutoff.
+  - Withdrawals after the cutoff are not added back.
+  - A recorded purchase is never followed by a sale in the same quarter, and a recorded sale is never followed by a purchase.
+- New cash recorded after the quarter-end cutoff counts for the next quarter.
 - An empty portfolio (no cash, no holdings) and a zero line return DATA_REQUIRED. A zero target is never committed.
 - A target override replaces the previous-quarter reference for **one** review. It is deactivated, with an audit row, in the transaction that closes that review.
+
+### Owner decisions on the 1.1 conventions (not changed in code)
+- **M1: an upgraded 1.0 review just after a quarter end.**
+  - Today: a 1.0 review confirmed on, say, 2 Jan counts for the quarter ending 31 Mar.
+  - Consequence: the step the author would apply for the quarter that ended on 31 Dec is skipped, and the next growth comes at 31 Mar. One 9% step can be lost on upgrade.
+  - Alternative: count a 1.0 review for the **nearest** quarter end when it falls within a window after that cutoff, for example 10 business days. A 2 Jan review would then count for 31 Dec, and 31 Mar would apply the next step.
+  - **Recommendation:** adopt the window. The owner chooses its length.
+- **M2: the first quarter.**
+  - Today: the first review covers the quarter in progress, so the first step comes at the end of the next calendar quarter. A start in early January waits almost six months for its first step.
+  - Alternative A: the first step comes at the first quarter end after the start, so a start on 30 Mar is stepped on 31 Mar.
+  - Alternative B: the first step comes at the end of the first **full** calendar quarter. This equals today's behaviour except for a start at the very beginning of a quarter.
+  - **Recommendation:** keep today's behaviour unless the user guide says otherwise.
+- **M3: missed quarters.**
+  - Today: the stored anchor is compounded silently, anchor × 1.09^n.
+  - Alternative: return DATA_REQUIRED and ask the user to confirm a re-baseline. R4 anchors on the actual post-order balance of the previous quarter, which Wealtharr cannot know for a quarter it never reviewed.
+  - **Recommendation:** use DATA_REQUIRED with an explicit confirmation when n ≥ 2, and keep compounding for n = 1, which is the normal case.
+- **L12 (Good Friday):** `marketHolidays` is empty. A quarter end that falls on a Saturday rolls back to Good Friday, for example 30 Mar 2029. This stays open under Q4.
 
 ## Hand-worked examples
 
@@ -177,6 +204,11 @@ Version 1.1: `tests/kelly-signal-golden.test.ts` has the following cases, with t
 - Cash running out mid-review.
 - No cash at review start.
 - A broker fill imported outside the action flow.
+- A late HOLD confirmation after a price move (frozen anchor).
+- An expired open review.
+- A cap that excludes late cash and adds back fees.
+- No fallback on the first review.
+- A 1.0 upgrade without a confirmed review.
 - A resume mid-quarter.
 - A 1.0 upgrade.
 - A contribution plus a dividend.

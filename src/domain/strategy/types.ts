@@ -34,10 +34,19 @@ export type EngineContext = {
   /**
    * Ledger totals for the 9Sig v1.1 signal method (`methodRevision`), populated by the action service
    * only for that revision; every other engine and revision ignores it. newCash: contributions and
-   * distributions recorded (created_at) inside the quarter's window. filledBuy/filledSell: gross
-   * notional of BUY/SELL rows recorded since the open review was started.
+   * distributions recorded (created_at) inside the quarter's window; newCashAfterCutoff: the same
+   * rows recorded after the latest quarter-end cutoff. filledBuy/filledSell/filledBuyFees: gross
+   * notional (and BUY fees) of BUY/SELL rows recorded since the open review started, or, with no
+   * open review, since the due quarter's cutoff. staleFilledBuy/staleFilledSell: fills of an open
+   * review that a newer quarter-end cutoff has expired (zero otherwise).
    */
-  signalLedger?: { newCash: Decimal; filledBuy: Decimal; filledSell: Decimal };
+  signalLedger?: {
+    newCash: Decimal; newCashAfterCutoff: Decimal;
+    filledBuy: Decimal; filledSell: Decimal; filledBuyFees: Decimal;
+    staleFilledBuy: Decimal; staleFilledSell: Decimal;
+  };
+  /** When the strategy instance started; used by the 9Sig v1.1 method for upgraded 1.0 states. */
+  strategyStartedAt?: Date;
 };
 
 export type ExplanationRow = {

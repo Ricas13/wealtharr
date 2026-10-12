@@ -118,6 +118,15 @@ Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
   - Publishing needs owner answers to Q1, Q2, Q2b, Q4, Q9 and Q10 on the card, then ATTEST and PUBLISH.
   - The NYSE holiday list is empty.
   - 30 Down, the spike reset and the base reset are not implemented.
+  - Review follow-ups (fixed in code, tests hand-worked, not yet run):
+    - The post-order anchor is frozen at the recorded fills, so a late HOLD confirmation does not move it. A no-order HOLD still anchors at its latest calculation (documented residual).
+    - The first review never closes through the untradeable-remainder HOLD or at a zero balance.
+    - A 1.0 state without `lastReviewAt` falls back to `versionMigratedAt`, then the strategy start.
+    - The v1.1 calculation uses one database-clock instant.
+    - An open review expires at the next quarter-end cutoff.
+    - The buy cap excludes cash recorded after the cutoff and adds back fees of recorded buys.
+  - Owner decisions documented on the card, code unchanged: M1 (a 1.0 review just after a quarter end), M2 (first-quarter convention), M3 (silent compounding of missed quarters versus DATA_REQUIRED).
+  - If an administrator already created a 9sig version "1.1" with any other config, the seed's insert-only `ON CONFLICT DO NOTHING` skips the code release without error. Admin shows that row as "Stored rules need code review", because `assertCuratedRules` requires the exact 1.1 config for version "1.1". The reviewed 1.1 rules cannot be installed under that version string until an operator resolves the conflicting row.
 - **Fixed from the audit:** worker starvation by permanently failing strategies, notification head-of-line blocking by one failing provider, negative cash/holdings via corrections or withdrawals, a corrected fill leaving the review unexecutable, fabricated returns from backdated flows, future-dated ledger entries, annualised short-history community statistic, atomic/rate-limited email verification, strict Discord webhook URL parsing, error text stored in worker records, scheduler/backup container privileges.
 - **Open hardening:** the app and backup connect to PostgreSQL as the superuser owner role; corporate actions are not modelled (large moves fail closed and need reconciliation); proration is Stripe's, not computed locally.
 - **Not verified anywhere yet:** real Stripe, email, Telegram, Discord, market-data, FX, Oracle host, off-site restore, UK legal review, independent security review.
