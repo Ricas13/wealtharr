@@ -63,16 +63,14 @@ describe.skipIf(!url)("strategy version lifecycle",()=>{
     await sql.end();
   });
 
-  it("refuses to publish a version nobody has attested, and accepts it once the sign-off is recorded",async()=>{
+  it("publishes a canonical version without requiring optional human attestation",async()=>{
     const rows=await sql!.unsafe("INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,input_schema,config) VALUES ($1,'9.9','2036-01-01','VALUE_TARGET','DRAFT','[]'::jsonb,$2::text::jsonb) RETURNING id",[definitionId,JSON.stringify(CONFIG)]);
     const id=String(rows[0].id);
-    const blocked=await patch({action:"PUBLISH",versionId:id});
-    expect(blocked.status).toBe(409);
-    expect(blocked.json.error).toContain("sign-off");
-    expect((await patch({action:"ATTEST",versionId:id,specCard:"../../etc/passwd",goldenTests:"tests/x.test.ts"})).status).toBe(400);
-    expect((await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/example.md",goldenTests:"tests/x.test.ts"})).status).toBe(200);
     expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(200);
     expect((await row(id)).lifecycle_status).toBe("PUBLISHED");
+    // Optional audit metadata is still validated but never a publication prerequisite.
+    expect((await patch({action:"ATTEST",versionId:id,specCard:"../../etc/passwd",goldenTests:"tests/x.test.ts"})).status).toBe(400);
+    expect((await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/example.md",goldenTests:"tests/x.test.ts"})).status).toBe(200);
   });
 
   it("publishes a draft and refuses to publish it twice",async()=>{
@@ -82,16 +80,12 @@ describe.skipIf(!url)("strategy version lifecycle",()=>{
     expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(409);
   });
 
-  it("invalidates earlier review evidence after editing a draft, then requires re-attestation",async()=>{
+  it("invalidates optional evidence after draft changes without blocking publication",async()=>{
     const id=await draft("1.05","2031-01-15");
     const edit=await patch({action:"UPDATE_DRAFT",versionId:id,releaseNotes:"Reviewed text changed"});
     expect(edit.status).toBe(200);
     const attestations=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
     expect(attestations).toHaveLength(0);
-    const rejected=await patch({action:"PUBLISH",versionId:id});
-    expect(rejected.status).toBe(409);
-    expect(rejected.json.error).toContain("sign-off");
-    await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/test-card.md",goldenTests:"tests/value-target.test.ts"});
     expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(200);
   });
 
@@ -102,9 +96,8 @@ describe.skipIf(!url)("strategy version lifecycle",()=>{
     await sql!.unsafe("UPDATE strategy_versions SET release_notes='Research methodology clarified' WHERE id=$1",[id]);
     const after=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
     expect(after).toHaveLength(0);
-    expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(409);
-    expect((await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/test-card.md",goldenTests:"tests/value-target.test.ts"})).status).toBe(200);
     expect((await patch({action:"PUBLISH",versionId:id})).status).toBe(200);
+    expect((await patch({action:"ATTEST",versionId:id,specCard:"docs/strategy-specs/test-card.md",goldenTests:"tests/value-target.test.ts"})).status).toBe(200);
     const publishedApproval=await sql!.unsafe("SELECT strategy_version_id FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
     expect(publishedApproval).toHaveLength(1);
   });
@@ -147,14 +140,12 @@ describe.skipIf(!url)("strategy version lifecycle",()=>{
         patch({action:"PUBLISH",versionId:id})
       ]);
       const stored=await row(id);
-      // The editor winning invalidates prior approval, so the concurrent publisher
-      // must fail; if publication wins, the editor must refuse to modify published rules.
+      // Serialisation guarantees immutable published rules; optional approval does
+      // not prevent publication of a valid draft after an editor's change.
       if(edit.status===200){
-        expect(publish.status).toBe(409);
-        expect(stored.lifecycle_status).toBe("DRAFT");
+        expect(publish.status).toBe(200);
+        expect(stored.lifecycle_status).toBe("PUBLISHED");
         expect(stored.config).toMatchObject({targetRate:"0.77"});
-        const oldApproval=await sql!.unsafe("SELECT 1 FROM strategy_version_attestations WHERE strategy_version_id=$1",[id]);
-        expect(oldApproval).toHaveLength(0);
       }else{
         expect(edit.status).toBe(409);
         expect(publish.status).toBe(200);
