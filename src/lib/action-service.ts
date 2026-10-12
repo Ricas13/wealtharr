@@ -663,7 +663,9 @@ export async function calculateAction(strategyInstanceId:string){
         "INSERT INTO notifications (user_id,action_id,type,title,body,review_key) "+
         "VALUES ($1,$2,'ACTION',$3,$4,$5) "+
         "ON CONFLICT (review_key) WHERE review_key IS NOT NULL "+
-        "DO UPDATE SET action_id=EXCLUDED.action_id,title=EXCLUDED.title,body=EXCLUDED.body",
+        // A refreshed alert that says something different must surface as unread again.
+        "DO UPDATE SET read_at=CASE WHEN notifications.action_id IS DISTINCT FROM EXCLUDED.action_id OR notifications.title IS DISTINCT FROM EXCLUDED.title OR notifications.body IS DISTINCT FROM EXCLUDED.body THEN NULL ELSE notifications.read_at END,"+
+        "action_id=EXCLUDED.action_id,title=EXCLUDED.title,body=EXCLUDED.body",
         [instance.user_id,actionId,noticeTitle,noticeBody,reviewKey]
       );
     }
