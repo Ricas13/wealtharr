@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {sql} from "@/lib/db";
-import {RESEARCH_STRATEGIES} from "@/domain/strategy/research-catalog";
+import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
 import {assertCuratedRules} from "@/domain/strategy/curated-release";
 import {assertCustomerPublishableEngine} from "@/domain/strategy/registry";
 import {assessStrategyMarket} from "@/domain/strategy/market-eligibility";
@@ -26,17 +26,18 @@ export default async function StrategiesAdmin(){
  const asOf=new Date().toISOString().slice(0,10);
  const dateKey=(value:unknown)=>value instanceof Date?value.toISOString().slice(0,10):String(value).slice(0,10);
  const installed=new Map(definitions.map(d=>[String(d.key),d]));
- const profiles=new Map(RESEARCH_STRATEGIES.map(s=>[s.key,s]));
- const list=[...new Set(["9sig",...RESEARCH_STRATEGIES.map(s=>s.key),...definitions.map(d=>String(d.key))])];
+ const plugins=new Map(STRATEGY_PLUGINS.map(p=>[p.key,p]));
+ const list=[...new Set([...STRATEGY_PLUGINS.map(p=>p.key),...definitions.map(d=>String(d.key))])];
  const entries:CatalogEntry[]=list.map(key=>{
    const def=installed.get(key);
-   const profile=profiles.get(key);
+   const plugin=plugins.get(key);
+   const profile=plugin?.profile??undefined;
    const release=versions.find(v=>String(v.key)===key&&v.lifecycle_status==="PUBLISHED"&&
       dateKey(v.effective_from)<=asOf&&(!v.effective_to||dateKey(v.effective_to)>=asOf));
    const name=String(def?.name??profile?.name??key);
    const engine=String(def?.engine??profile?.engine??"UNAVAILABLE");
    const base={key,name,family:String(def?.family??"RESEARCH"),engine,enabled:def?.enabled===true,
-     version:release?.version==null?null:String(release.version),rules:profile?.rules??(key==="9sig"?"Quarterly signal-based value targeting; full source-methodology audit remains outstanding.":null)};
+     version:release?.version==null?null:String(release.version),rules:profile?.rules??(plugin?curatedRelease(plugin)?.summary:undefined)??null};
    if(engine==="RESEARCH_PENDING"||!profile&&!def)return {...base,status:"RESEARCH",reason:"Source rules or calculation engine not yet implemented."};
    if(!release)return {...base,status:"NO_RELEASE",reason:"No effective published version. Review the method and its release first."};
    if(release.attested!==true)return {...base,status:"NO_SIGNOFF",reason:"An independent methodology specification and golden-case sign-off must be recorded."};

@@ -1,6 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {readFileSync} from "node:fs";
-import {RESEARCH_STRATEGIES} from "@/domain/strategy/research-catalog";
+import {RESEARCH_STRATEGIES,LEVERAGE_DISCLOSURE} from "@/domain/strategy/research-catalog";
+import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
 import {supportedEngineKeys,validateEngineConfig} from "@/domain/strategy/registry";
 
 // The seed, the reference catalogue and the engine registry must agree on engine names and on the
@@ -13,17 +14,30 @@ describe("strategy catalogue consistency",()=>{
   expect(unknown).toEqual([]);
  });
 
- it("every engine named in the seed is registered",()=>{
-  const seed=readFileSync("scripts/seed.ts","utf8");
-  const block=seed.slice(seed.indexOf("const definitions=["),seed.indexOf("] as const;"));
-  const named=[...block.matchAll(/,"([A-Z_]+)",(?:true|false),(?:true|false)\]/g)].map((m)=>m[1]);
-  expect(named.length).toBeGreaterThanOrEqual(4);
-  expect(named.filter((e)=>!engines.has(e))).toEqual([]);
+ it("every engine the seed will insert (from the plugin registry) is registered",()=>{
+  const seeded=STRATEGY_PLUGINS.flatMap((p)=>p.seedDefinition?[p.seedDefinition]:[]);
+  expect(seeded.length).toBeGreaterThanOrEqual(4);
+  expect(seeded.map((d)=>d.engine).filter((e)=>!engines.has(e))).toEqual([]);
  });
 
- it("seeds the fixed-allocation presets from the catalogue instead of a second inline copy",()=>{
+ it("each seeded definition names the same engine as its plugin's release, and only unpublishable engines get no version",()=>{
+  for(const plugin of STRATEGY_PLUGINS){
+   const def=plugin.seedDefinition;
+   if(!def)continue;
+   const release=curatedRelease(plugin);
+   expect(release,plugin.key).not.toBeNull();
+   expect(def.engine,plugin.key).toBe(release!.engine);
+   expect(def.initialVersion===null,plugin.key).toBe(def.engine==="MOMENTUM_ROTATION");
+   if(def.initialVersion!==null)expect(release!.config,plugin.key).toBeTruthy();
+  }
+ });
+
+ it("seeds definitions and presets from the plugin registry instead of a second inline copy",()=>{
   const seed=readFileSync("scripts/seed.ts","utf8");
-  expect(seed).toContain("RESEARCH_STRATEGIES");
+  expect(seed).toContain("STRATEGY_PLUGINS");
+  expect(seed).toContain("curatedRelease");
+  expect(seed).not.toContain("const definitions=[");
+  expect(seed).not.toContain('"9sig"');
   expect(seed).not.toMatch(/exposure:"US_EQUITY_3X_LONG"/);
   expect(seed).not.toMatch(/exposure:"US_SMALL_CAP_VALUE"/);
  });
@@ -62,6 +76,8 @@ describe("leveraged strategies carry a leverage disclosure",()=>{
  });
  it("the seed stores the catalogue disclosure rather than the generic one for those strategies",()=>{
   const seed=readFileSync("scripts/seed.ts","utf8");
-  expect(seed).toContain("preset.disclosure");
+  expect(seed).toContain("release.disclosure");
+  const hfea=STRATEGY_PLUGINS.find((p)=>p.key==="hfea")!;
+  expect(curatedRelease(hfea)?.disclosure).toBe(LEVERAGE_DISCLOSURE);
  });
 });

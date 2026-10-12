@@ -110,6 +110,12 @@ Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
 - **Open hardening:** the app and backup connect to PostgreSQL as the superuser owner role; corporate actions are not modelled (large moves fail closed and need reconciliation); proration is Stripe's, not computed locally.
 - **Not verified anywhere yet:** real Stripe, email, Telegram, Discord, market-data, FX, Oracle host, off-site restore, UK legal review, independent security review.
 
+## Strategy plugins (code organisation, no behaviour change)
+- Every built-in strategy is now one plugin file under `src/domain/strategy/catalog/<key>.ts` (profile, seed definition, spec-card and golden-test pointers), registered in `catalog/index.ts`. `RESEARCH_STRATEGIES`, `LEVERAGE_DISCLOSURE`, `CANONICAL_9SIG_CONFIG` and `assertCuratedRules` keep their import paths and are derived from the registry. The 9Sig special cases in the admin route, admin page, curated-release check and seed script, and the second hard-coded definitions list in `scripts/seed.ts`, were removed.
+- Rules, engines, configs, input schemas, disclosures and seed rows are unchanged (pinned by `tests/strategy-plugin-snapshot.test.ts`). The seed remains insert-only apart from the guarded research-only realignment (coffeehouse, core-four, swensen).
+- Not executed: this change was authored without a Node toolchain, so typecheck, `npm run verify`, the unit tests above and the database/seed tests have not been run; CI is the first run.
+- Adding or changing a strategy: see "How to add or change a strategy" in `docs/strategy-engines.md`.
+
 ## Admin entitlement super-user
 - An ADMIN is an entitlement super-user: no active-strategy limit, every plan feature, every notification channel, no strategy-key restriction (`adminEntitlementSnapshot()` in `src/domain/entitlements.ts`, resolved by `loadEntitlementsWith` in `src/lib/entitlement-service.ts`). This is an entitlement bypass only; admin-only powers stay behind `requireAdmin` and MFA.
 - Every plan-resolution path (create, reactivate, switch, linked accounts, enforcement, notifications, previews) goes through that loader, so the hourly enforcement pass never pauses an admin. Demoting an admin re-applies normal plan limits on the next enforcement pass (cron, plan edit or billing event). Tests: `tests/admin-entitlements.test.ts`, `tests/db/admin-entitlements.test.ts` (database test needs `DATABASE_URL`).
