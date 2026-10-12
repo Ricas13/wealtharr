@@ -5,6 +5,8 @@ import {resolve} from "node:path";
 const home=readFileSync(resolve(process.cwd(),"src/app/page.tsx"),"utf8");
 const interactivity=readFileSync(resolve(process.cwd(),"src/components/PublicLandingInteractivity.tsx"),"utf8");
 const css=readFileSync(resolve(process.cwd(),"src/app/marketing-home.css"),"utf8");
+const planApi=readFileSync(resolve(process.cwd(),"src/app/api/admin/plans/route.ts"),"utf8");
+const planEditor=readFileSync(resolve(process.cwd(),"src/components/SimplePlanEditor.tsx"),"utf8");
 
 describe("approved public homepage financial and commercial boundaries",()=>{
   it("does not market proprietary 9Sig or claim example data are real",()=>{
@@ -26,6 +28,11 @@ describe("approved public homepage financial and commercial boundaries",()=>{
     expect(home).toContain("mo.active=true");
     expect(home).toContain("yr.active=true");
     expect(home).toContain("LIMIT 5");
+    expect(planApi).toContain("pg_advisory_xact_lock");
+    expect(planApi).toContain("PUBLIC_PLAN_LIMIT_5");
+    expect(planApi).toContain("homepage_highlights");
+    expect(planEditor).toContain("Homepage card highlights");
+    expect(interactivity).toContain("wm-marketing-notes");
     expect(home).toContain("catch{/* No invented plans/prices");
     expect(interactivity).toContain("if(!plans.length)");
     expect(interactivity).toContain("p.features.map(");
