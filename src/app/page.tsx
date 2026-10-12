@@ -44,7 +44,7 @@ export default async function HomePage() {
       } catch { return false; }
     }).map(row => ({
       key: String(row.key),
-      name: String(row.name).replace(/\\s*—.*$/, "").replace(/\\s*\\(reference\\)$/i, ""),
+      name: String(row.name).split("—")[0].trim().replace(" (reference)", ""),
       description: String(row.description || ""),
       family: String(row.family),
       available: true
