@@ -285,6 +285,7 @@ export const ledgerEvents = pgTable("ledger_events", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`clock_timestamp()`)
 }, (t) => [
   index("ledger_instance_time_idx").on(t.strategyInstanceId, t.occurredAt, t.createdAt),
+  index("ledger_events_split_idx").on(t.instrumentId, t.occurredAt).where(sql`${t.eventType} = 'SPLIT'`),
   uniqueIndex("ledger_events_strategy_request_unique").on(t.strategyInstanceId,t.requestKey).where(sql`${t.requestKey} IS NOT NULL`)
 ]);
 

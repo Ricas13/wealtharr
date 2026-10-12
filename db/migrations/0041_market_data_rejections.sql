@@ -14,3 +14,7 @@ CREATE TABLE IF NOT EXISTS market_data_rejections (
   reason text NOT NULL,
   rejected_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- The market-data worker asks, per observation, whether a SPLIT was recorded for the instrument
+-- after it. Keep that lookup off a sequential scan of the whole ledger.
+CREATE INDEX IF NOT EXISTS ledger_events_split_idx ON ledger_events(instrument_id, occurred_at) WHERE event_type = 'SPLIT';
