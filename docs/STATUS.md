@@ -1,5 +1,12 @@
 # Status of the audit and launch-gate items
 
+## Production seed no longer installs incomplete strategies (12 October 2026)
+
+A separate release-policy increment adds `seedableStrategies`: ordinary fresh installations only seed an explicitly shipping-approved, code-reviewed `PUBLISHED` strategy with specification and golden-test pointers. **Currently zero strategies have been approved**, so a fresh production install contains no unfinished research/draft/legacy 9Sig strategy rows. The old existing database remains untouched; no migration deletes historical portfolios, ledger entries or published versions.
+
+The old complete catalogue remains as internal development source and needs method-by-method completion or eventual source cleanup; this change does **not** claim to fully implement all strategies. The full CI integration suite preserves test-fixture inserts only on GitHub Actions with the exact disposable local PostgreSQL database, and never inserts a synthetic approval into production. Launch approvals, market-data licensing, instrument evidence and live acceptance remain open.
+
+
 ## Backend new-start release gate (12 October 2026)
 
 A follow-up change enforces the curated rules, customer-publishable engine and non-null signer-email snapshot on **every** newly created or switched strategy, including enabled legacy seed definitions. The previously disabled-only helper now fails closed rather than trusting `enabled=true`. List queries also require an attested release. This protects API clients that bypass Explore; existing holdings and historical versions are preserved.
