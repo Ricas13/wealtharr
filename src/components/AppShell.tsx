@@ -3,7 +3,7 @@ import { LayoutDashboard, Layers3, Bell, Settings, Shield, Plus, Sparkles } from
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WorkspaceNavLink, WorkspaceTabLink } from "@/components/WorkspaceNavigation";
 
-export function AppShell({ children, isAdmin=false, strategyTabs=[] }: { children:React.ReactNode; isAdmin?:boolean; strategyTabs?:Array<{id:string;name:string}> }) {
+export function AppShell({ children, isAdmin=false, strategyTabs=[], unreadCount=0 }: { children:React.ReactNode; isAdmin?:boolean; strategyTabs?:Array<{id:string;name:string}>; unreadCount?:number }) {
   return <div className="app-shell customer-workspace-shell">
     <a className="skip-link" href="#main-content">Skip to main content</a>
     <aside className="sidebar">
@@ -12,7 +12,7 @@ export function AppShell({ children, isAdmin=false, strategyTabs=[] }: { childre
         <div className="nav-label">Your money</div>
         <WorkspaceNavLink href="/app"><LayoutDashboard size={17}/>Main</WorkspaceNavLink>
         <WorkspaceNavLink href="/app/strategies"><Layers3 size={17}/>Strategies</WorkspaceNavLink>
-        <WorkspaceNavLink href="/app/notifications"><Bell size={17}/>Notifications</WorkspaceNavLink>
+        <WorkspaceNavLink href="/app/notifications"><Bell size={17}/>Notifications{unreadCount>0&&<><span className="nav-badge" aria-hidden="true">{unreadCount>99?"99+":unreadCount}</span><span className="sr-only"> ({unreadCount} unread)</span></>}</WorkspaceNavLink>
         <WorkspaceNavLink href="/app/community"><Sparkles size={17}/>Explore</WorkspaceNavLink>
         <WorkspaceNavLink href="/app/settings"><Settings size={17}/>Settings</WorkspaceNavLink>
         {isAdmin && <Link className="nav-link admin-link" href="/admin"><Shield size={17}/>Admin</Link>}

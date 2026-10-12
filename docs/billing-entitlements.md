@@ -18,3 +18,5 @@ Plan pricing is stored in plan_prices by plan, ISO currency and cadence. Each ac
 The older default amount fields on plans remain administrative/default metadata, while checkout always resolves an active plan_prices record for the requested currency and cadence.
 
 Stripe webhooks resolve the canonical plan from the actual Stripe Price ID and subscription metadata. Application access is derived from the local subscription and plan entitlement records, not from scattered Stripe checks.
+
+Administrators (`users.role = ADMIN`) are entitlement super-users: `loadEntitlementsWith` returns an unlimited snapshot with every feature and channel, ignoring the plan limits of their subscription (a real paid or store-billed subscription is still shown and manageable in Settings). The plan slug `admin` is reserved and cannot be created as a plan. It is an entitlement bypass only and applies to every plan-resolution path, including the hourly `enforceStrategyEntitlements` pass. Demoting an admin re-applies their subscription plan on the next enforcement pass.

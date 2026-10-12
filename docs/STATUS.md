@@ -63,6 +63,9 @@ The checked items in that file are unchanged and accurate. Unchecked items:
 | Strategy-specific disclosures (leverage, volatility decay) | Fixed for the leveraged catalogue entry (HFEA): the catalogue carries a leverage disclosure that the seed stores, with a test that any leveraged strategy has one. Wording still needs legal review |
 | Verify exposure, currency, wrapper, fractional trading and purchasability by region and broker | Open (Phase 2). No instrument mappings are seeded |
 | Commercial data and licensing rights | Needs people. An optional `yahoo` provider exists (owner decision) but Yahoo's chart endpoints are unofficial and NOT licensed for commercial redistribution; Admin > Launch warns while it is selected and the market data gate stays failed. Replace with a licensed provider before charging customers; each `.L` symbol must be spot-checked by the owner |
+
+| Verify exposure, currency, wrapper, fractional trading and purchasability by region and broker | Open (Phase 2). No instrument mappings are seeded. Admin > Instruments now lists import CANDIDATE mappings with a checklist-gated verify/promote and reject flow (admin, MFA when ADMIN_MFA_REQUIRED; same-origin, one transaction, audit event; refuses non-candidates and ambiguous pairs). The manual "add mapping" form now only creates disabled candidates, instrument/trading-line edits that would change a verified mapping are refused, and migration 0037 defaults fidelity to CANDIDATE; the owner still has to perform the actual verification against issuer documents |
+| Commercial data and licensing rights | Needs people |
 | User-acceptance tests for every supported strategy | Open |
 
 ## Deployment and revenue gates
@@ -103,9 +106,23 @@ Sign-in with Google and Apple; installable mobile web app and Android/iOS shell;
 - Three-fund, 60/40 and 80/20 are seeded as disabled fixed-allocation drafts. Customer weight inputs are not supported.
 - The platform stores spec-card attestations, but independent human sign-off and full author-method goldens are still required.
 
+## Launch enablement groundwork (12 October 2026)
+- `docs/LAUNCH_ENABLEMENT.md` lists, for 9Sig, HFEA, 60/40 and All Weather, what is done in code and what only the owner or an administrator can do (EXACT mappings, spec-card sign-off, ATTEST, PUBLISH, ENABLE, data licensing, legal). It records no attestation and invents no instrument.
+- All Weather now has hand-derived golden cases in `tests/strategy-reference-golden.test.ts` (initial split, rounding residue, on-target, equity-heavy and bond-heavy drift, deposit, zero threshold, tolerance edge). Not yet run in this environment (no Node); the card remains DRAFT and the withdrawal case is still open. No gate, seed or rule changed.
+
 ## PR #25 engineering audit (11 October 2026)
 Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
 - **Customer-visible strategy without sign-off.** 9Sig is the only enabled, published strategy and it has no recorded specification sign-off (the seed publishes it directly) and no spec card. Live Stripe checkout now refuses until a sign-off is recorded (`src/lib/strategy-evidence.ts`); Admin > Launch lists the gap.
 - **Fixed from the audit:** worker starvation by permanently failing strategies, notification head-of-line blocking by one failing provider, negative cash/holdings via corrections or withdrawals, a corrected fill leaving the review unexecutable, fabricated returns from backdated flows, future-dated ledger entries, annualised short-history community statistic, atomic/rate-limited email verification, strict Discord webhook URL parsing, error text stored in worker records, scheduler/backup container privileges.
 - **Open hardening:** the app and backup connect to PostgreSQL as the superuser owner role; corporate actions are not modelled (large moves fail closed and need reconciliation); proration is Stripe's, not computed locally.
 - **Not verified anywhere yet:** real Stripe, email, Telegram, Discord, market-data, FX, Oracle host, off-site restore, UK legal review, independent security review.
+
+## Strategy plugins (code organisation, no behaviour change)
+- Every built-in strategy is now one plugin file under `src/domain/strategy/catalog/<key>.ts` (profile, seed definition, spec-card and golden-test pointers), registered in `catalog/index.ts`. `RESEARCH_STRATEGIES`, `LEVERAGE_DISCLOSURE`, `CANONICAL_9SIG_CONFIG` and `assertCuratedRules` keep their import paths and are derived from the registry. The 9Sig special cases in the admin route, admin page, curated-release check and seed script, and the second hard-coded definitions list in `scripts/seed.ts`, were removed.
+- Rules, engines, configs, input schemas, disclosures and seed rows are unchanged (pinned by `tests/strategy-plugin-snapshot.test.ts`). The seed remains insert-only apart from the guarded research-only realignment (coffeehouse, core-four, swensen).
+- Not executed: this change was authored without a Node toolchain, so typecheck, `npm run verify`, the unit tests above and the database/seed tests have not been run; CI is the first run.
+- Adding or changing a strategy: see "How to add or change a strategy" in `docs/strategy-engines.md`.
+
+## Admin entitlement super-user
+- An ADMIN is an entitlement super-user: no active-strategy limit, every plan feature, every notification channel, no strategy-key restriction (`adminEntitlementSnapshot()` in `src/domain/entitlements.ts`, resolved by `loadEntitlementsWith` in `src/lib/entitlement-service.ts`). This is an entitlement bypass only; admin-only powers stay behind `requireAdmin` and MFA.
+- Every plan-resolution path (create, reactivate, switch, linked accounts, enforcement, notifications, previews) goes through that loader, so the hourly enforcement pass never pauses an admin. Demoting an admin re-applies normal plan limits on the next enforcement pass (cron, plan edit or billing event). Tests: `tests/admin-entitlements.test.ts`, `tests/db/admin-entitlements.test.ts` (database test needs `DATABASE_URL`).

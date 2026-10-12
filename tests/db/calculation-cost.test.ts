@@ -22,7 +22,7 @@ describe.skipIf(!dbUrl)("real calculation cost", () => {
       instrumentIds.push(String(ins.id));
       const [line] = await db!.unsafe("INSERT INTO trading_lines (instrument_id,ticker,exchange,currency,exchange_timezone,provider_symbol,effective_from) VALUES ($1,$2,'NYSE','USD','America/New_York',$2,'2020-01-01') RETURNING id", [ins.id, ticker]);
       lineIds.push(String(line.id));
-      await db!.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,effective_from,enabled) VALUES ($1,3,'US','TAXABLE',$2,'2020-01-01',true)", [exposure, line.id]);
+      await db!.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,fidelity,effective_from,enabled) VALUES ($1,3,'US','TAXABLE',$2,'EXACT','2020-01-01',true)", [exposure, line.id]);
       await db!.unsafe("INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness) VALUES ($1,now(),100,'USD','cost-fixture','CURRENT')", [line.id]);
     }
     for (let i = 0; i < COUNT; i += 1) {

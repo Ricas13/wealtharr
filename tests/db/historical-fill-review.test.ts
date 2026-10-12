@@ -24,8 +24,8 @@ describe.skipIf(!dbUrl)("historical broker imports preserve the initial review",
     [ins[0].id,ticker]);
    const lineId=String(line[0].id);lineIds.push(lineId);
    await db!.unsafe(
-    "INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,effective_from,enabled) "+
-    "VALUES ($1,3,'US','TAXABLE',$2,'2020-01-01',true)",[exposure,lineId]);
+    "INSERT INTO regional_instrument_mappings (economic_exposure,leverage,country,wrapper,trading_line_id,fidelity,effective_from,enabled) "+
+    "VALUES ($1,3,'US','TAXABLE',$2,'EXACT','2020-01-01',true)",[exposure,lineId]);
    await db!.unsafe(
     "INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness) "+
     "VALUES ($1,now(),100,'USD','hfea-fixture','CURRENT')",[lineId]);

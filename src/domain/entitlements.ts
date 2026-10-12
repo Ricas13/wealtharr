@@ -1,3 +1,10 @@
+/** Every plan feature an administrator can grant. Single source for the plan editor, the plan API and the admin snapshot. */
+export const ALL_FEATURES = ["history","reconciliation","resume","community","analytics","comparisons","what_if","advanced_imports","multi_account"] as const;
+/** Every notification channel a plan can grant (IN_APP is always included for everyone). */
+export const ALL_CHANNELS = ["EMAIL","DISCORD","TELEGRAM"] as const;
+export type FeatureKey = (typeof ALL_FEATURES)[number];
+export type ChannelKey = (typeof ALL_CHANNELS)[number];
+
 export type PlanRecord = {
   slug: string;
   maxActiveStrategies: number | null;
@@ -33,6 +40,20 @@ export function buildEntitlementSnapshot(plan: PlanRecord): EntitlementSnapshot 
     features: new Set(strings(raw.features)),
     notificationChannels: new Set(["IN_APP", ...strings(raw.notificationChannels)]),
     availableStrategyKeys: strategyKeys.length ? new Set(strategyKeys) : null
+  };
+}
+
+/**
+ * Entitlements for an administrator: an entitlement bypass only. No strategy limit, every feature,
+ * every channel and no strategy-key restriction. Admin-only powers stay behind requireAdmin and MFA.
+ */
+export function adminEntitlementSnapshot(): EntitlementSnapshot {
+  return {
+    planSlug: "admin",
+    maxActiveStrategies: null,
+    features: new Set<string>(ALL_FEATURES),
+    notificationChannels: new Set<string>(["IN_APP", ...ALL_CHANNELS]),
+    availableStrategyKeys: null
   };
 }
 
