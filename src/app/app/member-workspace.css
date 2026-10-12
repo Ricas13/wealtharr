@@ -538,6 +538,7 @@ html[data-theme="light"] .customer-workspace-shell .member-deep-dive .portfolio-
 .customer-workspace-shell .recovery-banner-copy > strong{color:var(--member-text)}
 html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar .nav-label{color:#4d6865}
 html[data-theme="light"] .customer-workspace-shell .step:not(.active):not(.complete){color:#51675f}
+html[data-theme="light"] .customer-workspace-shell .onboarding-trust{color:#4f685f}
 html[data-theme="light"] .customer-workspace-shell .recovery-banner-copy > strong{color:#223a32}
 
 /* Fluid layout, keyboard focus and reduced-motion support. */
