@@ -1,8 +1,10 @@
 import "server-only";
+import type { Sql } from "postgres";
 import { assertCustomerPublishableEngine } from "@/domain/strategy/registry";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
 
-type Db = { unsafe: (query: string, params?: unknown[]) => PromiseLike<any[]> };
+// Same shape as EntitlementDb: accepts the shared client and a transaction handle.
+type Db = Pick<Sql, "unsafe">;
 
 /**
  * An admin may start a strategy whose definition is still disabled, but only if its release would
