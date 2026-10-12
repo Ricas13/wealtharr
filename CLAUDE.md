@@ -11,3 +11,10 @@
 - Configuration lives in Admin > Settings (encrypted in the database); only `DATABASE_URL`, `AUTH_SECRET`, `APP_ENCRYPTION_KEY`, `AUTH_TRUST_HOST` stay in the environment. Add new operator settings to `src/domain/settings-registry.ts`, not to `.env`.
 - Never put secrets in the repo.
 - Status of every audit and launch-gate item is in `docs/STATUS.md`; update it in the same PR that changes an item.
+
+## Owner's strict strategy-release policy (12 October 2026)
+
+- **Binary product catalogue:** a strategy is either completely implemented, independently reviewed, market-eligible and fully usable, or **not shipped**. No research/draft/coming-soon cards, APIs, onboarding choices, demos, plan benefits, SEO claims or public carousel entries for incomplete strategies.
+- Do not leave unfinished reference plugins in the production catalogue or fresh-install seed. Until removal/migration is complete, fail closed at customer-facing release gates and preserve existing customers' immutable ledger and version history.
+- Human attestation is optional audit metadata, never a prerequisite for enabling a code-verified strategy. Do not fabricate signed reviews, licensed prices or instrument mappings to switch anything on.
+- A genuinely released strategy may be subject to an honest plan-upgrade action; a half-implemented one must not appear at all. Any customer-visible strategy must pass every acceptance requirement in the Full Completion Specification (12 October 2026).

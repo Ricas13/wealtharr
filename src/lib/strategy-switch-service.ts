@@ -1,5 +1,6 @@
 import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
+import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
 import { sql } from "@/lib/db";
 import { foldLedger } from "@/domain/ledger";
 import { getStrategyEngine } from "@/domain/strategy/registry";
@@ -48,6 +49,7 @@ export async function switchStrategy(
     const target=targets[0];
     if(!target)throw new Error("STRATEGY_NOT_AVAILABLE");
     await assertDisabledStrategyPreviewGates(tx,target);
+    await assertUserStrategyAccessWith(tx,userId,String(target.definition_id));
     if(String(target.definition_id)===String(current.strategy_definition_id))throw new Error("STRATEGY_ALREADY_SELECTED");
 
     const activeRows=await tx.unsafe(

@@ -9,7 +9,7 @@ export type CatalogEntry = {
  version:string|null;status:"ENABLED"|"READY"|"NO_RELEASE"|"NO_SIGNOFF"|"NO_MARKET"|"NEEDS_REVIEW"|"RESEARCH";
  reason:string;rules:string|null;
 };
-const filters=[{key:"all",name:"All strategies"},{key:"ready",name:"Live / eligible"},{key:"review",name:"Needs review"}] as const;
+const filters=[{key:"all",name:"All strategies"},{key:"ready",name:"Live / eligible"},{key:"review",name:"Not available"}] as const;
 export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
  const [query,setQuery]=useState("");
  const [filter,setFilter]=useState<(typeof filters)[number]["key"]>("all");
@@ -50,10 +50,10 @@ export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
      <div><span>Total profiles</span><strong>{entries.length}</strong><small>Visible to administrators</small></div>
      <div><span>Customer enabled</span><strong>{enabled}</strong><small>Live catalogue</small></div>
      <div><span>Eligible now</span><strong>{eligible.length}</strong><small>Can pass enable checks</small></div>
-     <div><span>Review needed</span><strong>{awaiting}</strong><small>Not trade-ready</small></div>
+     <div><span>Unavailable</span><strong>{awaiting}</strong><small>Not trade-ready</small></div>
    </div>
    <div className="admin-catalogue-toolbar">
-     <div><h2>Strategy Studio catalogue</h2><p>Explore every reference profile. Customer availability remains gated by verified releases and instruments.</p></div>
+     <div><h2>Strategy Studio catalogue</h2><p>Explore every reference profile. Customer availability is controlled by global toggles, plans, customer access and exact account instrument eligibility.</p></div>
      <button type="button" className="button primary" disabled={!eligible.length||bulkBusy} onClick={enableEligible}>{bulkBusy?"Checking releases…":"Enable all eligible ("+eligible.length+")"}</button>
    </div>
    {bulkResult&&<p className="admin-catalogue-result" role="status">{bulkResult}</p>}

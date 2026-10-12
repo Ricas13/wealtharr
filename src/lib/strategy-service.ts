@@ -1,5 +1,6 @@
 import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
+import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import { assertCanCreateStrategy, assertStrategyFeatureAccess } from "@/domain/entitlements";
@@ -31,7 +32,7 @@ export type CreateStrategyInput = {
  * `includeDisabled` must come from the role-aware entitlement snapshot (`includeDisabledStrategies`), never
  * from request input. Even then only definitions with a PUBLISHED, in-window version are returned.
  */
-export async function listAvailableStrategies(options: { includeDisabled?: boolean } = {}) {
+export async function listAvailableStrategies(options: { includeDisabled?: boolean; userId?: string } = {}) {
   return sql.unsafe(
     "SELECT d.id,d.key,d.name,d.family,d.description,d.engine,d.enabled,d.proprietary,d.supported_regions,d.supported_wrappers,"+
     "v.id AS version_id,v.version,v.config,v.input_schema,v.release_notes,v.engine_key "+
@@ -39,8 +40,9 @@ export async function listAvailableStrategies(options: { includeDisabled?: boole
     " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
     " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
     " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
-    ") v ON true WHERE (d.enabled=true OR $1::boolean) ORDER BY d.name",
-    [options.includeDisabled===true]
+    ") v ON true WHERE (d.enabled=true OR $1::boolean)"+
+    " AND ($2::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM user_strategy_access a WHERE a.user_id=$2::uuid AND a.strategy_definition_id=d.id AND a.allowed=false)) ORDER BY d.name",
+    [options.includeDisabled===true,options.userId??null]
   );
 }
 
@@ -121,6 +123,7 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     if (!definition) throw new Error("STRATEGY_NOT_AVAILABLE");
     // A disabled definition is startable by admins only, and only if its release passes the enable gates.
     await assertDisabledStrategyPreviewGates(tx,definition);
+    await assertUserStrategyAccessWith(tx,userId,String(definition.id));
 
     const regions=Array.isArray(definition.supported_regions)?definition.supported_regions.map(String):[];
     const wrappers=Array.isArray(definition.supported_wrappers)?definition.supported_wrappers.map(String):[];
@@ -279,7 +282,7 @@ export async function changeStrategyStatus(
     const userRows = await tx.unsafe("SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", [userId]);
     if (!userRows[0]) throw new Error("UNAUTHENTICATED");
     const rows = await tx.unsafe(
-      "SELECT i.id,i.status,i.admin_disabled_preview,d.enabled AS definition_enabled,d.key AS strategy_key FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
+      "SELECT i.id,i.status,i.strategy_definition_id,i.admin_disabled_preview,d.enabled AS definition_enabled,d.key AS strategy_key FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
       [instanceId, userId]
     );
     const instance = rows[0];
@@ -289,6 +292,7 @@ export async function changeStrategyStatus(
     if (target === current) return { status: current };
 
     if (target === "ACTIVE") {
+      await assertUserStrategyAccessWith(tx,userId,String(instance.strategy_definition_id));
       const snapshot = await loadEntitlementsWith(tx, userId);
       const [countRows,accountRows]=await Promise.all([
         tx.unsafe("SELECT count(*)::int AS count FROM strategy_instances WHERE user_id=$1 AND status='ACTIVE' AND id<>$2",[userId,instanceId]),

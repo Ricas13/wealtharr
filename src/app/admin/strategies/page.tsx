@@ -39,8 +39,7 @@ export default async function StrategiesAdmin(){
    const base={key,name,family:String(def?.family??"RESEARCH"),engine,enabled:def?.enabled===true,
      version:release?.version==null?null:String(release.version),rules:profile?.rules??(plugin?curatedRelease(plugin)?.summary:undefined)??null};
    if(engine==="RESEARCH_PENDING"||!profile&&!def)return {...base,status:"RESEARCH",reason:"Source rules or calculation engine not yet implemented."};
-   if(!release)return {...base,status:"NO_RELEASE",reason:"No effective published version. Review the method and its release first."};
-   if(release.attested!==true)return {...base,status:"NO_SIGNOFF",reason:"An independent methodology specification and golden-case sign-off must be recorded."};
+   if(!release)return {...base,status:"NO_RELEASE",reason:"No executable published version is installed."};
    try{
      assertCustomerPublishableEngine(String(release.engine_key));
      assertCuratedRules(key,String(release.engine_key),release.config,release.input_schema);
@@ -51,17 +50,17 @@ export default async function StrategiesAdmin(){
      (release.config??{}) as Record<string,unknown>,candidates,
      {country:"GB",wrapper:"ISA",currency:"GBP"},asOf);
    if(!market.supportedMarkets.length)return {...base,status:"NO_MARKET",reason:"A complete UK ISA instrument mapping is required before customer access."};
-   return {...base,status:base.enabled?"ENABLED":"READY",reason:base.enabled?"Customer access enabled. Verify actual broker eligibility before launch.":"Release checks pass. Actual broker eligibility and methodology still need independent review."};
+   return {...base,status:base.enabled?"ENABLED":"READY",reason:base.enabled?"Enabled. User-plan and exact trading eligibility controls remain enforced.":"Code rules match; enable when a complete trading-account mapping exists."};
  }) as CatalogEntry[];
  const published=versions.filter(v=>v.lifecycle_status==="PUBLISHED").length;
  return <div className="admin-strategy-workspace">
   <div className="page-title admin-page-head"><div><div className="eyebrow">PRODUCT / STRATEGY STUDIO</div>
-    <h1>Strategy Studio</h1><p>Manage, test, publish and review every investment method from one organised workspace.</p></div>
+    <h1>Strategy Studio</h1><p>Manage implemented strategies, global availability and instrument eligibility.</p></div>
     <Link href="/admin/strategies/research" className="button">Evidence library ↗</Link>
   </div>
   <AdminStrategyInventory entries={entries}/>
-  <div className="admin-release-banner"><div><strong>{published} published version{published===1?"":"s"}</strong><p>Publication, sign-off and market mapping are separate gates. Publishing a reference profile does not establish tradeability or independent validation.</p></div><Link href="/admin/instruments" className="button">Manage instruments →</Link></div>
-  <details id="release-workflow" className="admin-advanced-workflow"><summary><span><strong>Release management</strong><small>Versions, immutable rules and attestation records</small></span><span aria-hidden="true">⌄</span></summary>
+  <div className="admin-release-banner"><div><strong>{published} published version{published===1?"":"s"}</strong><p>Global availability depends on executable code and complete matching instruments, not an operator sign-off. Published rules are immutable.</p></div><Link href="/admin/instruments" className="button">Manage instruments →</Link></div>
+  <details id="release-workflow" className="admin-advanced-workflow"><summary><span><strong>Release management</strong><small>Immutable versions and optional audit notes</small></span><span aria-hidden="true">⌄</span></summary>
     <div className="admin-advanced-content">
       <div className="table-wrap" tabIndex={0} role="region" aria-label="Version releases"><table><thead><tr><th>Strategy</th><th>Version</th><th>Status</th><th>Approval</th><th>Effective</th><th>UUID</th></tr></thead><tbody>
       {versions.map(v=><tr key={String(v.version_id)}><td>{String(v.name)}</td><td>{String(v.version)}</td><td>{String(v.lifecycle_status)}</td><td>{v.attested?"Recorded":"Missing"}</td><td>{dateKey(v.effective_from)}</td><td><code>{String(v.version_id)}</code></td></tr>)}

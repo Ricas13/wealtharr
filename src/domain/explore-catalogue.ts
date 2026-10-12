@@ -57,6 +57,17 @@ export function exploreCardState(input:ExploreCardInput,plan:ExplorePlanInput={a
   return {state:"AVAILABLE",reason:null,startAction};
 }
 
+/**
+ * Binary customer catalogue: unpublished, unverified and research-only strategies are
+ * absent, rather than advertised as partial products. PLAN_OPTIONS remains visible
+ * because it is a plan restriction on a genuinely released strategy.
+ * Do not use this to determine whether an API may create a strategy; that requires
+ * independent server-side authorisation and release checks.
+ */
+export function onlyAvailableExploreCards<T extends {result:ExploreCardResult}>(cards:readonly T[]):T[]{
+  return cards.filter(card=>card.result.state==="AVAILABLE"&&card.result.startAction!=="NONE");
+}
+
 export const EXPLORE_STATE_LABEL:Record<ExploreCardState,string>={
   AVAILABLE:"Available",COMING_SOON:"Coming soon",RESEARCH:"In research"
 };

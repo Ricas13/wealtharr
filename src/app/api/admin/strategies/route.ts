@@ -56,7 +56,7 @@ export async function PUT(request:Request){
     if(!approved||(approved.profile&&approved.profile.engine!==p.engine))return Response.json({error:"Only built-in, code-reviewed strategies can be managed."},{status:400});
     parseInputSchema(p.requiredInputs);
     // A catalogue's availability is controlled ONLY by the verified release toggle.
-    // A free-form PUT request must not bypass publisher, market and attestation checks.
+    // A free-form PUT request must not bypass publication, canonical code or market checks.
     await sql.unsafe(
       "INSERT INTO strategy_definitions (key,name,family,description,engine,enabled,proprietary,default_benchmark_key,supported_regions,supported_wrappers,required_inputs)"+
       " VALUES ($1,$2,$3,$4,$5,false,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb)"+
@@ -133,8 +133,8 @@ export async function PATCH(request:Request){
         if(!definitions[0])throw new LifecycleConflict("Strategy is not installed in the database.",404);
         if(p.enabled){
           const releases=await tx.unsafe(
-            "SELECT v.id,v.engine_key,v.config,v.input_schema,a.strategy_version_id AS attestation_id "+
-            "FROM strategy_versions v LEFT JOIN strategy_version_attestations a ON a.strategy_version_id=v.id "+
+            "SELECT v.id,v.engine_key,v.config,v.input_schema "+
+            "FROM strategy_versions v "+
             "WHERE v.strategy_definition_id=$1 AND v.lifecycle_status='PUBLISHED' "+
             "AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
             "ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1 FOR UPDATE OF v",
@@ -142,8 +142,6 @@ export async function PATCH(request:Request){
           );
           const release=releases[0];
           if(!release)throw new LifecycleConflict("Publish and verify this strategy before enabling it.",409);
-          if(!release.attestation_id)
-            throw new LifecycleConflict("A published strategy needs a recorded independent methodology and golden-test sign-off before activation.",409);
           try{
             assertCustomerPublishableEngine(String(release.engine_key));
             assertCuratedRules(p.strategyKey,String(release.engine_key),
@@ -209,8 +207,8 @@ export async function PATCH(request:Request){
       if(p.action==="ATTEST"){
         if(!["DRAFT","PUBLISHED"].includes(String(current.lifecycle_status)))throw new LifecycleConflict("Only a draft or published version can be attested.",409);
         await tx.unsafe(
-          "INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (strategy_version_id) DO UPDATE SET spec_card=EXCLUDED.spec_card,golden_tests=EXCLUDED.golden_tests,notes=EXCLUDED.notes,attested_by=EXCLUDED.attested_by,attested_at=now()",
-          [p.versionId,p.specCard,p.goldenTests,p.notes,admin.id]
+          "INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by,attested_by_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (strategy_version_id) DO UPDATE SET spec_card=EXCLUDED.spec_card,golden_tests=EXCLUDED.golden_tests,notes=EXCLUDED.notes,attested_by=EXCLUDED.attested_by,attested_by_email=EXCLUDED.attested_by_email,attested_at=now()",
+          [p.versionId,p.specCard,p.goldenTests,p.notes,admin.id,admin.email]
         );
         await tx.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'strategy-version.attested','strategy_version',$2,$3::jsonb)",[admin.id,p.versionId,JSON.stringify({specCard:p.specCard})]);
         return "DRAFT";
@@ -221,8 +219,6 @@ export async function PATCH(request:Request){
         assertEngine(String(current.engine_key));
         assertCustomerPublishableEngine(String(current.engine_key));
         if((current.config as Record<string,unknown> | null)?.userWeights===true)throw new LifecycleConflict("Custom allocation versions cannot be published.",409);
-        const attested=await tx.unsafe("SELECT 1 FROM strategy_version_attestations WHERE strategy_version_id=$1",[p.versionId]);
-        if(!attested[0])throw new LifecycleConflict("Record the specification sign-off and golden tests for this version before publishing it.",409);
         validateEngineConfig(String(current.engine_key),(current.config??{}) as Record<string,unknown>);
         parseInputSchema(current.input_schema);
         if(isBuiltInStrategy(String(current.strategy_key)))
