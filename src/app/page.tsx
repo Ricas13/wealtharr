@@ -10,7 +10,7 @@ import {PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStr
 import "./marketing-home.css";
 
 export const dynamic="force-dynamic";
-type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;monthly_price_minor:number|null;annual_price_minor:number|null};
+type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;homepage_highlights:unknown;monthly_price_minor:number|null;annual_price_minor:number|null};
 type ReleaseRow={key:string;engine_key:string;config:Record<string,unknown>;input_schema:unknown};
 function decodeEntitlements(raw:unknown):{features:string[];notificationChannels:string[]}{
   let parsed=raw;
@@ -24,7 +24,7 @@ async function loadPublicPlans():Promise<PublicPlanCard[]>{
   let rows:PlanRow[]=[];
   try{
     rows=await sql.unsafe(
-      "SELECT p.slug,p.display_name,p.description,p.billing_currency,p.max_active_strategies,p.entitlements,"+
+      "SELECT p.slug,p.display_name,p.description,p.billing_currency,p.max_active_strategies,p.entitlements,p.homepage_highlights,"+
       "CASE WHEN p.slug='free' THEN 0 ELSE mo.amount_minor END AS monthly_price_minor,"+
       "CASE WHEN p.slug='free' THEN 0 ELSE yr.amount_minor END AS annual_price_minor "+
       "FROM plans p "+
@@ -42,7 +42,8 @@ async function loadPublicPlans():Promise<PublicPlanCard[]>{
         currency:String(row.billing_currency),monthlyMinor:row.monthly_price_minor===null?null:Number(row.monthly_price_minor),
         annualMinor:row.annual_price_minor===null?null:Number(row.annual_price_minor),
         maxActive:row.max_active_strategies===null?null:Number(row.max_active_strategies),
-        features:ent.features,channels:ent.notificationChannels};
+        features:ent.features,channels:ent.notificationChannels,
+        highlights:Array.isArray(row.homepage_highlights)?row.homepage_highlights.filter((v):v is string=>typeof v==="string"):[]};
     });
 }
 async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
