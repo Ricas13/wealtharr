@@ -1,5 +1,10 @@
 # Status of the audit and launch-gate items
 
+## 2026-10-12 policy correction: no mandatory human strategy attestation
+
+The owner clarified that documented public investment strategy methodologies must become executable through complete code, tests, configured exact market mappings and admin-controlled global/plan/user eligibility. A manually signed spec-card attestation is optional audit metadata, not a universal blocker. This change removes human attestation checks from customer Explore, new strategy creation/switching, publishing, global toggles and live Stripe strategy signoff, while preserving immutable code-owned version rules, publishable-engine checks, market mapping requirements and operational/commercial safeguards. **This change does not certify fidelity, fill missing engine implementations, supply actual UK brokerage products, or launch a public service.**
+
+
 ## Backend new-start release gate (12 October 2026)
 
 A follow-up change enforces the curated rules, customer-publishable engine and non-null signer-email snapshot on **every** newly created or switched strategy, including enabled legacy seed definitions. The previously disabled-only helper now fails closed rather than trusting `enabled=true`. List queries also require an attested release. This protects API clients that bypass Explore; existing holdings and historical versions are preserved.
