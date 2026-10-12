@@ -25,6 +25,8 @@ export type ExploreCardInput={
   publishedInWindow:boolean;
   /** Stored published rules equal the code-reviewed rules (`assertCuratedRules` passed). */
   rulesVerified:boolean;
+  /** A human attestation is recorded for this exact published version (not a substitute for independent verification). */
+  attested:boolean;
   /** A complete exact market exists for the viewer's country (`assessStrategyMarket`). */
   marketVerified:boolean;
 };
@@ -51,10 +53,22 @@ export function exploreCardState(input:ExploreCardInput,plan:ExplorePlanInput={a
   if(!input.definitionEnabled)return blocked("COMING_SOON","Not yet released. Awaiting operator review.");
   if(!input.publishedInWindow)return blocked("COMING_SOON","Awaiting a published, verified version.");
   if(!input.rulesVerified)return blocked("COMING_SOON","Awaiting rules review.");
+  if(!input.attested)return blocked("COMING_SOON","Release approval has not been recorded.");
   if(!input.marketVerified)return blocked("COMING_SOON","Awaiting verified instruments for your region.");
   let startAction:ExploreStartAction="START";
   if(!plan.inPlan||plan.atLimit)startAction="PLAN_OPTIONS";
   return {state:"AVAILABLE",reason:null,startAction};
+}
+
+/**
+ * Binary customer catalogue: unpublished, unverified and research-only strategies are
+ * absent, rather than advertised as partial products. PLAN_OPTIONS remains visible
+ * because it is a plan restriction on a genuinely released strategy.
+ * Do not use this to determine whether an API may create a strategy; that requires
+ * independent server-side authorisation and release checks.
+ */
+export function onlyAvailableExploreCards<T extends {result:ExploreCardResult}>(cards:readonly T[]):T[]{
+  return cards.filter(card=>card.result.state==="AVAILABLE"&&card.result.startAction!=="NONE");
 }
 
 export const EXPLORE_STATE_LABEL:Record<ExploreCardState,string>={

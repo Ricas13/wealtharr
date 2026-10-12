@@ -1,5 +1,17 @@
 # Status of the audit and launch-gate items
 
+## Owner's binary strategy policy — implementation underway (12 October 2026)
+
+**Required final state:** Every strategy is either fully implemented, independently approved, market-eligible and usable end-to-end, or absent from the shipped product and its fresh-install strategy seed. No visible draft, research or coming-soon cards. **This is not yet complete.**
+
+First implementation increment (PR pending when written):
+- Customer Explore now applies `onlyAvailableExploreCards` to render only releases whose existing eligibility check finds published code-reviewed rules, a recorded version attestation, enabled definition and a complete verified market for the actual user's account. An empty catalogue gets an explicit neutral empty state. Plan limitations may offer an upgrade for a genuinely available strategy, but no incomplete strategy card is displayed.
+- Public `/strategies` informational copy no longer promotes unshipped named methods or unfinished research.
+- Regression tests cover unattested, disabled, draft, research, unmapped and misverified exclusions. These are source changes; exact-head CI is required before merging.
+
+**Still OPEN, not to be claimed finished:** backend create/API eligibility must be consolidated with the same strict independent release predicate; historic 9Sig seed/public homepage and forthcoming #30 carousel must not advertise an unverified method; research-only source plugins and fresh-seed rows must be removed without deleting existing user ledgers; audited author/source golden verification, UK instrument mapping, licensed provider data, complete life-cycle tests and external legal/business sign-offs are outstanding. A database attestation is only an operator assertion, not independent certification. In particular, do not activate live 9Sig by merely creating an attestation row.
+
+
 > **Current development note — PR #25, 2026-10-09:** This document includes older audit snapshots of `main`. The section immediately below supersedes their historical strategy-customisation and adjusted-price-ingestion claims. GitHub CI passing is not independent model certification, UK broker eligibility, a licensed data contract, a restore test or regulatory approval.
 
 Checked against `main` on 2026-10-09 by reading the code and running the tests (unit/integration against PostgreSQL 16, browser tests, lint, typecheck, build, dependency audit), not by trusting earlier documents. **Fixed** means the behaviour is in code and a named test fails without it. **Open** means not done. **Needs people** means no code change can finish it. Where an item is only partly done, the remainder is stated.
