@@ -104,6 +104,7 @@
   color:#dafbe5;
 }
 .customer-workspace-shell > .sidebar.member-sidebar .nav-link svg {width:18px;height:18px}
+.customer-workspace-shell .member-queue-nav{position:relative}
 .customer-workspace-shell .member-queue-nav .nav-badge,
 .customer-workspace-shell .member-sidebar .nav-badge {
   margin-left:auto;
