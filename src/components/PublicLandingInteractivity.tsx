@@ -10,7 +10,7 @@ export type PublicStrategyCard={
 export type PublicPlanCard={
   slug:string;name:string;description:string;currency:string;
   monthlyMinor:number|null;annualMinor:number|null;maxActive:number|null;
-  features:string[];channels:string[];
+  features:string[];channels:string[];highlights:string[];
 };
 function priceLabel(amount:number,currency:string){
   return new Intl.NumberFormat("en-GB",{style:"currency",currency,minimumFractionDigits:amount===0?0:2}).format(amount/100);
@@ -80,6 +80,7 @@ export function PublicPricingCards({plans}:{plans:PublicPlanCard[]}){
       return <article className={"wm-plan"+(i===1?" featured":"")} key={p.slug}>
         <div className="wm-plan-name">{p.name}</div>
         <p>{desc||"Follow published strategy rules in one convenient workspace."}</p>
+        {p.highlights.length>0&&<div className="wm-marketing-notes">{p.highlights.map((line,n)=><span key={n}>{line}</span>)}</div>}
         <div className="wm-plan-price">{amount===null?"Unavailable":priceLabel(amount,p.currency)}{amount!==null&&<small> / {effectiveAnnual?"year":"month"}</small>}</div>
         <span className="wm-plan-billed">{annual&&!effectiveAnnual?"Annual billing not offered":effectiveAnnual?"Charged annually":"Subscription billed monthly"}</span>
         <ul>{perks.map((perk,n)=><li key={n}>{perk}</li>)}</ul>
