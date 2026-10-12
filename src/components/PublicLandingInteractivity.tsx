@@ -43,7 +43,7 @@ export function PublicStrategyRail({cards}:{cards:PublicStrategyCard[]}){
     {c.allocations.length>0&&<div className="wm-sleeves" aria-label={duplicate?undefined:"Target allocation illustration"}>
       {c.allocations.map((a,n)=><span key={a.label} title={a.label+": "+a.percent+"%"} style={{width:a.percent+"%",background:["#9bcdb9","#8fa9d2","#e2c19b","#aaa1c4","#bdd0b8"][n%5]}} />)}
     </div>}
-    <div className="wm-strategy-end"><span>{c.allocations.length?c.allocations.length+" allocations":"Rule-based method"}</span><span>Learn more ↗</span></div>
+    <div className="wm-strategy-end"><span>{c.allocations.length?c.allocations.length+" allocations":"Rule-based method"}</span>{duplicate?<span>Learn more ↗</span>:<Link href="/strategies">Learn more ↗</Link>}</div>
   </article>;
   return <div className="wm-rail-block">
     <div className="wm-rail-controls">
@@ -73,8 +73,10 @@ export function PublicPricingCards({plans}:{plans:PublicPlanCard[]}){
       const effectiveAnnual=annual&&p.annualMinor!==null;
       const amount=effectiveAnnual?p.annualMinor:p.monthlyMinor;
       const desc=p.description.trim();
+      const featureLabels:Record<string,string>={history:"Transaction history",reconciliation:"Broker reconciliation",resume:"Resume existing investments",community:"Anonymous community insights",analytics:"Advanced analytics",comparisons:"Benchmark comparisons",what_if:"What-if analysis",advanced_imports:"Advanced imports",multi_account:"Multiple accounts"};
       const perks=[p.maxActive===null?"Unlimited active strategies":p.maxActive+" active strateg"+(p.maxActive===1?"y":"ies"),
-        "In-app strategy reviews",...p.channels.map(c=>c==="EMAIL"?"Email notifications":c==="DISCORD"?"Discord notifications":c==="TELEGRAM"?"Telegram notifications":c)];
+        "In-app strategy reviews",...p.features.map(f=>featureLabels[f]).filter((f):f is string=>Boolean(f)),
+        ...p.channels.map(c=>c==="EMAIL"?"Email notifications":c==="DISCORD"?"Discord notifications":c==="TELEGRAM"?"Telegram notifications":c)].slice(0,7);
       return <article className={"wm-plan"+(i===1?" featured":"")} key={p.slug}>
         <div className="wm-plan-name">{p.name}</div>
         <p>{desc||"Follow published strategy rules in one convenient workspace."}</p>
