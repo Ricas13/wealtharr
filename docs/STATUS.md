@@ -1,5 +1,11 @@
 # Status of the audit and launch-gate items
 
+## Backend new-start release gate (12 October 2026)
+
+A follow-up change enforces the curated rules, customer-publishable engine and non-null signer-email snapshot on **every** newly created or switched strategy, including enabled legacy seed definitions. The previously disabled-only helper now fails closed rather than trusting `enabled=true`. List queries also require an attested release. This protects API clients that bypass Explore; existing holdings and historical versions are preserved.
+
+CI uses a guarded synthetic 9Sig evidence row exclusively in the ephemeral local test database so original onboarding integration tests continue exercising real creation paths. **This is never a real methodology sign-off and must not enter staging or production data.** Exact-head CI and live operator/source approvals remain separate. The old seed still contains unreleased definitions and public/home/admin surfaces are not yet fully purged; the complete binary policy remains OPEN.
+
 ## Owner's binary strategy policy — implementation underway (12 October 2026)
 
 **Required final state:** Every strategy is either fully implemented, independently approved, market-eligible and usable end-to-end, or absent from the shipped product and its fresh-install strategy seed. No visible draft, research or coming-soon cards. **This is not yet complete.**
