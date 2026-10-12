@@ -80,7 +80,7 @@ for(const theme of ["dark","light"] as const){
       await page.getByLabel("Password").fill(PASSWORD);
       await page.getByRole("button",{name:"Sign in"}).click();
       await page.waitForURL("**/app");
-      for(const path of ["/app","/app/strategies","/app/strategies/new","/app/notifications","/app/community","/app/settings"]){
+      for(const path of ["/app","/app/strategies","/app/strategies/new","/app/notifications","/app/explore","/app/community","/app/settings"]){
         await page.goto(path);
         await setTheme(page,theme);
         await audit(page,`${path} (${theme})`);

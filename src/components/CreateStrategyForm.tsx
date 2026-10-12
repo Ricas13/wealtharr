@@ -23,11 +23,11 @@ function StrategyFields({fields}:{fields:InputField[]}){
   </div>;
 }
 
-export function CreateStrategyForm({strategies,baseCurrency,brand}:{strategies:Strategy[];baseCurrency:string;brand:string}) {
+export function CreateStrategyForm({strategies,baseCurrency,brand,initialStrategyKey=null}:{strategies:Strategy[];baseCurrency:string;brand:string;initialStrategyKey?:string|null}) {
   const router=useRouter();
   const [step,setStep]=useState(0);
   const [mode,setMode]=useState<"START_NEW"|"RESUME">("START_NEW");
-  const [selectedKey,setSelectedKey]=useState(strategies[0]?.key??"");
+  const [selectedKey,setSelectedKey]=useState(strategies.find((s)=>s.key===initialStrategyKey)?.key??strategies[0]?.key??"");
   const [error,setError]=useState("");
   const [upgradeRequired,setUpgradeRequired]=useState(false);
   const [busy,setBusy]=useState(false);

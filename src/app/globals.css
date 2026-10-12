@@ -2152,11 +2152,6 @@ html[data-theme="light"] .app-shell.portfolio-shell{
 .portfolio-app-header-inner{max-width:1470px;padding:0 28px;margin:0 auto;min-height:65px;display:flex;align-items:center;gap:34px}
 .portfolio-app-brand{display:inline-flex;align-items:center;gap:10px;color:var(--pf-text);font-size:17px;font-weight:850;letter-spacing:-.045em;white-space:nowrap;flex:none}
 .portfolio-logo-glyph{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:linear-gradient(145deg,#3768d4,#7762e8);font-size:16px;color:white;font-weight:900;box-shadow:0 6px 15px rgba(76,110,217,.2)}
-.portfolio-primary-navigation{display:flex;align-items:stretch;align-self:stretch;gap:5px;min-width:0;flex:1}
-.portfolio-primary-link{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 13px;color:var(--pf-muted);font-size:12px;font-weight:750;white-space:nowrap;transition:color .2s,background .2s}
-.portfolio-primary-link:hover{color:var(--pf-text);background:var(--pf-surface-hover)}
-.portfolio-primary-link.is-current{color:var(--pf-primary)}
-.portfolio-primary-link.is-current:after{content:"";position:absolute;bottom:0;left:12px;right:12px;height:3px;border-radius:3px 3px 0 0;background:var(--pf-primary)}
 .portfolio-admin-link{margin-left:auto}
 .portfolio-app-actions{display:flex;align-items:center;gap:10px;flex:none}
 .portfolio-app-actions .theme-toggle{flex:none}
@@ -2269,7 +2264,6 @@ html[data-theme="light"] .app-shell.portfolio-shell{
 .portfolio-shell .premium-card:hover{box-shadow:0 8px 22px rgba(10,30,60,.1)}
 @media(max-width:1130px){
  .portfolio-app-header-inner{gap:16px;padding:0 20px}
- .portfolio-primary-link{padding:0 9px;gap:6px}
  .portfolio-dashboard-columns{grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr)}
  .portfolio-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .portfolio-shell .strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -2278,8 +2272,6 @@ html[data-theme="light"] .app-shell.portfolio-shell{
  .portfolio-app-header-inner{flex-wrap:wrap;gap:0;padding:0 16px}
  .portfolio-app-brand,.portfolio-app-actions{min-height:56px}
  .portfolio-app-actions{margin-left:auto}
- .portfolio-primary-navigation{flex:0 0 100%;order:3;min-height:42px;overflow-x:auto;scrollbar-width:thin}
- .portfolio-primary-link{min-height:46px}
  .portfolio-admin-link{margin-left:0}
  .portfolio-subbar-inner{padding:0 16px}
  .portfolio-dashboard-columns{grid-template-columns:1fr}
@@ -2309,7 +2301,6 @@ html[data-theme="light"] .app-shell.portfolio-shell{
  .portfolio-shell .page-title{flex-direction:column;align-items:flex-start}
  .portfolio-shell .app-content.portfolio-content{width:calc(100% - 24px);padding-top:19px}
 }
-@media(prefers-reduced-motion:reduce){.portfolio-primary-link{transition:none}}
 
 /* Preserve WCAG AA contrast on legacy strategy-detail widgets within the new workbench. */
 html[data-theme="light"] .portfolio-shell .back-link,

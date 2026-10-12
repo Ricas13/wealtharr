@@ -7,8 +7,10 @@ import { CreateStrategyForm } from "@/components/CreateStrategyForm";
 import { sql } from "@/lib/db";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
+import { preselectedStrategyKey } from "@/domain/explore-catalogue";
 
-export default async function NewStrategyPage(){
+export default async function NewStrategyPage({searchParams}:{searchParams?:Promise<Record<string,string|string[]|undefined>>}){
+  const query=(await searchParams)??{};
   const user=await requirePageUser();
   const [rows,existing,entitlements,marketMappings]=await Promise.all([
     listAvailableStrategies(),
@@ -30,6 +32,9 @@ export default async function NewStrategyPage(){
       new Date().toISOString().slice(0,10)).supportedMarkets
   }));
 
+  // Only keys the form can really start are honoured; anything else is ignored.
+  const initialStrategyKey=preselectedStrategyKey(query.strategy,strategies.map((strategy)=>strategy.key));
+
   return <>
     <Link href="/app/strategies" className="back-link"><ArrowLeft size={14}/>Portfolio</Link>
     {atLimit?<section className="glass plan-limit-state">
@@ -41,7 +46,7 @@ export default async function NewStrategyPage(){
         <Link className="button primary" href="/app/settings#plan">See plan options <ArrowRight size={16}/></Link>
         <Link className="button quiet" href="/app/strategies">Back to portfolio</Link>
       </div>
-    </section>:strategies.length?<CreateStrategyForm strategies={strategies} baseCurrency={user.baseCurrency} brand={process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"}/>:<section className="glass plan-limit-state">
+    </section>:strategies.length?<CreateStrategyForm strategies={strategies} initialStrategyKey={initialStrategyKey} baseCurrency={user.baseCurrency} brand={process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"}/>:<section className="glass plan-limit-state">
       <div className="eyebrow">Your plan</div><h1>No additional strategies are available on this plan.</h1>
       <p>Your current strategies are unaffected. You can review plan options to unlock additional strategy types when available.</p>
       <Link className="button primary" href="/app/settings#plan">See plan options <ArrowRight size={16}/></Link>
