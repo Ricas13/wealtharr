@@ -5,7 +5,7 @@
 export const NETWORK_ERROR_TEXT="Could not reach the server. Check your connection and try again.";
 export const UNEXPECTED_RESPONSE_TEXT="The server sent an unexpected response. Please try again.";
 
-export type JsonResult<T=Record<string,any>>={
+export type JsonResult<T=any>={
   ok:boolean;
   /** HTTP status, or 0 when the request never reached the server. */
   status:number;
@@ -23,7 +23,7 @@ export type JsonRequestOptions={
   fallbackError?:string;
 };
 
-export async function requestJson<T=Record<string,any>>(url:string,options:JsonRequestOptions={}):Promise<JsonResult<T>>{
+export async function requestJson<T=any>(url:string,options:JsonRequestOptions={}):Promise<JsonResult<T>>{
   const {method="POST",body,headers,fallbackError="Something went wrong. Please try again."}=options;
   let response:Response;
   try{
@@ -51,6 +51,6 @@ export async function requestJson<T=Record<string,any>>(url:string,options:JsonR
   return {ok:false,status:response.status,data,errorText};
 }
 
-export function postJson<T=Record<string,any>>(url:string,body?:unknown,options:Omit<JsonRequestOptions,"method"|"body">={}){
+export function postJson<T=any>(url:string,body?:unknown,options:Omit<JsonRequestOptions,"method"|"body">={}){
   return requestJson<T>(url,{...options,method:"POST",body});
 }

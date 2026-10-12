@@ -17,13 +17,13 @@ describe("InlineMessage", () => {
     expect(messageRole("warning")).toBe("alert");
     expect(messageRole("success")).toBe("status");
     expect(messageRole("info")).toBe("status");
-    const error = renderToStaticMarkup(createElement(InlineMessage, { tone: "error" }, "Nope"));
+    const error = renderToStaticMarkup(createElement(InlineMessage, { tone: "error", children: "Nope" }));
     expect(error).toContain('role="alert"');
     expect(error).toContain('class="error"');
-    const success = renderToStaticMarkup(createElement(InlineMessage, { tone: "success" }, "Saved"));
+    const success = renderToStaticMarkup(createElement(InlineMessage, { tone: "success", children: "Saved" }));
     expect(success).toContain('role="status"');
     expect(success).toContain('class="success"');
-    const warning = renderToStaticMarkup(createElement(InlineMessage, { tone: "warning" }, "Check"));
+    const warning = renderToStaticMarkup(createElement(InlineMessage, { tone: "warning", children: "Check" }));
     expect(warning).toContain('role="alert"');
     expect(warning).toContain("attention-message");
   });
@@ -31,7 +31,7 @@ describe("InlineMessage", () => {
 
 describe("Field", () => {
   it("renders exactly the label and control when help and error are absent", () => {
-    const html = renderToStaticMarkup(createElement(Field, { label: "Email" }, createElement("input", { name: "email" })));
+    const html = renderToStaticMarkup(createElement(Field, { label: "Email", children: createElement("input", { name: "email" }) }));
     expect(html).not.toContain("aria-describedby");
     expect(html).not.toContain("aria-invalid");
     expect(html).not.toContain('class="help"');
@@ -40,11 +40,12 @@ describe("Field", () => {
   });
 
   it("links help and error text to the control and marks it invalid", () => {
-    const html = renderToStaticMarkup(createElement(
-      Field,
-      { label: "Price", help: "In pence", error: "Required" },
-      createElement("div", { className: "prefix" }, createElement("input", { name: "price" }))
-    ));
+    const html = renderToStaticMarkup(createElement(Field, {
+      label: "Price",
+      help: "In pence",
+      error: "Required",
+      children: createElement("div", { className: "prefix" }, createElement("input", { name: "price" }))
+    }));
     const id = /for="([^"]+)"/.exec(html)?.[1];
     expect(id).toBeTruthy();
     expect(html).toContain('id="' + id + '"');
@@ -55,11 +56,11 @@ describe("Field", () => {
   });
 
   it("keeps an id the caller already set and appends to an existing description", () => {
-    const html = renderToStaticMarkup(createElement(
-      Field,
-      { label: "Code", help: "Six digits" },
-      createElement("input", { id: "own-id", "aria-describedby": "other" })
-    ));
+    const html = renderToStaticMarkup(createElement(Field, {
+      label: "Code",
+      help: "Six digits",
+      children: createElement("input", { id: "own-id", "aria-describedby": "other" })
+    }));
     expect(html).toContain('for="own-id"');
     expect(html).toContain('aria-describedby="other own-id-help"');
     expect(html).not.toContain("aria-invalid");
