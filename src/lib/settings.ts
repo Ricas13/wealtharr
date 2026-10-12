@@ -10,8 +10,10 @@ const REFRESH_MS = 15_000;
 const originalEnv = new Map<string, string | undefined>();
 let lastLoad = 0;
 let inflight: Promise<void> | null = null;
-// Counts loads started; lets a forced refresh tell a load that began after it was called from an older one.
-let loadSeq = 0;
+// Committed writes invalidate older in-flight snapshots. Concurrent callers of one revision share a load.
+let settingsWriteRevision = 0;
+let inflightRevision = -1;
+export function markSettingsSaved(){settingsWriteRevision += 1;lastLoad = 0;}
 
 function applyToEnvironment(rows: Array<{ key: string; value: string }>) {
   const stored = new Map(rows.map((r) => [r.key, r.value]));
@@ -49,16 +51,9 @@ export async function ensureSettings(force = false): Promise<void> {
     if (inflight) return inflight;
     return startLoad();
   }
-  // A forced refresh follows a write (or must see one). A load already in flight may have read the table
-  // before that write committed, so joining it could return stale settings. Only a load that began
-  // after this call is acceptable: wait out an older one, then start (or join) a newer one.
-  const calledAt = loadSeq;
-  for (;;) {
-    if (inflight && loadSeq > calledAt) return inflight;
-    if (inflight) {
-      await inflight; // never rejects
-      continue;
-    }
+  for(;;){
+    if(inflight&&inflightRevision===settingsWriteRevision)return inflight;
+    if(inflight){await inflight;continue;}
     return startLoad();
   }
 }
@@ -73,7 +68,7 @@ async function loadOnce(): Promise<void> {
 }
 
 function startLoad(): Promise<void> {
-  loadSeq += 1;
+  inflightRevision=settingsWriteRevision;
   const run: Promise<void> = loadOnce().then(() => {
     if (inflight === run) inflight = null;
   });
@@ -144,6 +139,7 @@ export async function saveSettings(adminId: string, changes: SettingChange[]): P
       [adminId, JSON.stringify({ set: clean.filter((c) => c.value !== null).map((c) => c.key), cleared: clean.filter((c) => c.value === null).map((c) => c.key) })]
     );
   });
+  markSettingsSaved();
   await ensureSettings(true);
   return { ok: true, changed: clean.map((c) => c.key) };
 }
