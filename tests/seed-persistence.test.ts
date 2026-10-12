@@ -18,10 +18,10 @@ describe("seed is initial-install-only",()=>{
  it("never mutates existing named strategy version snapshots",()=>{
    expect(seed).toContain("ON CONFLICT (strategy_definition_id,version) DO NOTHING");
  });
- it("inserts every strategy definition insert-only, driven by the plugin registry",()=>{
+ it("seeds only explicitly approved definitions and never inserts research-only stubs",()=>{
    expect(seed).toContain("STRATEGY_PLUGINS");
-   // Both definition inserts (registry seed definitions and generic research rows) are DO NOTHING.
-   expect(seed.match(/INSERT INTO strategy_definitions/g)?.length).toBe(2);
+   expect(seed).toContain("seedableStrategies(STRATEGY_PLUGINS,disposableTestDb)");
+   expect(seed.match(/INSERT INTO strategy_definitions/g)?.length).toBe(1);
    expect(seed.match(/INSERT INTO strategy_definitions[^;]*?ON CONFLICT \(key\) DO NOTHING/gs)?.length).toBe(2);
    expect(seed).not.toMatch(/INSERT INTO strategy_versions[^;]*?DO UPDATE/s);
  });
