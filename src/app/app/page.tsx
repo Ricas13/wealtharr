@@ -1,6 +1,6 @@
 import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Layers3, Plus, Sparkles, Wallet } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
 import { listUserStrategies } from "@/lib/strategy-service";
 import { sql } from "@/lib/db";
@@ -66,7 +66,7 @@ export default async function OverviewPage(){
     .filter(({plan})=>plan?.enabled===true&&plan.nextDate)
     .sort((a,b)=>String(a.plan?.nextDate).localeCompare(String(b.plan?.nextDate)));
   const nextContribution=plannedContributions[0];
-  const nextReview=reviewRows.filter((row:any)=>row.due_at).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
+  const nextReview=reviewRows.filter((row:any)=>row.due_at&&new Date(row.due_at).getTime()>=Date.now()).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
   const healthyCount=activeStrategies.filter((strategy:any)=>strategy.health_status==="HEALTHY").length;
   const analytics=await loadWorkspaceAnalytics(user.id);
   const combined=analytics.aggregate;
@@ -95,98 +95,114 @@ export default async function OverviewPage(){
   const profitText=combinedSummary&&combined?formatMoney(Number(combinedSummary.profitSinceStart),combined.currency,{signed:true}):"—";
   const formatPct=(value:number|null|undefined)=>value==null?"—":pct(value,{dp:2,signed:true});
 
+
   if(!strategies.length){
-    return <section className="glass welcome-state">
-      <div className="welcome-orb"><Sparkles size={28}/></div>
-      <div className="eyebrow">Welcome</div>
-      <h1>Start with one simple decision.</h1>
-      <p>Choose a strategy, tell us whether you are starting fresh or already following it, and we will guide you from there.</p>
-      <Link className="button primary hero-cta" href="/app/strategies/new"><Plus size={17}/>Start my first strategy</Link>
-      <div className="trust-line"><CheckCircle2 size={15}/>No trading is performed automatically. You stay in control of every action.</div>
-    </section>;
+    return <div className="home-dashboard member-dashboard">
+      <section className="glass welcome-state member-welcome">
+        <div className="welcome-orb"><Sparkles size={28}/></div>
+        <div className="eyebrow">Your investment workspace</div>
+        <h1>Welcome to <em>Wealtharr.</em></h1>
+        <p>Choose a fully available investment framework, add your holdings or start from zero, and let Wealtharr organise the rules, calculations and reminders.</p>
+        <Link className="button primary hero-cta" href="/app/strategies/new"><Plus size={17}/>Follow your first strategy</Link>
+        <div className="trust-line"><CheckCircle2 size={15}/>You control your accounts. Wealtharr does not place trades for you.</div>
+      </section>
+    </div>;
   }
 
-  return <div className="home-dashboard">
-    <div className="dashboard-heading">
+  return <div className="home-dashboard member-dashboard">
+    <header className="member-heading">
       <div>
-        <div className="eyebrow">Home</div>
-        <h1>{dueHeading}</h1>
-        <p>{primaryAction?(actions.length>1?"Your most important next step is ready below; the rest are listed underneath.":"Your next step is ready below."):"There is nothing you need to do right now."}</p>
+        <div className="eyebrow">Your investment workspace</div>
+        <h1>Stay on <em>course.</em></h1>
+        <p>Know what matters next. Follow the established rules, not the market noise.</p>
       </div>
-      <Link className="button" href="/app/strategies">View portfolio</Link>
-    </div>
-
-    <section className="glass dashboard-hero">
-      <div className="portfolio-snapshot">
-        <span className="soft-label">Tracked portfolio</span>
-        <strong className="portfolio-value">{portfolioHeadline}</strong>
-        <div className="portfolio-context">
-          <span>{activeStrategies.length} active {activeStrategies.length===1?"strategy":"strategies"}</span>
-          <span className="dot-separator">•</span>
-          <span>{portfolioValueContext??contributionContext}</span>
-        </div>
-        {portfolioValueContext&&portfolioFullyValued&&<div className="portfolio-context secondary-context"><span>{contributionContext} contributed</span></div>}
-        {combinedSummary&&combined&&portfolioFullyValued&&<div className={"portfolio-growth"+(Number(combinedSummary.profitSinceStart)<0?" loss":"")}>
-          {Number(combinedSummary.profitSinceStart)>0?"Portfolio up ":Number(combinedSummary.profitSinceStart)<0?"Portfolio down ":"Portfolio unchanged at "}
-          {formatMoney(Math.abs(Number(combinedSummary.profitSinceStart)),combined.currency)} since tracking began
-        </div>}
+      <div className="member-next-review">
+        <span>Next scheduled review</span>
+        <strong>{nextReview?new Date(nextReview.due_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"Not scheduled"}</strong>
       </div>
+    </header>
 
-      <div className={"today-card "+(primaryAction?"needs-action":"all-clear")}>
-        <div className="today-topline">
-          <span className="soft-label">Today</span>
-          {primaryAction?<span className={"pill "+(primaryAction.confidence==="HIGH"?"good":"warn")}>{primaryAction.confidence} confidence</span>:<CheckCircle2 size={20}/>}
+    <section className={"member-action-hero "+(primaryAction?"requires-review":"is-clear")} id="action-queue" aria-labelledby="member-action-title">
+      <div className="member-action-copy">
+        <span className="member-action-kicker"><span aria-hidden="true" className="member-action-dot"/>{primaryAction?dueHeading:"No action due"}</span>
+        <h2 id="member-action-title">{primaryAction?primaryAction.title:"No action needed right now."}</h2>
+        <p>{primaryAction?primaryAction.instruction:healthyCount===activeStrategies.length?"Your active strategies have no outstanding actions. We will let you know when the next review needs your attention.":"There are no pending actions. Some strategies may still need checking; open a strategy to review its status."}</p>
+        {primaryAction&&primaryAction.account_name&&<p className="member-action-account">Account: <strong>{primaryAction.account_name}</strong>{primaryAction.account_wrapper?" · "+primaryAction.account_wrapper:""}</p>}
+        {primaryReason&&<p className="member-action-reason"><Sparkles size={14}/>{primaryReason}</p>}
+        <div className="member-action-buttons">
+          <Link className="button primary" href={primaryAction?"/app/strategies/"+primaryAction.strategy_instance_id:"/app/strategies"}>
+            {primaryAction?"Review next step":"View your strategies"} <ArrowRight size={17}/>
+          </Link>
+          {primaryAction&&<span>{primaryAction.instance_name} · {primaryAction.confidence==="HIGH"?"High confidence":"Check the supporting data"}</span>}
         </div>
-        {primaryAction?<>
-          <span className="today-strategy">{primaryAction.instance_name}</span>
-          <h2>{primaryAction.title}</h2>
-          <p>{primaryAction.instruction}</p>
-          {primaryAction.account_name&&<div className="action-account-hint"><span>Use <strong>{primaryAction.account_name}</strong>{primaryAction.account_wrapper?" · "+primaryAction.account_wrapper:""}</span></div>}
-          {primaryReason&&<div className="plain-reason"><Sparkles size={14}/><span>{primaryReason}</span></div>}
-          <Link className="button primary" href={"/app/strategies/"+primaryAction.strategy_instance_id}>Show me what to do <ArrowRight size={16}/></Link>
-        </>:<>
-          <h2>Nothing to do.</h2>
-          <p>We will surface the next action here when your strategy needs you.</p>
-        </>}
+        <p className="member-trust"><CheckCircle2 size={15}/> Calculated by Wealtharr. <strong>You decide whether to trade.</strong></p>
+      </div>
+      <div className="member-action-visual" aria-hidden="true">
+        <div className="member-orbit"><div className="member-orbit-inner"><svg viewBox="0 0 100 70" fill="none" role="presentation"><path d="M7 51 L27 34 L42 41 L63 16 L78 26 L94 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="94" cy="8" r="4" fill="currentColor"/><circle cx="7" cy="51" r="3" fill="currentColor"/><path d="M16 13C28 4 48 6 55 17" stroke="currentColor" strokeDasharray="2 5" opacity=".6"/></svg><span>Rules over reactions</span></div></div>
       </div>
     </section>
 
-    <section className="glass workspace-analytics" aria-label="Combined strategy analytics">
-      <div className="section-head">
-        <div><div className="eyebrow">Combined performance</div><h2>All your strategies, one view</h2>
-          <p>Compare your active and paused strategies on the same dates. Deposits and withdrawals are not counted as gains.</p></div>
+    <section className="member-metrics" aria-label="Portfolio at a glance">
+      <div className="member-metric">
+        <div className="member-metric-top"><span>Total tracked value</span><Wallet size={16}/></div>
+        <strong>{portfolioHeadline}</strong>
+        <small>{portfolioValueContext??(portfolioCurrencyEntries.length?"Across tracked strategies":"Awaiting verified valuations")}</small>
       </div>
-      <div className="analytics-stats">
-        <div className="kpi"><span>Profit since first tracked value</span><strong className={combinedSummary?(Number(combinedSummary.profitSinceStart)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{profitText}</strong></div>
-        <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong className={combinedSummary?.flowAdjustedReturnPct!=null?(Number(combinedSummary.flowAdjustedReturnPct)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{formatPct(combinedSummary?.flowAdjustedReturnPct)}</strong></div>
-        <div className="kpi"><span>Observed maximum drawdown</span><strong className={combinedSummary?.observedMaxDrawdownPct!=null?"portfolio-negative":undefined}>{formatPct(combinedSummary?.observedMaxDrawdownPct)}</strong></div>
-        <div className="kpi"><span>Last observed session P/L</span><strong className={combinedSummary?.lastObservedSessionPnl!=null?(Number(combinedSummary.lastObservedSessionPnl)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{combinedSummary?.lastObservedSessionPnl!=null&&combined?formatMoney(Number(combinedSummary.lastObservedSessionPnl),combined.currency,{signed:true}):"—"}</strong></div>
+      <div className="member-metric">
+        <div className="member-metric-top"><span>Strategy health</span><CheckCircle2 size={16}/></div>
+        <strong>{activeStrategies.length?healthyCount+" of "+activeStrategies.length:"—"}</strong>
+        <small>Active strategies marked on track</small>
       </div>
-      {overallChart.length>=2?<div className="chart-card">
-        <PerformanceChart data={overallChart} comparisons={overallComparisons} actualLabel="All strategies" indexed fullControls/>
-        {benchmark?.missing.length?<p className="help comparison-warning">Unavailable benchmarks: {benchmark.missing.join(", ")}. Comparisons require independently verified total-return data in the portfolio currency, including historical FX where needed.</p>:null}
-        <p className="help">Each line starts at 100 on the common tracking dates. Returns are estimated from recorded account snapshots; actual intraday drawdowns may differ.</p>
-      </div>:<p className="help">The combined comparison needs at least two dates with complete valuations for every active strategy in the same currency. Nothing is estimated across missing dates or currencies.</p>}
-      <div className="section-head"><div><h3>Strategy leaderboard</h3><p>Ranked by estimated flow-adjusted return over identical observed dates, not raw account size.</p></div></div>
-      {analytics.leaderboard.length>1?<div className="leaderboard">
-        {analytics.leaderboard.map((entry,index)=><Link key={entry.id} href={"/app/strategies/"+entry.id} className="leaderboard-row">
-          <span className="leaderboard-rank">{index+1}</span><strong>{entry.name}</strong>
-          <span>{formatPct(entry.summary?.flowAdjustedReturnPct)}</span><ArrowRight size={16}/></Link>)}
-      </div>:<p className="help">Add a second strategy with overlapping valued history to see a fair ranking.</p>}
-      {combinedSummary&&<p className="help">Observed best session: {formatPct(combinedSummary.bestObservedSessionPct)} · Worst session: {formatPct(combinedSummary.worstObservedSessionPct)} · Current observed drawdown: {formatPct(combinedSummary.currentDrawdownPct)}. Missing trading days cannot be reconstructed.</p>}
+      <div className="member-metric">
+        <div className="member-metric-top"><span>Strategies following</span><Layers3 size={16}/></div>
+        <strong>{activeStrategies.length}</strong>
+        <small>{trackedStrategies.length-activeStrategies.length} paused · {actions.length>=12?"12+ actions listed":actions.length+" actions due"}</small>
+      </div>
+      <div className="member-metric">
+        <div className="member-metric-top"><span>Next contribution</span><Plus size={16}/></div>
+        <strong>{nextContribution?money(Number(nextContribution.plan?.amount??0),String(nextContribution.strategy.currency)):"—"}</strong>
+        <small>{nextContribution?new Date(String(nextContribution.plan?.nextDate)+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})+" · "+nextContribution.strategy.name:"No contribution scheduled"}</small>
+      </div>
     </section>
 
-    <div className="quick-strip">
-      <div><span>Strategy health</span><strong>{activeStrategies.length?healthyCount+" of "+activeStrategies.length+" on track":"—"}</strong></div>
-      <div><span>Next review</span><strong>{nextReview?new Date(nextReview.due_at).toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"When needed"}</strong></div>
-      <div><span>Next contribution</span><strong>{nextContribution?money(Number(nextContribution.plan?.amount??0),String(nextContribution.strategy.currency))+" · "+new Date(String(nextContribution.plan?.nextDate)+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"Flexible"}</strong></div>
+    <div className="member-focus-grid">
+      <section className="glass member-journey" aria-labelledby="member-journey-title">
+        <div className="member-panel-heading">
+          <div><h2 id="member-journey-title">Portfolio journey</h2><p>Flow-adjusted indexed performance, not cash contributions</p></div>
+        </div>
+        {overallChart.length>=2?<div className="member-journey-chart">
+          <PerformanceChart data={overallChart} comparisons={overallComparisons} actualLabel="All strategies" indexed fullControls/>
+          {benchmark?.missing.length?<p className="help comparison-warning">Unavailable benchmarks: {benchmark.missing.join(", ")}. Comparisons require independently verified total-return data in the portfolio currency, including historical FX where needed.</p>:null}
+          <p className="help">Each line starts at 100 on matching observed dates. Estimated from recorded account snapshots; unobserved trading days and intraday drawdowns are not reconstructed.</p>
+        </div>:<div className="member-chart-empty"><strong>Performance history is building.</strong><p>We need at least two dates with complete same-currency valuations to draw a fair combined chart. Missing values are never fabricated.</p></div>}
+      </section>
+      <section className="glass member-coming-up" aria-labelledby="member-coming-up-title">
+        <div className="member-panel-heading">
+          <div><h2 id="member-coming-up-title">Coming up</h2><p>Your schedule, not market noise</p></div>
+          <Clock3 size={17}/>
+        </div>
+        <div className="member-upcoming-item">
+          <div className="member-upcoming-icon"><Plus size={17}/></div>
+          <div><strong>Planned contribution</strong><p>{nextContribution?nextContribution.strategy.name:"Nothing scheduled yet"}</p><span>{nextContribution?money(Number(nextContribution.plan?.amount??0),String(nextContribution.strategy.currency))+" · "+new Date(String(nextContribution.plan?.nextDate)+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"Set a schedule in a strategy"}</span></div>
+        </div>
+        <div className="member-upcoming-item">
+          <div className="member-upcoming-icon secondary"><CalendarDays size={17}/></div>
+          <div><strong>Next scheduled review</strong><p>{nextReview?nextReview.name:"No future review scheduled"}</p><span>{nextReview?new Date(nextReview.due_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"We will highlight actions when they are available"}</span></div>
+        </div>
+        <div className="member-upcoming-footer"><Link href="/app/notifications">View notifications <ArrowRight size={15}/></Link></div>
+      </section>
     </div>
 
-    <section className="home-section">
-      <div className="section-head">
-        <div><div className="eyebrow">Your portfolio</div><h2>Strategies</h2><p>Open one only when you want more detail.</p></div>
-        <Link className="text-link" href="/app/strategies/new">Add another <ArrowRight size={14}/></Link>
-      </div>
+    {actions.length>1&&<section className="glass member-queue-list" aria-label="Other actions due">
+      <div className="member-panel-heading"><div><h2>Also needs review</h2><p>{actions.length-1} additional {actions.length===2?"action":"actions"} in your queue</p></div></div>
+      {actions.slice(1).map((a:any)=><Link className="member-queue-row" href={"/app/strategies/"+a.strategy_instance_id} key={a.id}>
+        <div><strong>{a.title}</strong><span>{a.instance_name}</span></div><ArrowRight size={16}/>
+      </Link>)}
+      {actions.length===12&&<p className="help">Showing the first 12 actions. Open individual strategies to review additional pending items.</p>}
+    </section>}
+
+    <section className="member-strategies" aria-labelledby="member-strategies-title">
+      <div className="member-section-heading"><div><div className="eyebrow">Established frameworks</div><h2 id="member-strategies-title">Your strategies</h2><p>Each follows its own rules, schedule and recorded holdings.</p></div><Link className="text-link" href="/app/strategies">View all <ArrowRight size={15}/></Link></div>
       <div className="strategy-grid">
         {trackedStrategies.map((s:any)=>{const cardState=strategyCardState(s);return <Link href={"/app/strategies/"+s.id} className="card strategy-card premium-card" key={s.id}>
           <div className="strategy-card-top"><span className={"status-light "+cardState.className}/><span>{cardState.label}</span></div>
@@ -195,12 +211,24 @@ export default async function OverviewPage(){
           <div className="strategy-meta"><span className="pill">v{s.version}</span><span className="pill">{s.currency}</span></div>
           <span className="card-arrow"><ArrowRight size={17}/></span>
         </Link>})}
+        <Link href="/app/strategies/new" className="member-add-strategy"><Plus size={18}/><strong>Follow another strategy</strong><span>Browse available approaches</span></Link>
       </div>
     </section>
 
-    {actions.length>1&&<details className="glass secondary-actions">
-      <summary>{actions.length-1} more {actions.length-1===1?"action":"actions"} waiting</summary>
-      <div className="secondary-actions-list">{actions.slice(1).map((a:any)=><Link className="secondary-action-row" href={"/app/strategies/"+a.strategy_instance_id} key={a.id}><div><strong>{a.instance_name}</strong><span>{a.title}</span></div><ArrowRight size={16}/></Link>)}</div>
-    </details>}
+    <details className="glass member-deep-dive" id="performance-details">
+      <summary><span><strong>Performance details &amp; methodology</strong><small>See contributions, estimated returns, drawdowns and the fair-comparison leaderboard.</small></span><ArrowRight size={18}/></summary>
+      <div className="member-deep-dive-body">
+        <div className="analytics-stats">
+          <div className="kpi"><span>Profit since first tracked value</span><strong className={combinedSummary?(Number(combinedSummary.profitSinceStart)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{profitText}</strong></div>
+          <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong className={combinedSummary?.flowAdjustedReturnPct!=null?(Number(combinedSummary.flowAdjustedReturnPct)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{formatPct(combinedSummary?.flowAdjustedReturnPct)}</strong></div>
+          <div className="kpi"><span>Observed maximum drawdown</span><strong className={combinedSummary?.observedMaxDrawdownPct!=null?"portfolio-negative":undefined}>{formatPct(combinedSummary?.observedMaxDrawdownPct)}</strong></div>
+          <div className="kpi"><span>Last observed session P/L</span><strong className={combinedSummary?.lastObservedSessionPnl!=null?(Number(combinedSummary.lastObservedSessionPnl)>=0?"portfolio-positive":"portfolio-negative"):undefined}>{combinedSummary?.lastObservedSessionPnl!=null&&combined?formatMoney(Number(combinedSummary.lastObservedSessionPnl),combined.currency,{signed:true}):"—"}</strong></div>
+        </div>
+        <div className="member-panel-heading"><div><h3>Strategy leaderboard</h3><p>Ranked by estimated flow-adjusted return over identical observed dates, not account size.</p></div></div>
+        {analytics.leaderboard.length>1?<div className="leaderboard">{analytics.leaderboard.map((entry,index)=><Link key={entry.id} href={"/app/strategies/"+entry.id} className="leaderboard-row"><span className="leaderboard-rank">{index+1}</span><strong>{entry.name}</strong><span>{formatPct(entry.summary?.flowAdjustedReturnPct)}</span><ArrowRight size={16}/></Link>)}</div>:<p className="help">Add a second strategy with overlapping valued history to see a fair ranking.</p>}
+        {combinedSummary&&<p className="help">Observed best session: {formatPct(combinedSummary.bestObservedSessionPct)} · Worst session: {formatPct(combinedSummary.worstObservedSessionPct)} · Current observed drawdown: {formatPct(combinedSummary.currentDrawdownPct)}. Missing trading days cannot be reconstructed.</p>}
+        <p className="help">Total contributions recorded: {contributionContext}. Figures reflect verified recorded holdings and prices, not brokerage balances or hypothetical future returns.</p>
+      </div>
+    </details>
   </div>;
 }
