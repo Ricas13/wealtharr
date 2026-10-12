@@ -1,6 +1,6 @@
 import { requirePageUser } from "@/lib/session";
 import { sql } from "@/lib/db";
-import { BillingButtons,DiscordForm,TelegramForm,PrivacyControls,SecurityControls } from "@/components/SettingsForms";
+import { BillingButtons,DiscordForm,TelegramForm,PrivacyControls,SecurityControls,SignOutButton } from "@/components/SettingsForms";
 import { isMfaEnabled } from "@/lib/mfa";
 import { loadEntitlements } from "@/lib/entitlement-service";
 import { purchasesAllowedFor } from "@/domain/native-app";
@@ -71,6 +71,7 @@ export default async function SettingsPage(){
         <TelegramForm connected={telegramConnected} allowed={entitlements.notificationChannels.has("TELEGRAM")}/>
       </section>
     </div>
+    <section className="card privacy-card"><div className="eyebrow">Account</div><h3>Signed in as {user.email}</h3><p className="help">Sign out of Wealtharr on this device.</p><SignOutButton/></section>
     <section id="security" className="card privacy-card"><div className="eyebrow">Security</div><h3>Two-step sign-in</h3><SecurityControls enabled={mfaEnabled}/></section>
     <section className="card privacy-card"><div className="eyebrow">Privacy</div><h3>Your data, your choice.</h3><p className="help">Anonymous community aggregates use privacy-thresholded derived data only. You can opt out, export your data, or close the account.</p><PrivacyControls optIn={user.anonymousAggregateOptIn}/></section>
   </>;
