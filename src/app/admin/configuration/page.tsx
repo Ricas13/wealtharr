@@ -11,7 +11,7 @@ export default async function MasterConfigurationPage(){
     sql.unsafe("SELECT count(*)::int AS n FROM plan_prices WHERE active=true"),
     sql.unsafe("SELECT count(*)::int AS n FROM strategy_definitions d WHERE d.enabled=true AND EXISTS (SELECT 1 FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED')"),
     sql.unsafe("SELECT count(*)::int AS n FROM regional_instrument_mappings WHERE enabled=true AND fidelity='EXACT'"),
-    sql.unsafe("SELECT started_at FROM worker_runs WHERE worker_key='cron-actions' AND status='SUCCESS' ORDER BY started_at DESC LIMIT 1"),
+    sql.unsafe("SELECT started_at FROM worker_runs WHERE worker_key='cron-actions' AND status IN ('SUCCESS','PARTIAL') ORDER BY started_at DESC LIMIT 1"),
     sql.unsafe("SELECT started_at FROM worker_runs WHERE worker_key='backup' AND status='SUCCESS' ORDER BY started_at DESC LIMIT 1")
   ]);
   const configured=(...names:string[])=>names.every(key=>Boolean(process.env[key]));

@@ -14,7 +14,7 @@ const h=vi.hoisted(()=>({
   queries:[] as string[],
   finishedLease:null as null|{status:string},
   market:{provider:"mock",configured:true,refreshed:0,failed:0,skipped:0},
-  deletions:{completed:0,stalled:0},
+  deletions:{completed:0,stalled:0} as Record<string,unknown>,
   pendingDeliveries:0,
   backlog:{sent:0,claimed:0,exhausted:true},
   aggregatesRan:0,
@@ -222,6 +222,29 @@ describe("hourly worker orchestration",()=>{
     it("is not a backlog when individual reconciliations failed",async()=>{
       h.billing={configured:true,checked:90,failed:10,deferred:0,hasMore:true,recheckHours:1,overdueMs:0};
       expect((await call(ok)).json).toMatchObject({ok:false});
+    });
+  });
+
+  describe("a long account-deletion queue is visible",()=>{
+    it("is a backlog while deletions complete and the oldest request is young",async()=>{
+      h.deletions={completed:25,stalled:0,deferred:0,pending:60,remaining:true,oldestPendingMs:3_600_000};
+      const result=await call(ok);
+      expect(result.status).toBe(200);
+      expect(result.json).toMatchObject({ok:true,status:"backlog",deletionBacklog:"BACKLOG"});
+    });
+    it("degrades when nothing completed this run",async()=>{
+      h.deletions={completed:0,stalled:0,deferred:25,pending:60,remaining:true,oldestPendingMs:3_600_000};
+      const result=await call(ok);
+      expect(result.status).toBe(503);
+      expect(result.json).toMatchObject({ok:false,deletionBacklog:"STALLED"});
+    });
+    it("degrades when the oldest pending deletion is older than the tolerance",async()=>{
+      h.deletions={completed:25,stalled:0,deferred:0,pending:500,remaining:true,oldestPendingMs:7*3_600_000};
+      expect((await call(ok)).json).toMatchObject({ok:false,deletionBacklog:"STALLED"});
+    });
+    it("fails closed when the age is unknown",async()=>{
+      h.deletions={completed:25,stalled:0,deferred:0,pending:60,remaining:true,oldestPendingMs:null};
+      expect((await call(ok)).status).toBe(503);
     });
   });
 

@@ -7,6 +7,7 @@ import { safeErrorCode } from "@/lib/safe-error-code";
 // limit. Every step deletes at most `limit` rows per run (largest backlog drains over several runs),
 // selects by an indexed age column (migration 0040) and only touches data that no live code path needs.
 //
+// store_webhook_events doubles as a billing audit record, so it is only pruned after 400 days.
 // Never touched here: ledger events, actions, reconciliations, overrides, audit_events, users,
 // accounts, strategy data, subscriptions and anything else that is financial or an audit record.
 export const RETENTION = {
@@ -33,6 +34,11 @@ export const RETENTION = {
   observationKeepLatest: 10,
   /** Dedupe records for processed provider webhooks; providers retry for days, not months. */
   webhookEventDays: 90,
+  /**
+   * App-store notification records are both the idempotency record and part of the billing audit trail
+   * (migration 0021), so they are kept far longer than the Stripe dedupe rows.
+   */
+  storeWebhookEventDays: 400,
   /** A RUNNING worker row older than this crashed or was cut off (the cron lease is 15 minutes). */
   staleRunMinutes: 120,
   /** Finished worker_runs older than this are pruned; the newest good run per worker is always kept. */
@@ -92,6 +98,13 @@ const STEPS: Step[] = [
         "AND NOT EXISTS (SELECT 1 FROM notification_deliveries d WHERE d.notification_id=n.id AND d.status IN ('PENDING','SENDING')) " +
         // A live action keeps its notification: removing it would let the next recalculation notify again.
         "AND (n.action_id IS NULL OR NOT EXISTS (SELECT 1 FROM actions a WHERE a.id=n.action_id AND a.status IN (" + EXECUTABLE_ACTION_STATUS_SQL + "))) " +
+        // A review-keyed notification is the once-per-review-cycle dedupe record (upsert on review_key).
+        // A cancelled or superseded action can return to CALCULATED when its strategy resumes; with the
+        // row gone that would insert a new notification and alert a second time. So it is only removed
+        // once its strategy instance is CLOSED (the instance comes from the notification itself for
+        // reminders, or from its action for review alerts).
+        "AND (n.review_key IS NULL OR NOT EXISTS (SELECT 1 FROM strategy_instances si WHERE si.status<>'CLOSED' " +
+        "AND (si.id=n.strategy_instance_id OR si.id=(SELECT ax.strategy_instance_id FROM actions ax WHERE ax.id=n.action_id)))) " +
         "LIMIT $1)",
         [limit, RETENTION.notificationDays]
       ))
@@ -121,7 +134,7 @@ const STEPS: Step[] = [
     run: async (limit) =>
       count(await sql.unsafe(
         "DELETE FROM store_webhook_events WHERE event_id IN (SELECT event_id FROM store_webhook_events WHERE created_at<now()-($2::int*interval '1 day') LIMIT $1)",
-        [limit, RETENTION.webhookEventDays]
+        [limit, RETENTION.storeWebhookEventDays]
       ))
   },
   {
@@ -150,21 +163,33 @@ const STEPS: Step[] = [
   }
 ];
 
-export type RetentionResult = { deleted: Record<string, number>; failed: Record<string, string>; deferred: number };
+export type RetentionResult = { deleted: Record<string, number>; failed: Record<string, string>; deferred: number; deferredSteps: string[] };
+
+/** Names of the steps in the order a run starting at `offset` executes them (a rotation of the fixed list). */
+export function retentionStepOrder(offset: number) {
+  const size = STEPS.length;
+  const start = ((Math.floor(offset) % size) + size) % size;
+  return STEPS.map((_, index) => STEPS[(start + index) % size].name);
+}
 
 /**
- * Runs each cleanup step once, in order, each bounded by `limit` rows. A failing step is recorded and
- * does not stop the others. `deadline` (epoch ms) stops starting new steps; they are reported as
- * `deferred` and run on the next hourly pass.
+ * Runs each cleanup step once, each bounded by `limit` rows. A failing step is recorded and does not
+ * stop the others. The starting step rotates with the hour (or `startOffset`), so if a run is cut short
+ * by its deadline the steps that were skipped lead the next run instead of starving behind the same
+ * early ones. `deadline` (epoch ms) stops starting new steps; they are reported in `deferredSteps`.
  */
-export async function runRetention(options: { deadline?: number; limit?: number; currentRunId?: string | null } = {}): Promise<RetentionResult> {
+export async function runRetention(
+  options: { deadline?: number; limit?: number; currentRunId?: string | null; startOffset?: number } = {}
+): Promise<RetentionResult> {
   const limit = Math.max(1, Math.floor(options.limit ?? RETENTION.limit));
   const deleted: Record<string, number> = {};
   const failed: Record<string, string> = {};
-  let deferred = 0;
-  for (const step of STEPS) {
+  const deferredSteps: string[] = [];
+  const order = retentionStepOrder(options.startOffset ?? Math.floor(Date.now() / 3_600_000));
+  for (const name of order) {
+    const step = STEPS.find((candidate) => candidate.name === name)!;
     if (options.deadline != null && Date.now() >= options.deadline) {
-      deferred += 1;
+      deferredSteps.push(name);
       continue;
     }
     try {
@@ -173,5 +198,5 @@ export async function runRetention(options: { deadline?: number; limit?: number;
       failed[step.name] = safeErrorCode(error);
     }
   }
-  return { deleted, failed, deferred };
+  return { deleted, failed, deferred: deferredSteps.length, deferredSteps };
 }

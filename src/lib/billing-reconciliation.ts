@@ -64,10 +64,13 @@ export async function reconcileStripeSubscriptions(options:{deadline?:number;lim
   });
   let overdueMs:number|null=0;
   if(hasMore||pool.deferred>0){
-    // How long the oldest still-waiting subscription has been due. Measured after this run's stamps.
+    // How long the oldest still-waiting subscription has been due. Measured after this run's stamps. A
+    // never-checked one counts from its last change (updated_at: when the Stripe link was written by the
+    // webhook/checkout), not from when the free subscription row was created, so a burst of upgrades
+    // does not look like an aged backlog.
     try{
       const oldest=await sql.unsafe(
-        "SELECT max(EXTRACT(EPOCH FROM now()-COALESCE(s.billing_checked_at,s.created_at)))*1000 AS age_ms "+DUE_SUBSCRIPTIONS+" "+
+        "SELECT max(EXTRACT(EPOCH FROM now()-COALESCE(s.billing_checked_at,s.updated_at)))*1000 AS age_ms "+DUE_SUBSCRIPTIONS+" "+
         "AND (s.billing_checked_at IS NULL OR s.billing_checked_at<now()-($1::int*interval '1 hour'))",[recheckHours]
       );
       const age=Number(oldest[0]?.age_ms);

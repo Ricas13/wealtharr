@@ -12,12 +12,17 @@ describe.skipIf(!url)("account deletion queue fairness", () => {
   const created: string[] = [];
   const stalled: string[] = [];
   let healthy = "";
+  const parked: string[] = [];
   let savedKey: string | undefined;
 
   beforeAll(async () => {
     // No Stripe key: any account with a Stripe customer cannot be disconnected, so it stalls forever.
     savedKey = process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_SECRET_KEY;
+    // Park any pending deletion that belongs to someone else behind this test's accounts, so a shared
+    // database cannot change which rows the capped pass reaches. Undone in afterAll.
+    const others = await sql!.unsafe("UPDATE users SET deletion_attempted_at=now()+interval '30 days' WHERE deleted_at IS NOT NULL AND deletion_attempted_at IS NULL RETURNING id");
+    parked.push(...others.map((row) => String(row.id)));
     const [free] = await sql!.unsafe("SELECT id FROM plans WHERE slug='free'");
     for (let i = 0; i < 5; i += 1) {
       const [u] = await sql!.unsafe(
@@ -36,6 +41,7 @@ describe.skipIf(!url)("account deletion queue fairness", () => {
   afterAll(async () => {
     if (savedKey === undefined) delete process.env.STRIPE_SECRET_KEY; else process.env.STRIPE_SECRET_KEY = savedKey;
     if (!sql) return;
+    if (parked.length) await sql.unsafe("UPDATE users SET deletion_attempted_at=NULL WHERE id=ANY($1::uuid[])", [parked]);
     await sql.unsafe("DELETE FROM users WHERE id=ANY($1::uuid[])", [created]);
     await sql.unsafe("DELETE FROM audit_events WHERE entity_id=ANY($1)", [created]);
     await sql.end();
@@ -47,7 +53,10 @@ describe.skipIf(!url)("account deletion queue fairness", () => {
     // A cap equal to the number of stuck accounts: with plain oldest-first ordering the healthy
     // request is never reached.
     const first = await finishPendingAccountDeletions(stalled.length);
-    expect(first).toMatchObject({ completed: 0, stalled: stalled.length });
+    expect(first).toMatchObject({ completed: 0, stalled: stalled.length, remaining: true });
+    expect(first.pending).toBeGreaterThan(stalled.length);
+    // The oldest request (about ten hours old) is reported, so the worker can judge the backlog's age.
+    expect(first.oldestPendingMs).toBeGreaterThan(9 * 3_600_000);
     expect(await present(healthy)).toBe(true);
     const stamped = await sql!.unsafe("SELECT count(*)::int AS n FROM users WHERE id=ANY($1::uuid[]) AND deletion_attempted_at IS NOT NULL", [stalled]);
     expect(Number(stamped[0].n)).toBe(stalled.length);

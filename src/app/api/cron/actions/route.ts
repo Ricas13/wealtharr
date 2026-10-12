@@ -30,6 +30,10 @@ const PLATFORM_SAFETY_MARGIN_MS = 30_000;
 // it the backlog is treated as a failure (the worker is not keeping up) and alerts as before.
 const BILLING_OVERDUE_TOLERANCE_MS = 6 * 3_600_000;
 
+// A pending account deletion may be this old while the queue is still draining; beyond it (or with no
+// completions this run) the backlog is a stall and the run is degraded.
+const DELETION_AGE_TOLERANCE_MS = 6 * 3_600_000;
+
 function positiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
@@ -96,7 +100,7 @@ export async function GET(request: Request) {
     const accountDeletions = await phase(
       "accountDeletions",
       () => finishPendingAccountDeletions(25, { deadline: phaseEnds(0.05) }),
-      { completed: 0, stalled: -1, deferred: 0 }
+      { completed: 0, stalled: -1, deferred: 0, pending: 0, remaining: false, oldestPendingMs: null as number | null }
     );
 
     const billing = await phase(
@@ -229,12 +233,20 @@ export async function GET(request: Request) {
       overdueMs: billing.overdueMs ?? null,
       toleranceMs: BILLING_OVERDUE_TOLERANCE_MS
     });
+    // Deletions beyond the per-run cap or the phase deadline: a queue that is draining (completions this
+    // run, oldest request younger than the tolerance) is a backlog; otherwise it is a stall and degraded.
+    const deletionBacklog = classifyBacklog({
+      remaining: accountDeletions.remaining ?? false,
+      progressed: accountDeletions.completed,
+      overdueMs: accountDeletions.remaining ? (accountDeletions.oldestPendingMs ?? null) : 0,
+      toleranceMs: DELETION_AGE_TOLERANCE_MS
+    });
     const deferred = { entitlements: entitlements.deferred, calculations: calculationDeferred, deliveriesBacklog: !delivery.exhausted, deliveriesHeldBack: delivery.heldBack ?? 0 };
-    const backlog = deferred.entitlements > 0 || deferred.calculations > 0 || deferred.deliveriesBacklog || deferred.deliveriesHeldBack > 0 || billingBacklog === "STALLED";
+    const backlog = deferred.entitlements > 0 || deferred.calculations > 0 || deferred.deliveriesBacklog || deferred.deliveriesHeldBack > 0 || billingBacklog === "STALLED" || deletionBacklog === "STALLED";
     const phaseFailed = Object.keys(phaseFailures).length > 0;
     const ok = calculationFailures === 0 && entitlementFailures === 0 && !reviewReminderFailed && billing.failed === 0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog && !phaseFailed;
     const summary = {
-      ok, status: ok ? (billingBacklog === "BACKLOG" ? "backlog" : "healthy") : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData, billing, billingBacklog,
+      ok, status: ok ? (billingBacklog === "BACKLOG" || deletionBacklog === "BACKLOG" ? "backlog" : "healthy") : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData, billing, billingBacklog, deletionBacklog,
       entitlementPaused, entitlementFailures, calculated, calculationFailures, deferred,
       deliveriesCreated, delivered: delivery.sent, reviewReminders, aggregates, retention,
       ...(phaseFailed ? { phaseFailures } : {})

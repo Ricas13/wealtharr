@@ -3,6 +3,7 @@ import postgres from "postgres";
 import * as actionService from "@/lib/action-service";
 import * as email from "@/lib/email";
 import * as entitlements from "@/lib/entitlement-service";
+import * as telegram from "@/lib/telegram";
 import { createDeliveriesForNotification, createPendingDeliveries, processDeliveryBacklog } from "@/lib/notification-service";
 import { encryptSecret } from "@/lib/crypto";
 import { DELIVERY_MAX_ATTEMPTS } from "@/domain/delivery-retry";
@@ -35,6 +36,11 @@ describe.skipIf(!url)("per-delivery failure isolation", () => {
   const mockEmail = () => {
     sent.length = 0;
     vi.spyOn(email, "getEmailProvider").mockReturnValue({ send: async (message) => { sent.push(message.to); return true; } });
+    // The worker drains every due delivery in the shared database, including leftovers from other test
+    // files: no provider call may ever leave the machine (Discord goes through fetch, Telegram through
+    // telegramCall).
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(null, { status: 204 }));
+    vi.spyOn(telegram, "telegramCall").mockResolvedValue({ ok: true } as never);
   };
 
   async function makeUser(label: string, options: { discord?: boolean } = {}) {
@@ -165,12 +171,7 @@ describe.skipIf(!url)("per-delivery failure isolation", () => {
     expect((await deliveries(notificationId)).map((r) => r.channel).sort()).toEqual(["DISCORD", "EMAIL"]);
     await settle([notificationId]);
 
-    mockEmail();
-    const realFetch = globalThis.fetch;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input).startsWith("https://discord.com/")) return new Response(null, { status: 204 });
-      return realFetch(input, init);
-    });
+    mockEmail(); // also stubs fetch (Discord) and telegramCall
     const calculate = vi.spyOn(actionService, "calculateAction").mockResolvedValue(undefined as never);
 
     await processDeliveryBacklog({ budgetMs: 20_000, batch: 100 });

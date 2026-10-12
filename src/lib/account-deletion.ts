@@ -105,6 +105,14 @@ export async function finishAccountDeletion(userId: string): Promise<FinishOutco
 // newer deletions. `deadline` (epoch ms) stops new attempts when the cron phase budget is spent; the
 // untouched ones are reported as `deferred` and lead the queue next run.
 export async function finishPendingAccountDeletions(limit = 25, options: { deadline?: number } = {}) {
+  // Size and age of the whole queue, so a backlog that the per-run cap or the deadline leaves behind is
+  // visible to the caller (it is classified as backlog or stall there), not silently deferred.
+  const queue = await sql.unsafe(
+    "SELECT count(*)::int AS n,EXTRACT(EPOCH FROM now()-min(deleted_at))*1000 AS oldest_ms FROM users WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '2 minutes'"
+  );
+  const pendingTotal = Number(queue[0]?.n ?? 0);
+  const oldestRaw = Number(queue[0]?.oldest_ms);
+  const oldestPendingMs = pendingTotal > 0 && Number.isFinite(oldestRaw) ? oldestRaw : pendingTotal > 0 ? null : 0;
   const pending = await sql.unsafe(
     "SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '2 minutes' " +
     "ORDER BY deletion_attempted_at ASC NULLS FIRST, deleted_at ASC, id LIMIT $1",
@@ -125,5 +133,11 @@ export async function finishPendingAccountDeletions(limit = 25, options: { deadl
       stalled += 1;
     }
   }
-  return { completed, stalled, deferred };
+  return {
+    completed, stalled, deferred,
+    pending: pendingTotal,
+    /** Work this pass did not even attempt: beyond the per-run cap, or cut off by the deadline. */
+    remaining: pendingTotal > pending.length || deferred > 0,
+    oldestPendingMs: oldestPendingMs as number | null
+  };
 }

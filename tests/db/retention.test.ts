@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { RETENTION, runRetention } from "@/lib/retention";
+import { RETENTION, retentionStepOrder, runRetention } from "@/lib/retention";
 
 // Real database. Each table gets rows that must go and rows that must stay; the point is that cleanup
 // removes only what nothing needs any more, honours its per-run limit, and never touches anything else.
@@ -176,12 +176,62 @@ describe.skipIf(!url)("retention", () => {
 
   it("removes old provider event records and keeps recent ones", async () => {
     await sql!.unsafe("INSERT INTO billing_webhook_events (event_id,event_type,status,created_at) VALUES ($1,'x','PROCESSED',now()-interval '120 days'),($2,'x','PROCESSED',now()-interval '1 day')", [`ret-${run}-b-old`, `ret-${run}-b-new`]);
-    await sql!.unsafe("INSERT INTO store_webhook_events (event_id,event_type,outcome,created_at) VALUES ($1,'x','APPLIED',now()-interval '120 days'),($2,'x','APPLIED',now()-interval '1 day')", [`ret-${run}-s-old`, `ret-${run}-s-new`]);
+    // Store notification records double as an audit trail: 120 days old is kept, only >400 days goes.
+    await sql!.unsafe(
+      "INSERT INTO store_webhook_events (event_id,event_type,outcome,created_at) VALUES ($1,'x','APPLIED',now()-interval '500 days'),($2,'x','APPLIED',now()-interval '120 days'),($3,'x','APPLIED',now()-interval '1 day')",
+      [`ret-${run}-s-ancient`, `ret-${run}-s-old`, `ret-${run}-s-new`]
+    );
     await runRetention({ limit: BIG });
     expect(await exists("billing_webhook_events", "event_id", `ret-${run}-b-old`)).toBe(false);
     expect(await exists("billing_webhook_events", "event_id", `ret-${run}-b-new`)).toBe(true);
-    expect(await exists("store_webhook_events", "event_id", `ret-${run}-s-old`)).toBe(false);
+    expect(await exists("store_webhook_events", "event_id", `ret-${run}-s-ancient`)).toBe(false);
+    expect(await exists("store_webhook_events", "event_id", `ret-${run}-s-old`)).toBe(true);
     expect(await exists("store_webhook_events", "event_id", `ret-${run}-s-new`)).toBe(true);
+  });
+
+  it("keeps a review-keyed notification until its strategy is closed, so a resumed strategy cannot alert twice", async () => {
+    const make = async (instanceStatus: string, withReminder: boolean) => {
+      const [inst] = await sql!.unsafe(
+        "INSERT INTO strategy_instances (user_id,strategy_definition_id,strategy_version_id,name,onboarding_mode,health_status,settings,execution_constraints,contribution_plan,status) " +
+        "VALUES ($1,$2,$3,'ret-rk','FRESH','HEALTHY','{}'::jsonb,'{}'::jsonb,'{}'::jsonb,$4) RETURNING id", [userId, definition.id, definition.version_id, instanceStatus]
+      );
+      const [a] = await sql!.unsafe(
+        "INSERT INTO actions (strategy_instance_id,strategy_version_id,fingerprint,action_type,status,title,instruction) VALUES ($1,$2,$3,'NO_ACTION','CANCELLED','t','i') RETURNING id",
+        [inst.id, definition.version_id, "ret-rk-" + run + "-" + String(inst.id)]
+      );
+      const key = `ret-${run}-rk-${String(inst.id)}`;
+      const [n] = await sql!.unsafe(
+        "INSERT INTO notifications (user_id,action_id,strategy_instance_id,type,title,body,read_at,deliveries_created_at,created_at,review_key) " +
+        "VALUES ($1,$2,$3,'ACTION','t','b',now(),now(),now()-interval '400 days',$4) RETURNING id",
+        [userId, withReminder ? null : a.id, withReminder ? inst.id : null, key]
+      );
+      return String(n.id);
+    };
+    const pausedAlert = await make("PAUSED", false);
+    const activeReminder = await make("ACTIVE", true);
+    const closedAlert = await make("CLOSED", false);
+    const closedReminder = await make("CLOSED", true);
+    await runRetention({ limit: BIG });
+    expect(await exists("notifications", "id", pausedAlert)).toBe(true);
+    expect(await exists("notifications", "id", activeReminder)).toBe(true);
+    expect(await exists("notifications", "id", closedAlert)).toBe(false);
+    expect(await exists("notifications", "id", closedReminder)).toBe(false);
+  });
+
+  it("rotates the starting step so skipped steps lead the next run", () => {
+    const first = retentionStepOrder(0);
+    const rotated = retentionStepOrder(3);
+    expect(rotated).toHaveLength(first.length);
+    expect(new Set(rotated)).toEqual(new Set(first));
+    expect(rotated[0]).toBe(first[3]);
+    expect(retentionStepOrder(first.length)).toEqual(first);
+    expect(retentionStepOrder(-1)[0]).toBe(first[first.length - 1]);
+  });
+
+  it("names the steps a deadline skipped", async () => {
+    const result = await runRetention({ deadline: Date.now() - 1, startOffset: 2 });
+    expect(result.deferredSteps).toEqual(retentionStepOrder(2));
+    expect(result.deferred).toBe(result.deferredSteps.length);
   });
 
   it("marks abandoned runs failed (never the current one) and prunes old runs but keeps the last good one", async () => {
