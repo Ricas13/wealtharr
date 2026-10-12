@@ -12,6 +12,7 @@ import { runOpsCheck } from "@/lib/ops-monitor";
 import { reconcileStripeSubscriptions } from "@/lib/billing-reconciliation";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { safeErrorCode } from "@/lib/safe-error-code";
+import { createReviewReminders } from "@/lib/review-reminder";
 
 function positiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
@@ -109,6 +110,18 @@ export async function GET(request: Request) {
     );
     const calculationDeferred = calculationPool.deferred + Math.max(0, Number(totalActive[0]?.n ?? 0) - instances.length);
 
+    // Optional advance heads-up (on with a 2-day default; REVIEW_REMINDER_LEAD_DAYS=0 turns it off). It runs after the
+    // calculations so it sees fresh review dates, and before delivery creation so the same run sends it.
+    // Best effort: a failure here must never block the on-the-day alerts.
+    let reviewReminders: Record<string, unknown> = { enabled: false, considered: 0, created: 0 };
+    let reviewReminderFailed = false;
+    if (Date.now() < phaseEnds(0.8)) {
+      reviewReminders = await createReviewReminders(new Date(), phaseEnds(0.8)).catch((error) => {
+        reviewReminderFailed = true;
+        return { enabled: true, failed: true, error: safeErrorCode(error) };
+      });
+    }
+
     // Notifications: drain in batches until nothing is left or the budget for this phase is spent.
     let deliveriesCreated = 0;
     while (Date.now() < phaseEnds(0.85)) {
@@ -125,11 +138,11 @@ export async function GET(request: Request) {
     const marketDegraded = marketDataRequired && (!marketData.configured || marketData.failed > 0 || marketData.skipped > 0);
     const deferred = { entitlements: entitlementPool.deferred, calculations: calculationDeferred, deliveriesBacklog: !delivery.exhausted, deliveriesHeldBack: delivery.heldBack ?? 0 };
     const backlog = deferred.entitlements > 0 || deferred.calculations > 0 || deferred.deliveriesBacklog || deferred.deliveriesHeldBack > 0 || billing.deferred>0 || billing.hasMore;
-    const ok = calculationFailures === 0 && entitlementFailures === 0 && billing.failed===0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog;
+    const ok = calculationFailures === 0 && entitlementFailures === 0 && !reviewReminderFailed && billing.failed===0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog;
     const summary = {
       ok, status: ok ? "healthy" : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData, billing,
       entitlementPaused, entitlementFailures, calculated, calculationFailures, deferred,
-      deliveriesCreated, delivered: delivery.sent, aggregates
+      deliveriesCreated, delivered: delivery.sent, reviewReminders, aggregates
     };
     await finishLease(lease, ok ? "SUCCESS" : "PARTIAL", summary);
     // Tell administrators about anything that changed. Best effort: it must never fail the run.

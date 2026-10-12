@@ -23,7 +23,7 @@ export type SettingDefinition = {
 };
 
 export const SETTING_GROUPS = [
-  "General", "Billing (Stripe)", "Email", "Messaging (Telegram)", "Market data", "Sign-in providers", "Mobile apps", "Mobile app purchases", "Monitoring", "Security", "Launch sign-offs", "Background worker"
+  "General", "Billing (Stripe)", "Email", "Messaging (Telegram)", "Notifications", "Market data", "Sign-in providers", "Mobile apps", "Mobile app purchases", "Monitoring", "Security", "Launch sign-offs", "Background worker"
 ] as const;
 
 const bool = (key: string, label: string, group: string, help: string): SettingDefinition => ({ key, label, group, kind: "boolean", help });
@@ -47,6 +47,8 @@ export const SETTINGS: readonly SettingDefinition[] = [
   { key: "TELEGRAM_BOT_TOKEN", label: "Telegram bot token", group: "Messaging (Telegram)", kind: "secret", pattern: /^\d{5,15}:[A-Za-z0-9_-]{20,150}$/, patternMessage: "Paste a BotFather token, e.g. 123456789:long-token.", help: "Token issued by BotFather. Saved encrypted and never sent to the browser." },
   { key: "TELEGRAM_BOT_USERNAME", label: "Telegram bot username", group: "Messaging (Telegram)", kind: "text", pattern: /^[A-Za-z][A-Za-z0-9_]{4,31}$/, patternMessage: "Use the bot username without @ (5–32 letters, digits or underscores).", help: "Bot username without @, used to connect customers safely." },
   { key: "TELEGRAM_WEBHOOK_SECRET", label: "Telegram webhook verification secret", group: "Messaging (Telegram)", kind: "secret", pattern: /^[A-Za-z0-9_-]{32,128}$/, patternMessage: "Use 32–128 letters, digits, underscores or hyphens.", help: "Generate 32+ characters of letters, digits, underscore or dash. Used to authenticate webhook requests." },
+
+  { key: "REVIEW_REMINDER_LEAD_DAYS", label: "Review reminder lead time (days)", group: "Notifications", kind: "number", min: 0, max: 14, integer: true, help: "Send each customer an advance heads-up this many days before a strategy review is due, on the channels their plan allows. Leave blank for the default of 2 days; 0 turns it off. The reminder gives the date only; amounts are calculated on the day." },
 
   { key: "MARKET_DATA_MODE", label: "Market data mode", group: "Market data", kind: "select", options: ["PROVIDER", "MANUAL"], help: "PROVIDER fetches prices from your data service. MANUAL means prices are entered by people." },
   { key: "MARKET_DATA_PROVIDER", label: "Market data provider", group: "Market data", kind: "select", options: ["http", "mock"], help: "http uses the service below. mock only works outside production." },
