@@ -4,10 +4,10 @@ const page=readFileSync(new URL("../src/app/page.tsx",import.meta.url),"utf8");
 const carousel=readFileSync(new URL("../src/components/StrategyMarquee.tsx",import.meta.url),"utf8");
 
 describe("public homepage strict strategy availability",()=>{
-  it("never selects disabled, draft-only or unattested releases",()=>{
+  it("never selects disabled, draft-only or unsupported releases",()=>{
     expect(page).toContain("WHERE d.enabled=true AND d.proprietary=false");
     expect(page).toContain("v.lifecycle_status='PUBLISHED'");
-    expect(page).toContain("a.attested_by_email IS NOT NULL");
+    expect(page).not.toContain("strategy_version_attestations");
     expect(page).toContain("assertCuratedRules(");
     expect(page).toContain("assessStrategyMarket(");
     expect(page).toContain("candidates,{country:\"GB\",wrapper:\"ISA\",currency:\"GBP\"}");
