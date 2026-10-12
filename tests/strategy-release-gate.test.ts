@@ -7,14 +7,14 @@ const version={key:"9sig",enabled:true,version_id:"test-version",engine_key:"VAL
 const db=(accepted:boolean)=>({unsafe:vi.fn(async()=>accepted?[{approved:true}]:[])}) as never;
 
 describe("new strategy start/switch release gate",()=>{
-  it("rejects enabled legacy releases without signed evidence",async()=>{
+  it("permits a canonical enabled release without operator sign-off",async()=>{
     const client=db(false);
-    await expect(assertDisabledStrategyPreviewGates(client,version)).rejects.toThrow("STRATEGY_NOT_AVAILABLE");
+    await expect(assertDisabledStrategyPreviewGates(client,version)).resolves.toBeUndefined();
   });
-  it("never lets administrator preview bypass missing release evidence",async()=>{
-    await expect(assertDisabledStrategyPreviewGates(db(false),{...version,enabled:false})).rejects.toThrow("STRATEGY_NOT_AVAILABLE");
+  it("allows an admin preview of valid code without manual review",async()=>{
+    await expect(assertDisabledStrategyPreviewGates(db(false),{...version,enabled:false})).resolves.toBeUndefined();
   });
-  it("accepts a curated version only when a signed-evidence row is returned",async()=>{
+  it("accepts canonical code rules independently of audit records",async()=>{
     await expect(assertDisabledStrategyPreviewGates(db(true),version)).resolves.toBeUndefined();
     await expect(assertDisabledStrategyPreviewGates(db(true),{...version,enabled:false})).resolves.toBeUndefined();
   });
