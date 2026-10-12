@@ -9,7 +9,7 @@ Sourced from code read on `main` at f840e26 (2026-10-12). Items marked **UNVERIF
 Per version, in order (`src/app/api/admin/strategies/route.ts`):
 
 1. **ATTEST**: records a spec-card path (must match `docs/strategy-specs/<slug>.md`; existence of the file is not checked), a free-text golden-tests location (3 to 300 characters) and the attesting admin. It does not verify anything; a person must have done the review. Any later draft edit deletes the attestation (and migration 0029 does the same for direct SQL edits).
-2. **PUBLISH** (draft only): needs the attestation, a customer-publishable engine (`VALUE_TARGET`, `FIXED_ALLOCATION`), valid engine config and canonical rules (`assertCuratedRules`: stored config must equal the code config exactly; 9Sig is `CANONICAL_9SIG_CONFIG`). Published versions are immutable.
+2. **PUBLISH** (draft only): needs the attestation, a customer-publishable engine (`VALUE_TARGET`, `FIXED_ALLOCATION`), valid engine config and canonical rules (`assertCuratedRules`: stored config must equal the code config exactly; 9Sig is `CANONICAL_9SIG_CONFIG`). Refused if the config has `userWeights: true`, or if another published version of the same strategy already has the same effective date. Published versions are immutable.
 3. **ENABLE** (`TOGGLE_DEFINITION`): needs an active published version, an attestation, canonical rules again, and `assessStrategyMarket(...)` to find at least one complete market. The check is hard-coded to country `GB`, wrapper `ISA`, currency `GBP`, and counts only mappings that are `EXACT`, enabled, in date, with matching exposure, leverage, direction, trading-line currency, and where the instrument row agrees (`VERIFIED_MARKET_MAPPINGS_SQL`). Two legs resolving to the same trading line or the same exchange/ticker/currency are rejected.
 
 Checks that exist but are **not** proof of tradability: the code states that EXACT is an operator assertion and says nothing about broker availability, licensing or legal status.
@@ -24,8 +24,8 @@ Checks that exist but are **not** proof of tradability: the code states that EXA
 | Leverage | 3x daily-reset | 3x on both legs | none | none |
 | Review | Quarterly, 16:00 cutoff, previous-business-day convention, empty holiday list; no `reviewTimezone` in the canonical config | Quarterly, calendar quarter end, 16:00 America/New_York, empty holiday list | Annual, threshold 0.00 | Annual, threshold 0.00 |
 | Spec card | **None** (`docs/strategy-specs/9sig.md` does not exist) | `docs/strategy-specs/hfea.md`: "externally corroborated, not independently certified"; reviewer PENDING | `docs/strategy-specs/60-40.md`: "model convention, not one uniquely authored strategy"; reviewer PENDING | `docs/strategy-specs/all-weather.md`: DRAFT, NOT SIGNED OFF; weights and schedule marked VERIFY; written without the primary source |
-| Golden tests | `tests/value-target.test.ts` (engine behaviour, expected values self-computed, not from the author's source); no author-source golden cases | `tests/strategy-reference-golden.test.ts`: £10k initial 5,500/4,500, drift 6,000/4,000 to sell 500 / buy 500, £1,000 contribution 550/450; plus HFEA fill-to-HOLD integration | Same file: £10k initial 6,000/4,000, 7,000/3,000 drift. No on-target, contribution, threshold or rounding cases | Same file: **added in this change** (see section 5). Previously none |
-| Seed state | Definition `enabled=true`; version 1.0 inserted directly as `PUBLISHED`; **no attestation** | Definition `enabled=false`; version 1.0 `DRAFT` | `enabled=false`; `DRAFT` | `enabled=false`; `DRAFT` |
+| Golden tests | `tests/value-target.test.ts` (engine behaviour, expected values self-computed, not from the author's source); no author-source golden cases | `tests/strategy-reference-golden.test.ts`: £10k initial 5,500/4,500, drift 6,000/4,000 to sell 500 / buy 500, £1,000 contribution 550/450; plus HFEA fill-to-HOLD integration | Same file: £10k initial 6,000/4,000, 7,000/3,000 drift. No on-target, contribution, threshold or rounding cases | Same file: **added in this change** (see section 4). Previously none |
+| On a fresh seed: seed state | Definition `enabled=true`; version 1.0 inserted directly as `PUBLISHED`; **no attestation** | Definition `enabled=false`; version 1.0 `DRAFT` | `enabled=false`; `DRAFT` | `enabled=false`; `DRAFT` |
 | Disclosure | Seed default text ("Rule calculator for a user-selected strategy...") although the target is 3x leveraged; the catalogue's `LEVERAGE_DISCLOSURE` is attached only to HFEA | `LEVERAGE_DISCLOSURE` | seed default | seed default |
 | Instrument mappings | None seeded | None seeded | None seeded | None seeded |
 
@@ -37,7 +37,7 @@ Checks that exist but are **not** proof of tradability: the code states that EXA
 
 **60/40**: (1) human review of `60-40.md` (the card itself says this is a convention, not a uniquely authored strategy); (2) golden cases cover only two scenarios; (3) EXACT mappings for `BROAD_EQUITY` and `AGGREGATE_BONDS` ("country-specific bond exposure definitions" are pending in the card); (4) data/licensing.
 
-**All Weather**: (1) the card is still DRAFT with every weight marked VERIFY and says Bridgewater's All Weather is a different product (the customer-facing text must say so; the catalogue rule text already says "NOT an official, single canonical Ray Dalio product"); (2) human review against the cited source (Portfolio Charts All Seasons, Tony Robbins); (3) EXACT mappings for five exposures, including `GOLD`, `BROAD_COMMODITIES` and `INTERMEDIATE_TREASURY`; (4) the card asks for a "withdrawal" golden case; none was added because the planner has no tested negative-cash path (UNVERIFIED how a withdrawal reaches it), so the card requirement remains partly open; (5) data/licensing.
+**All Weather**: (1) the card is still DRAFT with every weight marked VERIFY and says Bridgewater's All Weather is a different product (the customer-facing text must say so; the catalogue rule text already says "NOT an official, single canonical Ray Dalio product"); (2) human review against the cited source (Portfolio Charts All Seasons, Tony Robbins); (3) EXACT mappings for five exposures, including `GOLD`, `BROAD_COMMODITIES` and `INTERMEDIATE_TREASURY`; (4) the card asks for a "withdrawal" golden case; one planner-level case with negative cash was added (£1,000 out of an on-target portfolio), but whether real callers ever pass negative cash to the planner is UNVERIFIED, so the card requirement is only partly met; (5) data/licensing.
 
 ## 3. Verified EXACT mappings required (owner)
 
@@ -60,7 +60,7 @@ Region and wrapper combinations the code supports:
 - The enable gate and Admin > Strategies readiness check only `GB` / `ISA` / `GBP`. This is the minimum for ENABLE.
 - The customer "new strategy" page resolves `ISA` for a GB user and `TAXABLE` for any other country (`src/app/app/strategies/new/page.tsx`), with the user's base currency.
 - The admin and customer UIs also offer `SIPP` and `GIA`/`TAXABLE` as wrapper values (`src/components/AdminEditors.tsx`, `StrategyActions.tsx`, `CreateStrategyForm.tsx`). Wrapper strings are free text compared exactly, and `GIA` versus `TAXABLE` is inconsistent between components (UNVERIFIED which a given customer flow produces). Each (country, wrapper) pair needs its own mapping rows; a mapping for ISA does not cover SIPP.
-- Optional `broker` and `preferredCurrency` can narrow a mapping; a mapping with a broker only resolves for that broker.
+- Optional `broker` and `preferredCurrency` can narrow a mapping; a mapping with a broker only resolves for that broker. The ENABLE gate and the Admin readiness check pass no broker, and `resolveMapping` rejects broker-specific mappings when the request has none (`src/domain/instruments.ts`), so the mappings that satisfy the ENABLE gate must be broker-less.
 
 Import template (the import script rejects blank ISIN, name, ticker, exchange, timezone, currency and wrapper, so a pre-filled CSV with blanks cannot be validated; fill the blank columns, then save as CSV with exactly this header):
 
@@ -93,7 +93,7 @@ Legend: **Code** = done in this repository; **Owner** = only a human can do it.
 - [ ] Owner: write and review a spec card `docs/strategy-specs/9sig.md` from the author's primary source (the catalogue points at https://jasonkelly.com/2017/01/how-my-signal-system-works/ for 3Sig/6Sig; the 9Sig source must be identified by the owner). Code PR needed for the card file; the card must not guess parameters.
 - [ ] Owner: independently computed golden cases from the source's own worked examples (current tests use self-computed values).
 - [ ] Owner: ATTEST path `docs/strategy-specs/9sig.md`; golden tests location `tests/value-target.test.ts` (plus whatever file holds the independent cases).
-- [ ] Owner: EXACT mapping for `NASDAQ_100_3X_LONG`, GB / ISA / GBP.
+- [ ] Owner: EXACT, broker-less mapping for `NASDAQ_100_3X_LONG`, GB / ISA / GBP (needed so customers can act on 9Sig actions; the enable gate never ran for it).
 - [ ] Owner: review the version disclosure (currently the generic default for a 3x product).
 - [ ] Owner: resolve that 9Sig is already enabled and published without an attestation (decide whether to disable it in Admin until the card is signed; this is a business decision, not changed here).
 
@@ -123,11 +123,11 @@ Legend: **Code** = done in this repository; **Owner** = only a human can do it.
 
 1. **Admin > Settings > Market data**: configure the licensed provider (base URL and token) per `docs/market-data-provider-contract.md`. Adjusted-history storage is only needed by the momentum engines, which are not part of these four strategies (UNVERIFIED whether any of the four needs stored history for reviews); turn it on only when the contract allows it (`MARKET_DATA_HISTORY_ADJUSTED_LICENSED`).
 2. **Admin > Instruments**: create the instrument (ISIN, exposure, leverage, direction, fund currency), then its trading line (ticker, exchange, currency, exchange timezone, provider symbol, effective-from), then an **EXACT** regional mapping (exposure, leverage, country GB, wrapper ISA, preferred currency GBP, trading line UUID, effective-from). On current `main` this form writes `EXACT` directly; there is no promote step.
-   - Candidate path: `scripts/import-instruments.ts <file.csv>` validates and `--apply` stores `CANDIDATE` rows. A verify-and-promote screen for candidates is **not in `main`** (pending PR; the branch `origin/claude/phase2-instrument-import` exists). Until it merges, candidates cannot be promoted from the UI.
+   - Candidate path: `scripts/import-instruments.ts <file.csv>` validates and `--apply` stores `CANDIDATE` rows. A verify-and-promote screen for candidates is **not in `main`** (pending PR #38, GitHub repo Ricas13/wealtharr, branch `origin/wealtharr-promote-candidates`; the older `origin/claude/phase2-instrument-import` is the importer already on `main`). Until it merges, candidates cannot be promoted from the UI. When that PR merges, the manual mapping form creates CANDIDATE only and the admin path becomes create candidate -> Verify/Promote.
 3. **Admin > Strategies**: confirm each strategy's readiness row shows a complete market (all legs mapped) and "rules match".
 4. **ATTEST** the draft version (spec-card path and golden tests path from section 4). Only after a human has signed the card.
 5. **PUBLISH** the draft (needs step 4).
-6. **ENABLE** the strategy (needs steps 2 to 5 for GB / ISA / GBP). 9Sig is already enabled and published in the seed; for it, only ATTEST (and mapping) remain, and ATTEST records the sign-off that Stripe checkout and Admin > Launch check.
+6. **ENABLE** the strategy (needs steps 2 to 5 for GB / ISA / GBP). 9Sig is already enabled and published in the seed, so the toggle gate never ran for it; for it, ATTEST remains (it records the sign-off that Stripe checkout and Admin > Launch check), and the EXACT mapping is needed so customers can act on its actions, not to pass a gate.
 7. **Admin > Launch**: confirm no customer strategy is listed without sign-off.
 
 ## 6. Data provider and licensing (owner)

@@ -63,10 +63,10 @@ describe("independently worked portfolio allocation golden cases",()=>{
   expect(allocation("core-four").map(x=>x.exposure)).not.toContain("US_INTERMEDIATE_TREASURY");
  });
  // All Weather (unlevered 30/40/15/7.5/7.5). Every expected value below was worked out by hand from
- // the published weights, NOT by running the engine. Leg order in the config is:
+ // the configured (code-locked) weights, NOT by running the engine. Leg order in the config is:
  // BROAD_EQUITY 0.30, LONG_TREASURY 0.40, INTERMEDIATE_TREASURY 0.15, GOLD 0.075, BROAD_COMMODITIES 0.075.
  // Planner convention: target = weight x (invested + cash); sells first (largest first), then buys (largest first).
- it("All Weather published weights are 30/40/15/7.5/7.5, annual review, zero threshold",()=>{
+ it("All Weather configured weights are 30/40/15/7.5/7.5, annual review, zero threshold",()=>{
   expect(allocation("all-weather")).toEqual([
    {exposure:"BROAD_EQUITY",weight:"0.30"},{exposure:"LONG_TREASURY",weight:"0.40"},
    {exposure:"INTERMEDIATE_TREASURY",weight:"0.15"},{exposure:"GOLD",weight:"0.075"},
@@ -116,14 +116,24 @@ describe("independently worked portfolio allocation golden cases",()=>{
    ["BUY","BROAD_COMMODITIES","125.00"],["BUY","GOLD","25.00"]
   ]);
  });
- it("All Weather with the published zero threshold trades even a one-penny drift",()=>{
+ it("All Weather with the code-locked zero threshold trades even a one-penny drift",()=>{
   // holdings 3000.01/3999.99/1500/750/750 = 10000.00; deltas equity -0.01, long Tsy +0.01, others 0.
   expect(plan("all-weather",["3000.01","3999.99","1500","750","750"])).toEqual([
    ["SELL","BROAD_EQUITY","0.01"],["BUY","LONG_TREASURY","0.01"]
   ]);
  });
+ it("All Weather £1,000 withdrawal modelled as negative cash sells every leg proportionally",()=>{
+  // Planner-level case only; whether real callers pass negative cash is unverified.
+  // holdings on target 3000/4000/1500/750/750 = 10000, cash -1000 -> total 9000; targets 2700/3600/1350/675/675.
+  // deltas -300/-400/-150/-75/-75 (sum -1000 = the withdrawal). Sells most negative first: LT 400, EQ 300, IT 150.
+  // GOLD and COMM both 75 (tied): asserted order-insensitively. No buys, residue 1000+(-1000)-0 = 0.
+  const legs=plan("all-weather",["3000","4000","1500","750","750"],"-1000");
+  expect(legs.slice(0,3)).toEqual([["SELL","LONG_TREASURY","400.00"],["SELL","BROAD_EQUITY","300.00"],["SELL","INTERMEDIATE_TREASURY","150.00"]]);
+  expect([...legs.slice(3)].sort((a,b)=>String(a[1]).localeCompare(String(b[1])))).toEqual([["SELL","BROAD_COMMODITIES","75.00"],["SELL","GOLD","75.00"]]);
+  expect(legs).toHaveLength(5);
+ });
  it("All Weather tolerance band: a drift exactly at the threshold holds, one pound over trades",()=>{
-  // Mechanism check with an illustrative 5% band (the published All Weather threshold is 0).
+  // Mechanism check with an illustrative 5% band (the code-locked All Weather threshold is 0).
   // total 10000, band = 500. holdings 3500/3800/1500/600/600: worst delta equity -500 -> 500/10000 = 0.05 <= 0.05 -> no trade.
   const rows=(values:string[])=>allocation("all-weather").map((a,i)=>({
    exposure:a.exposure,weight:new Decimal(a.weight),current:new Decimal(values[i])
