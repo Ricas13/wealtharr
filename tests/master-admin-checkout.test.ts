@@ -19,7 +19,8 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
  });
  it("refuses a LIVE Stripe key while any customer-visible strategy lacks a recorded sign-off",()=>{
   const live=source.indexOf("sk_live_");
-  const check=source.indexOf("unattestedCustomerStrategies()");
+  const check=source.indexOf("customerStrategyEvidence()");
+  expect(source).toContain("hasApprovedCustomerStrategyCatalogue(evidence)");
   expect(source).toContain('/^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY');
   expect(check).toBeGreaterThan(-1);
   // The evidence check must precede any Stripe call.
