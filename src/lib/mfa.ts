@@ -63,7 +63,7 @@ export async function confirmEnrollment(userId: string, code: string, now = new 
     if (step == null) throw new Error("MFA_CODE_INVALID");
     const recoveryCodes = generateRecoveryCodes();
     await tx.unsafe(
-      "UPDATE users SET mfa_enabled_at=now(),mfa_last_step=$2,mfa_recovery_hashes=$3::text[],updated_at=now() WHERE id=$1",
+      "UPDATE users SET mfa_enabled_at=now(),mfa_last_step=$2,mfa_recovery_hashes=$3::text[],session_version=session_version+1,updated_at=now() WHERE id=$1",
       [userId, step, recoveryCodes.map(hashRecoveryCode)]
     );
     await tx.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1::uuid,'auth.mfa-enabled','user',$1::text,'{}'::jsonb)", [userId]);
@@ -73,7 +73,7 @@ export async function confirmEnrollment(userId: string, code: string, now = new 
 
 export async function disableMfa(userId: string) {
   await sql.unsafe(
-    "UPDATE users SET mfa_secret_encrypted=NULL,mfa_enabled_at=NULL,mfa_last_step=-1,mfa_recovery_hashes='{}',updated_at=now() WHERE id=$1",
+    "UPDATE users SET mfa_secret_encrypted=NULL,mfa_enabled_at=NULL,mfa_last_step=-1,mfa_recovery_hashes='{}',session_version=session_version+1,updated_at=now() WHERE id=$1",
     [userId]
   );
   await sql.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1::uuid,'auth.mfa-disabled','user',$1::text,'{}'::jsonb)", [userId]);

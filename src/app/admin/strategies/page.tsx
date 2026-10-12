@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {requireAdminPage} from "@/lib/session";
 import {sql} from "@/lib/db";
 import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
 import {assertCuratedRules} from "@/domain/strategy/curated-release";
@@ -11,6 +12,7 @@ import {ModelPerformanceEditor,StrategyVersionManager} from "@/components/AdminE
 export const dynamic="force-dynamic";
 
 export default async function StrategiesAdmin(){
+ await requireAdminPage();
  const [definitions,versions,mappingRows]=await Promise.all([
   sql.unsafe("SELECT key,name,family,engine,enabled FROM strategy_definitions ORDER BY name"),
   sql.unsafe(

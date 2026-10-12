@@ -1,8 +1,8 @@
 import { afterAll,beforeAll,describe,expect,it,vi } from "vitest";
 import postgres from "postgres";
 
-const current=vi.hoisted(()=>({id:"",role:"ADMIN"}));
-vi.mock("@/auth",()=>({auth:async()=>current.id?{user:{id:current.id,role:current.role,sessionVersion:0}}:null}));
+const current=vi.hoisted(()=>({id:"",role:"ADMIN",mfa:false}));
+vi.mock("@/auth",()=>({auth:async()=>current.id?{user:{id:current.id,role:current.role,sessionVersion:0,mfa:current.mfa,authTime:Date.now()}}:null}));
 
 const url=process.env.DATABASE_URL;
 const sql=url?postgres(url,{max:2,prepare:false}):null;
@@ -39,9 +39,17 @@ describe.skipIf(!url)("admin two-step requirement",()=>{
     expect((await response!.json()).error).toMatch(/two-step/i);
   });
 
-  it("admits the admin after enrolling",async()=>{
+  it("admits the admin after enrolling, but only on a session that passed the second factor",async()=>{
     process.env.ADMIN_MFA_REQUIRED="true";
     await sql!.unsafe("UPDATE users SET mfa_enabled_at=now() WHERE id=$1",[adminId]);
+    // A session opened before enrolment (or by any route that skipped the code) cannot act as an admin.
+    current.mfa=false;
+    const { requireAdmin:requireAdminNoMfa }=await import("@/lib/session");
+    await expect(requireAdminNoMfa()).rejects.toThrow("UNAUTHENTICATED");
+    delete process.env.ADMIN_MFA_REQUIRED;
+    await expect(requireAdminNoMfa()).rejects.toThrow("UNAUTHENTICATED");
+    process.env.ADMIN_MFA_REQUIRED="true";
+    current.mfa=true;
     const { requireAdmin }=await import("@/lib/session");
     await expect(requireAdmin()).resolves.toMatchObject({id:adminId});
   });

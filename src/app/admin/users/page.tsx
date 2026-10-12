@@ -1,8 +1,10 @@
 import {sql} from "@/lib/db";
+import {requireAdminPage} from "@/lib/session";
 import {UsersRound,Layers3,ShieldAlert} from "lucide-react";
 import {AdminCustomersTable} from "@/components/AdminCustomersTable";
 export const dynamic="force-dynamic";
 export default async function UsersAdmin(){
+ await requireAdminPage();
  const [rows,summary]=await Promise.all([
   sql.unsafe("SELECT u.email,u.country,u.role,p.display_name AS plan,s.status,(SELECT count(*) FROM strategy_instances i WHERE i.user_id=u.id AND i.status='ACTIVE')::int AS active_strategies,(SELECT count(*) FROM strategy_instances i WHERE i.user_id=u.id AND i.health_status<>'HEALTHY' AND i.status='ACTIVE')::int AS unhealthy FROM users u LEFT JOIN subscriptions s ON s.user_id=u.id LEFT JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL ORDER BY u.created_at DESC LIMIT 250"),
   sql.unsafe("SELECT (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS users,(SELECT count(*)::int FROM strategy_instances WHERE status='ACTIVE') AS strategies,(SELECT count(*)::int FROM strategy_instances WHERE status='ACTIVE' AND health_status<>'HEALTHY') AS attention")

@@ -1,10 +1,11 @@
 import { afterAll,beforeAll,describe,expect,it,vi } from "vitest";
 import postgres from "postgres";
 import Stripe from "stripe";
+import bcrypt from "bcryptjs";
 
 // Real route, real worker function, real database. Stripe's customer API is faked so its failure
 // can be controlled; only the session lookup is replaced to choose the caller.
-type SessionUser={id:string;email:string;country:string;baseCurrency:string;timezone:string;role:string;anonymousAggregateOptIn:boolean};
+type SessionUser={id:string;email:string;country:string;baseCurrency:string;timezone:string;role:string;anonymousAggregateOptIn:boolean;authTime?:number};
 const state=vi.hoisted(()=>({user:null as SessionUser|null,deleteCustomer:null as null|((id:string)=>Promise<unknown>),deleted:[] as string[]}));
 vi.mock("@/lib/session",()=>({
   requireUser:async()=>{if(!state.user)throw new Error("UNAUTHENTICATED");return state.user;},
@@ -29,25 +30,26 @@ const url=process.env.DATABASE_URL;
 const sql=url?postgres(url,{max:2,prepare:false}):null;
 const ORIGIN="http://127.0.0.1:3000";
 void Stripe;
+const PASSWORD="correct horse battery staple";
 
 describe.skipIf(!url)("account deletion",()=>{
   const run=Math.random().toString(36).slice(2,10);
   const created:string[]=[];
 
-  async function makeUser(label:string,withStripe:boolean){
-    const users=await sql!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,'x') RETURNING id",[`del-${label}-${run}@example.test`]);
+  async function makeUser(label:string,withStripe:boolean,hasPassword=true){
+    const users=await sql!.unsafe("INSERT INTO users (email,password_hash) VALUES ($1,$2) RETURNING id",[`del-${label}-${run}@example.test`,hasPassword?bcrypt.hashSync(PASSWORD,4):null]);
     const id=String(users[0].id);
     created.push(id);
     const free=await sql!.unsafe("SELECT id FROM plans WHERE slug='free'");
     await sql!.unsafe("INSERT INTO subscriptions (user_id,plan_id,status,cadence,stripe_customer_id) VALUES ($1,$2,'FREE','FREE',$3)",[id,free[0].id,withStripe?`cus_del_${label}_${run}`:null]);
     const account=await sql!.unsafe("INSERT INTO accounts (user_id,name,wrapper,country,currency) VALUES ($1,'A','ISA','GB','GBP') RETURNING id",[id]);
-    state.user={id,email:`del-${label}-${run}@example.test`,country:"GB",baseCurrency:"GBP",timezone:"Europe/London",role:"USER",anonymousAggregateOptIn:true};
+    state.user={id,email:`del-${label}-${run}@example.test`,country:"GB",baseCurrency:"GBP",timezone:"Europe/London",role:"USER",anonymousAggregateOptIn:true,authTime:Date.now()};
     return {id,accountId:String(account[0].id),customerId:`cus_del_${label}_${run}`};
   }
-  async function callDelete(){
+  async function callDelete(body:unknown={password:PASSWORD}){
     const {DELETE}=await import("@/app/api/account/delete/route");
-    const response=await DELETE(new Request(ORIGIN+"/api/account/delete",{method:"DELETE",headers:{origin:ORIGIN}}));
-    return {status:response.status,json:await response.json() as {ok?:boolean;completed?:boolean;error?:string}};
+    const response=await DELETE(new Request(ORIGIN+"/api/account/delete",{method:"DELETE",headers:{origin:ORIGIN,"content-type":"application/json"},body:JSON.stringify(body)}));
+    return {status:response.status,json:await response.json() as {ok?:boolean;completed?:boolean;error?:string;code?:string}};
   }
   const userRow=async(id:string)=>(await sql!.unsafe("SELECT id,deleted_at FROM users WHERE id=$1",[id]))[0];
 
@@ -60,6 +62,38 @@ describe.skipIf(!url)("account deletion",()=>{
     await sql.unsafe("DELETE FROM users WHERE id=ANY($1::uuid[])",[created]);
     await sql.unsafe("DELETE FROM audit_events WHERE entity_id=ANY($1)",[created]);
     await sql.end();
+  });
+
+  it("needs the current password: a session alone cannot delete the account",async()=>{
+    const {id}=await makeUser("reauth",false);
+    expect((await callDelete({})).status).toBe(400);
+    expect((await callDelete({password:"not the password"})).status).toBe(400);
+    expect((await callDelete({confirmEmail:state.user!.email})).status).toBe(400);
+    expect(await userRow(id)).toMatchObject({deleted_at:null});
+    expect(await callDelete({password:PASSWORD})).toMatchObject({status:200,json:{completed:true}});
+    expect(await userRow(id)).toBeUndefined();
+  });
+
+  it("lets a provider-only account delete with a recent sign-in and its typed email, and nothing less",async()=>{
+    const {id}=await makeUser("oauth",false,false);
+    const email=state.user!.email;
+    expect((await callDelete({})).status).toBe(400);
+    expect((await callDelete({confirmEmail:"someone-else@example.test"})).status).toBe(400);
+    state.user={...state.user!,authTime:Date.now()-60*60*1000};
+    const stale=await callDelete({confirmEmail:email});
+    expect(stale.status).toBe(403);
+    expect(stale.json.code).toBe("SIGN_IN_AGAIN");
+    expect(await userRow(id)).toMatchObject({deleted_at:null});
+    state.user={...state.user!,authTime:Date.now()};
+    expect(await callDelete({confirmEmail:email.toUpperCase()})).toMatchObject({status:200,json:{completed:true}});
+    expect(await userRow(id)).toBeUndefined();
+  });
+
+  it("also asks for a current code when two-step sign-in is on",async()=>{
+    const {id}=await makeUser("mfa",false);
+    await sql!.unsafe("UPDATE users SET mfa_enabled_at=now(),mfa_secret_encrypted='not-a-real-secret' WHERE id=$1",[id]);
+    expect((await callDelete({password:PASSWORD})).status).toBe(400);
+    expect(await userRow(id)).toMatchObject({deleted_at:null});
   });
 
   it("deletes an account with no billing in one step",async()=>{

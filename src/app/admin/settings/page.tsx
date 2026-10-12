@@ -1,4 +1,5 @@
 import { listSettings } from "@/lib/settings";
+import {requireAdminPage} from "@/lib/session";
 import { SETTING_GROUPS } from "@/domain/settings-registry";
 import { SettingsEditor } from "@/components/SettingsEditor";
 import { EncryptionPanel } from "@/components/EncryptionPanel";
@@ -18,6 +19,7 @@ const BOOTSTRAP: Array<{ key: string; why: string }> = [
 ];
 
 export default async function AdminSettingsPage() {
+ await requireAdminPage();
   const settings = await listSettings();
   const encryption = await keyStatus();
   return <>

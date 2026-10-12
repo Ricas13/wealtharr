@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { assertSameOrigin } from "@/lib/security";
 import { switchStrategy } from "@/lib/strategy-switch-service";
@@ -16,6 +17,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const input=schema.parse(await request.json());
     const result=await switchStrategy(user.id,id,input);
     return Response.json({ok:true,...result});

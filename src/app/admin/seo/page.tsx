@@ -1,7 +1,9 @@
 import Link from "next/link";
+import {requireAdminPage} from "@/lib/session";
 import {publicIndexingEnabled,publicSeoRoutes,siteOrigin} from "@/lib/public-seo";
 export const dynamic="force-dynamic";
-export default function SeoAdminPage(){
+export default async function SeoAdminPage(){
+ await requireAdminPage();
  const origin=siteOrigin(process.env.NEXT_PUBLIC_APP_URL);
  const indexing=publicIndexingEnabled(process.env);
  const brand=process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr";

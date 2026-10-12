@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isUuid } from "@/domain/uuid";
 import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, ArrowRight, BarChart3, CalendarClock, ChevronRight, Sparkles, WalletCards } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
@@ -60,6 +61,7 @@ function strategyRuleRows(engine:string,config:Record<string,unknown>){
 export default async function StrategyPage({params}:{params:Promise<{id:string}>}){
   const user=await requirePageUser();
   const {id}=await params;
+  if(!isUuid(id))notFound();
   const s:any=await getStrategyForUser(user.id,id);
   if(!s)notFound();
   const entitlements=await loadEntitlements(user.id);

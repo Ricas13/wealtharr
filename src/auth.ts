@@ -70,7 +70,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
         // also bounds guesses at the six-digit code.
         if (user.mfa_enabled_at && !(await verifySecondFactor(String(user.id), parsed.data.totp))) return null;
         await recordSignIn(String(user.id), request?.headers?.get("user-agent"));
-        return { id: String(user.id), email: String(user.email), role: String(user.role), sessionVersion: Number(user.session_version ?? 0) };
+        return { id: String(user.id), email: String(user.email), role: String(user.role), sessionVersion: Number(user.session_version ?? 0),
+          // Reaching this line means the second factor was verified whenever the account has one.
+          mfa: Boolean(user.mfa_enabled_at)
+        };
       }
     })
   ],
@@ -104,6 +107,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
       if (user?.id) token.uid = user.id;
       if (user && "role" in user) token.role = String(user.role);
       if (user) token.sv = Number(user.sessionVersion ?? 0);
+      // Set only at sign-in (the user object exists only then) and carried unchanged afterwards:
+      // whether a second factor was verified, and when the person last proved who they are.
+      if (user) { token.mfa = user.mfa === true; token.at = Date.now(); }
       return token;
     },
     session({ session, token }) {
@@ -112,6 +118,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
         session.user.role = String(token.role ?? "USER");
         // Tokens issued before session versions existed carry none and count as version 0.
         session.user.sessionVersion = Number(token.sv ?? 0);
+        session.user.mfa = token.mfa === true;
+        session.user.authTime = Number(token.at ?? 0);
       }
       return session;
     }

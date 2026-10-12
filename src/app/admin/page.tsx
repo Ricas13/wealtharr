@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {requireAdminPage} from "@/lib/session";
 import {ArrowRight,UsersRound,Layers3,Wallet,TriangleAlert,CheckCircle2,ShieldAlert,PlugZap,ArrowUpRight} from "lucide-react";
 import {sql} from "@/lib/db";
 import {FeatureFlagEditor} from "@/components/AdminEditors";
@@ -9,6 +10,7 @@ import {AdminGrowthChart} from "@/components/AdminGrowthChart";
 export const dynamic="force-dynamic";
 
 export default async function AdminPage(){
+ await requireAdminPage();
  const [users,strategies,failed,attention,runs,flags,definitions,attested,registrations,createdStrategies,customers30]=await Promise.all([
   sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL"),
   sql.unsafe("SELECT count(*)::int AS c FROM strategy_instances WHERE status='ACTIVE'"),
