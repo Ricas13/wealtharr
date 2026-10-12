@@ -34,8 +34,7 @@ export type CreateStrategyInput = {
 export async function listAvailableStrategies(options: { includeDisabled?: boolean; userId?: string } = {}) {
   return sql.unsafe(
     "SELECT d.id,d.key,d.name,d.family,d.description,d.engine,d.enabled,d.proprietary,d.supported_regions,d.supported_wrappers,"+
-    "v.id AS version_id,v.version,v.config,v.input_schema,v.release_notes,v.engine_key,"+
-    "true AS release_code_checked "+
+    "v.id AS version_id,v.version,v.config,v.input_schema,v.release_notes,v.engine_key "+
     "FROM strategy_definitions d JOIN LATERAL ("+
     " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
     " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
