@@ -43,7 +43,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const result=input.type==="EXECUTION_CONSTRAINTS"
       ?await previewExecutionConstraintsScenario(user.id,id,input.constraints)
       :input.type==="STRATEGY_SWITCH"
-        ?await previewStrategySwitchScenario(user.id,id,input.targetStrategyKey,input.settings,entitlements.availableStrategyKeys)
+        ?await previewStrategySwitchScenario(user.id,id,input.targetStrategyKey,input.settings,entitlements.availableStrategyKeys,entitlements.includeDisabledStrategies)
         :await previewCashScenario(user.id,id,input);
     return Response.json({ok:true,preview:true,result});
   }catch(error){const denied=authFailure(error);if(denied)return denied;

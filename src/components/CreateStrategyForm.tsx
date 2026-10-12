@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Play, RotateCcw, Sparkles } from "lucide-react";
 
 type InputField={key:string;label:string;type:"text"|"number"|"date"|"select"|"boolean";required?:boolean;help?:string;default?:string|number|boolean;options?:Array<{label:string;value:string}>;min?:string|number;max?:string|number};
-type Strategy={key:string;name:string;family:string;description:string;version:string;inputSchema:InputField[];supportedWrappers:string[];supportedMarkets:string[]};
+type Strategy={key:string;name:string;adminPreview?:boolean;family:string;description:string;version:string;inputSchema:InputField[];supportedWrappers:string[];supportedMarkets:string[]};
 
 function StrategyFields({fields}:{fields:InputField[]}){
   if(!fields.length)return null;
@@ -94,6 +94,7 @@ export function CreateStrategyForm({strategies,baseCurrency,brand,initialStrateg
             <span className="choice-check">{strategy.key===selectedKey?<Check size={14}/>:null}</span>
             <span className="choice-kicker">{strategy.family.replaceAll("_"," ")}</span>
             <strong>{strategy.name}</strong>
+            {strategy.adminPreview&&<small className="admin-preview-label">Admin preview - not available to customers</small>}
             <p>{strategy.description}</p>
             <small>Version {strategy.version}</small>
             <small>{strategy.supportedMarkets.length?"Verified markets: "+strategy.supportedMarkets.join(", "):"Not yet available in any verified market"}</small>

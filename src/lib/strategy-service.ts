@@ -9,6 +9,7 @@ import { serializeExecutionConstraints } from "@/domain/execution";
 import { normalizeContributionPlan } from "@/domain/contribution-plan";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
+import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
 export type CreateStrategyInput = {
   requestKey?: string;
@@ -25,15 +26,20 @@ export type CreateStrategyInput = {
   contributionPlan?: Record<string, unknown>;
 };
 
-export async function listAvailableStrategies() {
+/**
+ * `includeDisabled` must come from the role-aware entitlement snapshot (`includeDisabledStrategies`), never
+ * from request input. Even then only definitions with a PUBLISHED, in-window version are returned.
+ */
+export async function listAvailableStrategies(options: { includeDisabled?: boolean } = {}) {
   return sql.unsafe(
-    "SELECT d.id,d.key,d.name,d.family,d.description,d.engine,d.proprietary,d.supported_regions,d.supported_wrappers,"+
+    "SELECT d.id,d.key,d.name,d.family,d.description,d.engine,d.enabled,d.proprietary,d.supported_regions,d.supported_wrappers,"+
     "v.id AS version_id,v.version,v.config,v.input_schema,v.release_notes,v.engine_key "+
     "FROM strategy_definitions d JOIN LATERAL ("+
     " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
     " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
     " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
-    ") v ON true WHERE d.enabled=true ORDER BY d.name"
+    ") v ON true WHERE (d.enabled=true OR $1::boolean) ORDER BY d.name",
+    [options.includeDisabled===true]
   );
 }
 
@@ -100,16 +106,20 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     assertCanCreateStrategy(snapshot,Number(countRows[0]?.count??0),input.strategyKey);
 
     const definitions = await tx.unsafe(
-      "SELECT d.id,d.key,d.name,d.supported_regions,d.supported_wrappers,d.required_inputs,"+
+      "SELECT d.id,d.key,d.name,d.enabled,d.supported_regions,d.supported_wrappers,d.required_inputs,"+
       "v.id AS version_id,v.engine_key,v.config,v.input_schema FROM strategy_definitions d JOIN LATERAL ("+
       " SELECT * FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED'"+
       " AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)"+
       " ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1"+
-      ") v ON true WHERE d.key=$1 AND d.enabled=true LIMIT 1",
-      [input.strategyKey]
+      // A disabled definition is startable only by an administrator (server-derived snapshot flag) and
+      // only through its PUBLISHED, in-window version above; a DRAFT can never be pinned to an instance.
+      ") v ON true WHERE d.key=$1 AND (d.enabled=true OR $2::boolean) LIMIT 1",
+      [input.strategyKey,snapshot.includeDisabledStrategies===true]
     );
     const definition = definitions[0];
     if (!definition) throw new Error("STRATEGY_NOT_AVAILABLE");
+    // A disabled definition is startable by admins only, and only if its release passes the enable gates.
+    await assertDisabledStrategyPreviewGates(tx,definition);
 
     const regions=Array.isArray(definition.supported_regions)?definition.supported_regions.map(String):[];
     const wrappers=Array.isArray(definition.supported_wrappers)?definition.supported_wrappers.map(String):[];
@@ -143,8 +153,8 @@ export async function createStrategy(userId: string, country: string, rawInput: 
       ? { resumeNeedsReconciliation:true, approximateValue:input.approximateValue ?? null, forceReview:false }
       : { forceReview:true };
     const instances = await tx.unsafe(
-      "INSERT INTO strategy_instances (user_id,account_id,strategy_definition_id,strategy_version_id,name,onboarding_mode,health_status,settings,execution_constraints,contribution_plan) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb) RETURNING id",
-      [userId,accounts[0].id,definition.id,definition.version_id,input.name,input.onboardingMode,input.onboardingMode==="RESUME"?"NEEDS_ATTENTION":"HEALTHY",JSON.stringify(settings),JSON.stringify(executionConstraints),JSON.stringify(contributionPlan)]
+      "INSERT INTO strategy_instances (user_id,account_id,strategy_definition_id,strategy_version_id,name,onboarding_mode,health_status,settings,execution_constraints,contribution_plan,admin_disabled_preview) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11) RETURNING id",
+      [userId,accounts[0].id,definition.id,definition.version_id,input.name,input.onboardingMode,input.onboardingMode==="RESUME"?"NEEDS_ATTENTION":"HEALTHY",JSON.stringify(settings),JSON.stringify(executionConstraints),JSON.stringify(contributionPlan),definition.enabled!==true]
     );
     const id=String(instances[0].id);
     await tx.unsafe(
@@ -170,7 +180,7 @@ export async function createStrategy(userId: string, country: string, rawInput: 
     }
     await tx.unsafe(
       "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'strategy.created','strategy_instance',$2,$3::jsonb)",
-      [userId,id,JSON.stringify({strategyKey:input.strategyKey,onboardingMode:input.onboardingMode,plan:snapshot.planSlug,versionId:String(definition.version_id)})]
+      [userId,id,JSON.stringify({strategyKey:input.strategyKey,onboardingMode:input.onboardingMode,plan:snapshot.planSlug,versionId:String(definition.version_id),adminDisabledPreview:definition.enabled!==true})]
     );
     if (requestKey) await tx.unsafe(
       "INSERT INTO strategy_creation_requests (user_id,request_key,request_payload,strategy_instance_id) VALUES ($1,$2,$3::jsonb,$4)",
@@ -268,7 +278,7 @@ export async function changeStrategyStatus(
     const userRows = await tx.unsafe("SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", [userId]);
     if (!userRows[0]) throw new Error("UNAUTHENTICATED");
     const rows = await tx.unsafe(
-      "SELECT i.id,i.status,d.key AS strategy_key FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
+      "SELECT i.id,i.status,i.admin_disabled_preview,d.enabled AS definition_enabled,d.key AS strategy_key FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
       [instanceId, userId]
     );
     const instance = rows[0];
@@ -285,6 +295,9 @@ export async function changeStrategyStatus(
       ]);
       assertCanCreateStrategy(snapshot,Number(countRows[0]?.count??0),String(instance.strategy_key));
       assertStrategyFeatureAccess(snapshot,{accountCount:Number(accountRows[0]?.count??1)});
+      // An admin-preview instance of a still-disabled definition cannot be resumed by a non-admin.
+      if(instance.admin_disabled_preview===true&&instance.definition_enabled!==true&&snapshot.includeDisabledStrategies!==true)
+        throw new Error("STRATEGY_NOT_AVAILABLE");
       await tx.unsafe("UPDATE strategy_instances SET status='ACTIVE',paused_at=NULL,health_status='NEEDS_ATTENTION',updated_at=now() WHERE id=$1",[instanceId]);
       await tx.unsafe("UPDATE strategy_states SET state=jsonb_set(state,'{forceReview}','true'::jsonb,true),calculated_at=now() WHERE strategy_instance_id=$1",[instanceId]);
     } else if (target === "PAUSED") {

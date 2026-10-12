@@ -50,7 +50,7 @@ export async function assertNotificationAllowed(userId: string, channel: string)
 export async function enforceStrategyEntitlements(userId: string, snapshot?: EntitlementSnapshot) {
   const entitlements = snapshot ?? await loadEntitlements(userId);
   const active = await sql.unsafe(
-    "SELECT i.id,d.key,(SELECT count(*)::int FROM strategy_accounts sa WHERE sa.strategy_instance_id=i.id) AS account_count "+
+    "SELECT i.id,d.key,d.enabled AS definition_enabled,i.admin_disabled_preview,(SELECT count(*)::int FROM strategy_accounts sa WHERE sa.strategy_instance_id=i.id) AS account_count "+
     "FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id "+
     "WHERE i.user_id=$1 AND i.status='ACTIVE' ORDER BY i.started_at ASC,i.created_at ASC",
     [userId]
@@ -65,12 +65,17 @@ export async function enforceStrategyEntitlements(userId: string, snapshot?: Ent
     }
   });
   const unavailableFeatureIds=new Set(unavailableFeature.map((row)=>String(row.id)));
+  // Only instances started through the admin preview of a (still) disabled definition are affected, and
+  // only for an owner who no longer has the super-user flag. A customer who legitimately runs a strategy
+  // that was disabled later is not marked and keeps running.
+  const previewBlocked = (row: Record<string, unknown>) =>
+    !entitlements.includeDisabledStrategies && row.admin_disabled_preview === true && row.definition_enabled !== true;
   const permitted = active.filter((row) =>
-    !unavailableFeatureIds.has(String(row.id))&&
+    !unavailableFeatureIds.has(String(row.id))&&!previewBlocked(row)&&
     (!entitlements.availableStrategyKeys || entitlements.availableStrategyKeys.has(String(row.key)))
   );
   const disallowed = active.filter((row) =>
-    unavailableFeatureIds.has(String(row.id))||
+    unavailableFeatureIds.has(String(row.id))||previewBlocked(row)||
     Boolean(entitlements.availableStrategyKeys&&!entitlements.availableStrategyKeys.has(String(row.key)))
   );
   const max = entitlements.maxActiveStrategies;
@@ -87,7 +92,7 @@ export async function enforceStrategyEntitlements(userId: string, snapshot?: Ent
     );
     await tx.unsafe(
       "INSERT INTO audit_events (actor_user_id,action,entity_type,metadata) VALUES ($1,'entitlements.enforced','subscription',$2::jsonb)",
-      [userId,JSON.stringify({plan:entitlements.planSlug,pausedStrategyInstanceIds:ids,featurePausedStrategyInstanceIds:[...unavailableFeatureIds].filter((id)=>ids.includes(id))})]
+      [userId,JSON.stringify({plan:entitlements.planSlug,pausedStrategyInstanceIds:ids,featurePausedStrategyInstanceIds:[...unavailableFeatureIds].filter((id)=>ids.includes(id)),adminPreviewPausedStrategyInstanceIds:toPause.filter(previewBlocked).map((row)=>String(row.id))})]
     );
   });
   return { paused: ids.length };

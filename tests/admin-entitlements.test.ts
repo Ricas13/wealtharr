@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { readFileSync } from "node:fs";
-import { ALL_CHANNELS,ALL_FEATURES,adminEntitlementSnapshot,assertCanCreateStrategy,assertStrategyFeatureAccess } from "../src/domain/entitlements";
+import { ALL_CHANNELS,ALL_FEATURES,adminEntitlementSnapshot,assertCanCreateStrategy,assertStrategyFeatureAccess,buildEntitlementSnapshot } from "../src/domain/entitlements";
 
 const read=(path:string)=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 
@@ -65,5 +65,72 @@ describe("admin entitlement wiring",()=>{
       expect(source,path).not.toContain("JOIN plans p ON p.id=s.plan_id");
       expect(source,path).not.toContain("buildEntitlementSnapshot");
     }
+  });
+});
+
+describe("admin may start disabled strategies (server-derived only)",()=>{
+  it("sets includeDisabledStrategies only in the admin snapshot",()=>{
+    expect(adminEntitlementSnapshot().includeDisabledStrategies).toBe(true);
+    const plan=buildEntitlementSnapshot({slug:"pro",maxActiveStrategies:3,entitlements:{features:["what_if"],notificationChannels:[]},availableStrategyKeys:[]});
+    expect(plan.includeDisabledStrategies).toBe(false);
+    const domain=read("src/domain/entitlements.ts");
+    expect(domain.match(/includeDisabledStrategies:\s*true/g)).toHaveLength(1);
+    const admin=domain.slice(domain.indexOf("export function adminEntitlementSnapshot"),domain.indexOf("export function assertCanCreateStrategy"));
+    expect(admin).toContain("includeDisabledStrategies: true");
+  });
+  it("never reads the flag from request input, query string or token",()=>{
+    for(const path of ["src/app/api/strategies/route.ts","src/app/api/strategies/[id]/switch/route.ts","src/app/api/strategies/[id]/preview/route.ts"]){
+      const source=read(path);
+      expect(source,path).not.toMatch(/includeDisabled\w*\s*:\s*z\./);
+      expect(source,path).not.toMatch(/(input|body|params|searchParams|payload)\.includeDisabled/);
+      expect(source,path).not.toMatch(/\.(get|searchParams)\(["']includeDisabled/);
+    }
+    // The only sources of the flag are the loaded snapshot (and a literal in tests).
+    expect(read("src/app/app/strategies/new/page.tsx")).toContain("includeDisabled:entitlements.includeDisabledStrategies");
+    expect(read("src/app/app/strategies/[id]/page.tsx")).toContain("includeDisabled:entitlements.includeDisabledStrategies");
+    expect(read("src/app/api/strategies/[id]/preview/route.ts")).toContain("entitlements.includeDisabledStrategies");
+    const create=read("src/lib/strategy-service.ts");
+    expect(create).toContain("snapshot.includeDisabledStrategies===true");
+    expect(read("src/lib/strategy-switch-service.ts")).toContain("entitlements.includeDisabledStrategies===true");
+  });
+  it("keeps every disabled-definition bypass behind a PUBLISHED version lookup and the market check",()=>{
+    const strategy=read("src/lib/strategy-service.ts");
+    const list=strategy.slice(strategy.indexOf("export async function listAvailableStrategies"),strategy.indexOf("export async function listUserStrategies"));
+    expect(list).toContain("lifecycle_status='PUBLISHED'");
+    expect(list).not.toContain("DRAFT");
+    const create=strategy.slice(strategy.indexOf("export async function createStrategy"),strategy.indexOf("export async function migrateStrategyVersion"));
+    expect(create).toContain("lifecycle_status='PUBLISHED'");
+    expect(create).toContain("assessStrategyMarket(");
+    expect(create.indexOf("(d.enabled=true OR $2::boolean)")).toBeGreaterThan(create.indexOf("lifecycle_status='PUBLISHED'"));
+    const sw=read("src/lib/strategy-switch-service.ts");
+    expect(sw).toContain("lifecycle_status='PUBLISHED'");
+    expect(sw).toContain("assessStrategyMarket(");
+    expect(read("src/lib/action-service.ts")).toContain("(d.enabled=true OR $2::boolean)");
+  });
+  it("pauses only admin-preview instances of a still-disabled definition for a non-admin owner",()=>{
+    const service=read("src/lib/entitlement-service.ts");
+    const enforce=service.slice(service.indexOf("export async function enforceStrategyEntitlements"));
+    expect(enforce).toContain("!entitlements.includeDisabledStrategies");
+    expect(enforce).toContain("row.admin_disabled_preview === true");
+    expect(enforce).toContain("row.definition_enabled !== true");
+    expect(enforce).not.toContain("JOIN plans");
+  });
+});
+
+describe("admin preview applies the same gates as enabling a strategy",()=>{
+  const gates=read("src/lib/admin-preview-gates.ts");
+  it("requires a publishable engine, the curated rules and an attestation for a disabled definition",()=>{
+    expect(gates).toContain("assertCustomerPublishableEngine");
+    expect(gates).toContain("assertCuratedRules");
+    expect(gates).toContain("strategy_version_attestations");
+    expect(gates).toMatch(/definition\.enabled === true\) return/);
+  });
+  it("is applied on create, switch and switch preview, after the target lookup",()=>{
+    for(const path of ["src/lib/strategy-service.ts","src/lib/strategy-switch-service.ts","src/lib/action-service.ts"]){
+      expect(read(path),path).toContain("assertDisabledStrategyPreviewGates(");
+    }
+  });
+  it("maps a refused resume to 409 rather than 500",()=>{
+    expect(read("src/app/api/strategies/[id]/status/route.ts")).toMatch(/STRATEGY_NOT_AVAILABLE[\s\S]{0,160}status:\s*409/);
   });
 });

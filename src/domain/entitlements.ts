@@ -18,6 +18,11 @@ export type EntitlementSnapshot = {
   features: Set<string>;
   notificationChannels: Set<string>;
   availableStrategyKeys: Set<string> | null;
+  /**
+   * Server-derived, never request input: true only for an administrator, who may start a PUBLISHED strategy
+   * whose definition is still disabled for customers. Customers never see or start disabled strategies.
+   */
+  includeDisabledStrategies: boolean;
 };
 
 function parseJsonish(value:unknown){
@@ -39,7 +44,8 @@ export function buildEntitlementSnapshot(plan: PlanRecord): EntitlementSnapshot 
     maxActiveStrategies: plan.maxActiveStrategies,
     features: new Set(strings(raw.features)),
     notificationChannels: new Set(["IN_APP", ...strings(raw.notificationChannels)]),
-    availableStrategyKeys: strategyKeys.length ? new Set(strategyKeys) : null
+    availableStrategyKeys: strategyKeys.length ? new Set(strategyKeys) : null,
+    includeDisabledStrategies: false
   };
 }
 
@@ -53,7 +59,8 @@ export function adminEntitlementSnapshot(): EntitlementSnapshot {
     maxActiveStrategies: null,
     features: new Set<string>(ALL_FEATURES),
     notificationChannels: new Set<string>(["IN_APP", ...ALL_CHANNELS]),
-    availableStrategyKeys: null
+    availableStrategyKeys: null,
+    includeDisabledStrategies: true
   };
 }
 
