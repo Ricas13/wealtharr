@@ -14,14 +14,14 @@ for (const path of ["/", "/demo", "/login", "/register"]) {
 
 test("landing page exposes the three product questions clearly", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading",{level:1,name:/Follow the strategy.*Not the spreadsheet/i})).toBeVisible();
+  await expect(page.getByRole("heading",{level:1,name:/Follow the strategy.*Lose the spreadsheet/i})).toBeVisible();
   if(page.viewportSize()&&page.viewportSize()!.width<=680){
     const menu=page.locator(".landing-mobile-nav > summary");
     await expect(menu).toBeVisible();
     await menu.click();
     await expect(page.getByRole("link",{name:"Get started",exact:true})).toBeVisible();
   }
-  await expect(page.getByRole("link", { name: "Explore the demo" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Try the interactive demo" })).toBeVisible();
 });
 
 test("demo is unmistakably fictional", async ({ page }) => {
