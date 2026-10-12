@@ -15,6 +15,13 @@ const gate = auth((request) => {
     url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
   }
+  // Fail closed on the admin area: only a token that says ADMIN gets through. This is a cheap first
+  // line (the role is the one in the token); requireAdminPage on every admin page and requireAdmin
+  // on every admin API remain the authoritative check against the database.
+  const path = request.nextUrl.pathname;
+  if ((path === "/admin" || path.startsWith("/admin/")) && request.auth.user?.role !== "ADMIN") {
+    return NextResponse.redirect(new URL("/app", request.url));
+  }
   return NextResponse.next();
 });
 

@@ -1,3 +1,4 @@
+import { isNonPublicHost } from "@/domain/network-host";
 // Every operator setting that can be managed from the admin screen instead of an environment file.
 // Keys are the environment variable names the code already reads, so a value saved in the database
 // simply takes the place of the variable. Anything not listed here stays an environment variable on
@@ -18,6 +19,8 @@ export type SettingDefinition = {
   /** Extra format check for text settings, with the message to show when it fails. */
   pattern?: RegExp;
   patternMessage?: string;
+  /** A url setting that receives a stored credential: in production it must name a public host. */
+  publicHostOnly?: boolean;
   /** Takes effect without a restart? Everything does except where noted. */
   note?: string;
 };
@@ -40,7 +43,7 @@ export const SETTINGS: readonly SettingDefinition[] = [
   { key: "STRIPE_WEBHOOK_SECRET", label: "Stripe webhook signing secret", group: "Billing (Stripe)", kind: "secret", help: "whsec_… from the Stripe webhook endpoint pointing at /api/stripe/webhook." },
 
   { key: "EMAIL_PROVIDER", label: "Email provider", group: "Email", kind: "select", options: ["http", "mock"], help: "http sends through your transactional email service. mock only works outside production and sends nothing." },
-  { key: "EMAIL_HTTP_ENDPOINT", label: "Email service address", group: "Email", kind: "url", help: "The https endpoint that accepts a JSON message." },
+  { key: "EMAIL_HTTP_ENDPOINT", label: "Email service address", group: "Email", kind: "url", publicHostOnly: true, help: "The https endpoint that accepts a JSON message. Changing this address removes the saved service token, so enter the token again in the same save." },
   { key: "EMAIL_HTTP_TOKEN", label: "Email service token", group: "Email", kind: "secret", help: "Bearer token for the email service." },
   { key: "EMAIL_FROM", label: "From address", group: "Email", kind: "text", help: "For example support@yourdomain.com. Must be an address your email service may send from." },
 
@@ -52,7 +55,7 @@ export const SETTINGS: readonly SettingDefinition[] = [
 
   { key: "MARKET_DATA_MODE", label: "Market data mode", group: "Market data", kind: "select", options: ["PROVIDER", "MANUAL"], help: "PROVIDER fetches prices from your data service. MANUAL means prices are entered by people." },
   { key: "MARKET_DATA_PROVIDER", label: "Market data provider", group: "Market data", kind: "select", options: ["http", "mock", "yahoo"], help: "http uses the service below. mock only works outside production. yahoo uses Yahoo Finance's public chart endpoints with no token: they are unofficial, undocumented and NOT licensed for commercial redistribution, may break or be rate-limited without notice, and must be replaced before charging customers. London lines need the .L suffix in the trading line's provider symbol (e.g. TICKER.L); Yahoo does not list every leveraged ETP, so spot-check each symbol." },
-  { key: "MARKET_DATA_HTTP_BASE_URL", label: "Market data service address", group: "Market data", kind: "url", help: "Base https address of a service licensed for your commercial use." },
+  { key: "MARKET_DATA_HTTP_BASE_URL", label: "Market data service address", group: "Market data", kind: "url", publicHostOnly: true, help: "Base https address of a service licensed for your commercial use. Changing this address removes the saved token, so enter the token again in the same save." },
   { key: "MARKET_DATA_HTTP_TOKEN", label: "Market data token", group: "Market data", kind: "secret", help: "Bearer token for the market data service." },
   bool("MARKET_DATA_HISTORY_ADJUSTED_LICENSED", "Store adjusted daily history", "Market data", "Turn on only when commercial rights permit storing adjusted history and the provider sends corporateActionsAdjusted=true for each daily CLOSE observation. This is a gate, not evidence of licensing; independently verify split/dividend treatment before offering momentum strategies."),
   { key: "MARKET_MAX_QUOTE_MOVE", label: "Largest believable price move", group: "Market data", kind: "number", min: 0.05, max: 5, help: "0.5 means a quote more than 50% away from the previous one is rejected as a likely data error." },
@@ -92,6 +95,14 @@ export const SETTINGS: readonly SettingDefinition[] = [
   { key: "CRON_MAX_INSTANCES", label: "Strategies per run", group: "Background worker", kind: "number", min: 100, max: 100000, integer: true, help: "Upper bound per run; the stalest are done first. Default 5000." }
 ];
 
+// A bearer token is only ever sent to the address it was saved with. Changing the address clears the
+// paired secret unless a new one is supplied in the same save (see saveSettings), so an admin cannot
+// redirect a stored token to a host of their choosing without knowing it.
+export const ENDPOINT_SECRET_PAIRS: Readonly<Record<string, string>> = {
+  EMAIL_HTTP_ENDPOINT: "EMAIL_HTTP_TOKEN",
+  MARKET_DATA_HTTP_BASE_URL: "MARKET_DATA_HTTP_TOKEN"
+};
+
 export const SETTING_KEYS = new Set(SETTINGS.map((s) => s.key));
 export const settingByKey = (key: string) => SETTINGS.find((s) => s.key === key);
 export const isSecretKind = (kind: SettingKind) => kind === "secret" || kind === "multiline-secret";
@@ -122,6 +133,9 @@ export function validateSetting(def: SettingDefinition, raw: unknown): Validatio
         const url = new URL(value);
         if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))) return { ok: false, error: "Use an https:// address." };
         if (url.username || url.password) return { ok: false, error: "Do not put credentials in the address." };
+        if (def.publicHostOnly && process.env.NODE_ENV === "production" && isNonPublicHost(url.hostname)) {
+          return { ok: false, error: "Use the public address of the service: local, private and internal addresses are not accepted." };
+        }
         return { ok: true, value: value.replace(/\/+$/, "") };
       } catch {
         return { ok: false, error: "Enter a full address such as https://example.com." };

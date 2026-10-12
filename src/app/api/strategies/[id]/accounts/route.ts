@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { listStrategyAccounts } from "@/lib/strategy-service";
 import { recalculateAfterMutation } from "@/lib/action-service";
@@ -18,6 +19,7 @@ export async function GET(_request:Request,context:{params:Promise<{id:string}>}
   try{
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     return Response.json({accounts:await listStrategyAccounts(user.id,id)});
   }catch(error){
     const denied=authFailure(error);
@@ -31,6 +33,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const input=schema.parse(await request.json());
 
     const result=await sql.begin(async(tx)=>{

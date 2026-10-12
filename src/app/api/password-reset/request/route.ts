@@ -17,7 +17,11 @@ export async function POST(request: Request) {
     const rows = await sql.unsafe("SELECT id,email FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL LIMIT 1",[input.email]);
     if (rows[0]) {
       const token = newToken();
-      await sql.unsafe("INSERT INTO auth_tokens (user_id,type,token_hash,expires_at) VALUES ($1,'RESET_PASSWORD',$2,now()+interval '30 minutes')",[rows[0].id,hashToken(token)]);
+      // Only the newest link works: earlier unused ones are retired in the same step the new one is created.
+      await sql.begin(async (tx) => {
+        await tx.unsafe("UPDATE auth_tokens SET used_at=now() WHERE user_id=$1 AND type='RESET_PASSWORD' AND used_at IS NULL",[rows[0].id]);
+        await tx.unsafe("INSERT INTO auth_tokens (user_id,type,token_hash,expires_at) VALUES ($1,'RESET_PASSWORD',$2,now()+interval '30 minutes')",[rows[0].id,hashToken(token)]);
+      });
       const url = (process.env.NEXT_PUBLIC_APP_URL ?? "") + "/reset-password?token=" + encodeURIComponent(token);
       await getEmailProvider().send({to:String(rows[0].email),subject:"Reset your password",text:"Reset your password: " + url});
     }

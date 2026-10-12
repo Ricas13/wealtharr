@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {requireAdminPage} from "@/lib/session";
 import {sql} from "@/lib/db";
 import {ensureSettings} from "@/lib/settings";
 import {masterSetupSignals} from "@/domain/master-setup";
@@ -6,6 +7,7 @@ import {CheckCircle2,Circle,ArrowRight,ShieldCheck,LockKeyhole} from "lucide-rea
 
 export const dynamic="force-dynamic";
 export default async function MasterConfigurationPage(){
+ await requireAdminPage();
   await ensureSettings(true);
   const [plans,strategies,mappings,cron,backup]=await Promise.all([
     sql.unsafe("SELECT count(*)::int AS n FROM plan_prices WHERE active=true"),

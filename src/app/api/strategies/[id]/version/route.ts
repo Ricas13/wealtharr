@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { migrateStrategyVersion } from "@/lib/strategy-service";
 import { previewStrategyVersionScenario, recalculateAfterMutation } from "@/lib/action-service";
@@ -13,6 +14,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const input=schema.parse(await request.json());
     const result=await previewStrategyVersionScenario(user.id,id,input.targetVersionId,input.settings);
     return Response.json({ok:true,preview:true,result});
@@ -35,6 +37,7 @@ export async function PATCH(request:Request,context:{params:Promise<{id:string}>
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const input=schema.parse(await request.json());
     const result=await migrateStrategyVersion(user.id,id,input.targetVersionId,input.settings);
     const recalc=result.changed&&result.status==="ACTIVE"?await recalculateAfterMutation(id,user.id,"strategy-version-update"):{actionId:null,recalculationPending:false,errorCode:null};

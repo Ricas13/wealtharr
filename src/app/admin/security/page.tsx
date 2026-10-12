@@ -1,12 +1,12 @@
 import Link from "next/link";
 import {ShieldCheck,LockKeyhole,ScrollText,DatabaseBackup,ArrowRight} from "lucide-react";
-import {requirePageUser} from "@/lib/session";
+import {requireAdminPage} from "@/lib/session";
 import {sql} from "@/lib/db";
 import {isMfaEnabled} from "@/lib/mfa";
 
 export const dynamic="force-dynamic";
 export default async function AdminSecurityPage(){
- const user=await requirePageUser();
+ const user=await requireAdminPage();
  const [mfa,audit]=await Promise.all([
   isMfaEnabled(user.id),
   sql.unsafe("SELECT action,entity_type,occurred_at FROM audit_events ORDER BY occurred_at DESC LIMIT 15")

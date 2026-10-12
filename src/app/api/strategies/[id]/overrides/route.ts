@@ -1,4 +1,5 @@
 import {z} from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import {requireUser} from "@/lib/session";
 import {getStrategyForUser} from "@/lib/strategy-service";
 import {recalculateAfterMutation} from "@/lib/action-service";
@@ -18,6 +19,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const user=await requireUser();
     await consumeRateLimit("manual-override:"+user.id,15,60);
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     if(!await getStrategyForUser(user.id,id))return Response.json({error:"Not found."},{status:404});
     const p=parseManualOverride(await request.json());
     const result=await sql.begin(async(tx)=>{
@@ -106,6 +108,7 @@ export async function DELETE(request:Request,context:{params:Promise<{id:string}
     const user=await requireUser();
     await consumeRateLimit("manual-override:"+user.id,15,60);
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     if(!await getStrategyForUser(user.id,id))return Response.json({error:"Not found."},{status:404});
     const body=fieldSchema.parse(await request.json());
     const result=await sql.begin(async(tx)=>{

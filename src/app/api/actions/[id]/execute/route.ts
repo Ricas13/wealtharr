@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { executeAction } from "@/lib/action-service";
 import { assertSameOrigin } from "@/lib/security";
@@ -19,6 +20,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const input=schema.parse(await request.json().catch(()=>({})));
     const result=await executeAction(user.id,id,input);
     return Response.json({ok:true,...result});

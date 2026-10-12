@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import {requireAdminPage} from "@/lib/session";
 import { RetryDeliveries } from "@/components/RetryDeliveries";
 import { IntegrationTests } from "@/components/IntegrationTests";
 import { checkCommercialLaunch } from "@/domain/commercial-launch";
@@ -13,6 +14,7 @@ const explanations:Record<string,string>={
  backup_operator_attestation:"Configure encrypted offsite backups and demonstrate a restore before attesting success."
 };
 export default async function OperationsPage(){
+ await requireAdminPage();
  await ensureSettings(true);
  const checks=checkCommercialLaunch(process.env);
  const [jobs,delivery,webhooks]=await Promise.all([

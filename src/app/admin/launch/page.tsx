@@ -1,4 +1,5 @@
 import { checkCommercialLaunch, marketDataProviderWarnings } from "@/domain/commercial-launch";
+import {requireAdminPage} from "@/lib/session";
 import { sql } from "@/lib/db";
 import { customerStrategyEvidence } from "@/lib/strategy-evidence";
 import { ensureSettings } from "@/lib/settings";
@@ -19,6 +20,7 @@ const descriptions:Record<string,{title:string;where:string}>={
  admin_mfa:{title:"Administrator two-step sign-in",where:"Every admin turns on two-step sign-in under Settings, then switch on the admin requirement in Admin › Settings › Security."}
 };
 export default async function LaunchPage(){
+ await requireAdminPage();
  await ensureSettings(true);
  const checks=checkCommercialLaunch(process.env);
  const passing=checks.filter(x=>x.passed).length;

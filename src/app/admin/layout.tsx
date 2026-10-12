@@ -1,19 +1,14 @@
 import Link from "next/link";
-import {redirect} from "next/navigation";
 import {Bell,Settings2,UserRound} from "lucide-react";
-import {requireAdmin,requirePageUser} from "@/lib/session";
+import {requireAdminPage,requirePageUser} from "@/lib/session";
 import {AdminWorkspaceNav} from "@/components/AdminWorkspaceNav";
 
 export const dynamic="force-dynamic";
 
 export default async function AdminLayout({children}:{children:React.ReactNode}){
+ // Each admin page repeats this check: Next.js may render a page without re-running the layout.
  await requirePageUser();
- try{
-  await requireAdmin();
- }catch(error){
-  if(error instanceof Error&&error.message==="MFA_REQUIRED")redirect("/app/settings#security");
-  throw error;
- }
+ await requireAdminPage();
  const launchLocked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
  return <div className="app-shell admin-workspace-shell">
   <a href="#admin-main-content" className="skip-link">Skip to main content</a>

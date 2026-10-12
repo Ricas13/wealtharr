@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidPathId } from "@/lib/route-params";
 import { requireUser } from "@/lib/session";
 import { assertSameOrigin } from "@/lib/security";
 import { getStrategyForUser } from "@/lib/strategy-service";
@@ -18,6 +19,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const strategy=await getStrategyForUser(user.id,id);
     if(!strategy)return Response.json({error:"Not found."},{status:404});
     if(String(strategy.status)==="CLOSED")return Response.json({error:"Closed strategies are read-only."},{status:409});

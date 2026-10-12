@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { invalidPathId } from "@/lib/route-params";
 import { z } from "zod";
 import { requireUser } from "@/lib/session";
 import { getStrategyForUser } from "@/lib/strategy-service";
@@ -25,6 +26,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     assertSameOrigin(request);
     const user=await requireUser();
     const {id}=await context.params;
+    const badId = invalidPathId(id); if (badId) return badId;
     const strategy=await getStrategyForUser(user.id,id);
     if(!strategy)return Response.json({error:"Not found."},{status:404});
     const input=schema.parse(await request.json());
