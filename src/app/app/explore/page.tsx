@@ -16,7 +16,7 @@ export default async function ExplorePage() {
   const user = await requirePageUser();
   const [definitions, available, existing, entitlements, mappingRows] = await Promise.all([
     sql.unsafe("SELECT key,enabled FROM strategy_definitions"),
-    listAvailableStrategies(),
+    listAvailableStrategies({userId:user.id}),
     listUserStrategies(user.id),
     loadEntitlements(user.id),
     sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)
