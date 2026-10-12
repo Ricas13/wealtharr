@@ -33,7 +33,8 @@ describe("Master Admin fidelity design contract",()=>{
  it("keeps strategy activation safeguards in place",()=>{
   const server=read("src/app/admin/strategies/page.tsx");
   const client=read("src/components/AdminStrategyInventory.tsx");
-  expect(server).toContain('status:"NO_SIGNOFF"');
+  expect(server).toContain("assertCustomerPublishableEngine");
+  expect(server).toContain("assertCuratedRules");
   expect(server).toContain("assessStrategyMarket");
   expect(client).toContain('s.status==="READY"&&!s.enabled');
   expect(client).toContain('action:"TOGGLE_DEFINITION"');
