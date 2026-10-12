@@ -45,10 +45,13 @@ test("an unauthenticated visit to a deep link returns there after sign-in, and t
 
   // Turn two-step sign-in on from settings.
   await page.goto("/app/settings");
+  // Starting enrolment asks for the current password.
+  await page.getByLabel("Password",{exact:true}).fill(PASSWORD);
   await page.getByRole("button",{name:"Set up two-step sign-in"}).click();
   const secret=await page.getByLabel("Key").inputValue();
   expect(secret).toMatch(/^[A-Z2-7]{32}$/);
   await page.getByLabel("Code from the app").fill(totpAt(secret,currentStep(new Date())));
+  await page.getByLabel("Password",{exact:true}).fill(PASSWORD);
   await page.getByRole("button",{name:"Confirm and turn on"}).click();
   await expect(page.getByText("Save these recovery codes")).toBeVisible();
   const recovery=(await page.locator("pre").innerText()).split("\n").filter(Boolean);
