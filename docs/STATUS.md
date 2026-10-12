@@ -103,6 +103,10 @@ Sign-in with Google and Apple; installable mobile web app and Android/iOS shell;
 - Three-fund, 60/40 and 80/20 are seeded as disabled fixed-allocation drafts. Customer weight inputs are not supported.
 - The platform stores spec-card attestations, but independent human sign-off and full author-method goldens are still required.
 
+## Launch enablement groundwork (12 October 2026)
+- `docs/LAUNCH_ENABLEMENT.md` lists, for 9Sig, HFEA, 60/40 and All Weather, what is done in code and what only the owner or an administrator can do (EXACT mappings, spec-card sign-off, ATTEST, PUBLISH, ENABLE, data licensing, legal). It records no attestation and invents no instrument.
+- All Weather now has hand-derived golden cases in `tests/strategy-reference-golden.test.ts` (initial split, rounding residue, on-target, equity-heavy and bond-heavy drift, deposit, zero threshold, tolerance edge). Not yet run in this environment (no Node); the card remains DRAFT and the withdrawal case is still open. No gate, seed or rule changed.
+
 ## PR #25 engineering audit (11 October 2026)
 Detailed evidence is in `docs/PR25_COMPLETION_CHECKLIST.md`. Headlines:
 - **Customer-visible strategy without sign-off.** 9Sig is the only enabled, published strategy and it has no recorded specification sign-off (the seed publishes it directly) and no spec card. Live Stripe checkout now refuses until a sign-off is recorded (`src/lib/strategy-evidence.ts`); Admin > Launch lists the gap.
