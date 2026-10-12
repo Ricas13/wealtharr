@@ -40,12 +40,14 @@ const SPLIT_AWAITING_QUOTE_MESSAGE="A stock split was recorded after the latest 
  * A split recorded (and not reversed) in this strategy after the latest accepted quote means that
  * quote is a pre-split price and would be multiplied by post-split units. No quote at all counts the same.
  */
-function splitAfterQuote(row:{observed_at?:unknown;split_at?:unknown}|undefined){
-  if(!row?.split_at)return false;
-  const splitAt=new Date(row.split_at as string|number|Date).getTime();
+function splitAfterQuote(row:unknown){
+  if(!row||typeof row!=="object")return false;
+  const observation=row as Record<string,unknown>;
+  if(!observation.split_at)return false;
+  const splitAt=new Date(observation.split_at as string|number|Date).getTime();
   if(!Number.isFinite(splitAt))return true;
-  if(!row.observed_at)return true;
-  return splitAt>new Date(row.observed_at as string|number|Date).getTime();
+  if(!observation.observed_at)return true;
+  return splitAt>new Date(observation.observed_at as string|number|Date).getTime();
 }
 function isoDate(value: unknown) { return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10); }
 type CalculationScenario={
