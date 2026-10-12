@@ -10,6 +10,7 @@ import { normalizeContributionPlan } from "@/domain/contribution-plan";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
+import { isKellySignalConfig, KELLY_REVIEW_STATE_KEY } from "@/domain/strategy/kelly-signal";
 
 export type CreateStrategyInput = {
   requestKey?: string;
@@ -250,6 +251,13 @@ export async function migrateStrategyVersion(
     delete after.reviewTargetValue;
     delete after.reviewContributionsSnapshot;
     delete after.lastCalculatedAt;
+    // 9Sig v1.1: an open review's frozen order never survives a version change, and v1.1's period
+    // and anchor keys are dropped when moving to a version that does not use them, so a later return
+    // to v1.1 re-derives them from that version's own last review instead of stale values.
+    delete after[KELLY_REVIEW_STATE_KEY];
+    if(!isKellySignalConfig((target.config??{}) as Record<string,unknown>)){
+      for(const key of ["anchorValue","signalPeriodIndex","signalPeriodEnd","newCashFrom"])delete after[key];
+    }
 
     await tx.unsafe(
       "UPDATE actions SET status='SUPERSEDED',cancelled_at=COALESCE(cancelled_at,now()),updated_at=now() WHERE strategy_instance_id=$1 AND status IN ('CALCULATED','NOTIFIED','ACKNOWLEDGED')",

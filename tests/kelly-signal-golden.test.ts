@@ -204,6 +204,23 @@ describe("9Sig v1.1 review closure under the cap and cash limits", () => {
     expect(p.nextState.targetValue).toBe("7770.174");
   });
 
+  it("counts a broker fill imported through the trades route against the quarter's single capped order", () => {
+    // No review was opened through the action flow; the user imported the full fill of 1,898.46 instead.
+    // Cash at review start = 210.94 + 1,898.46 = 2,109.40; cap 0.90 x 2,109.40 = 1,898.46; left 0.00 -> HOLD.
+    // (Without this, a fresh cap of 0.90 x 210.94 = 189.85 would be bought again.)
+    const full = calc({ now: "2026-12-31T22:30:00Z", state: beforeQ3, cash: "210.94", tqqq: "5462.76", filledBuy: "1898.46" });
+    expect(full.actionType).toBe("HOLD");
+    expect(full.nextState).toMatchObject({ anchorValue: "5462.76", signalPeriodIndex: 8107 });
+    // Imported partial fill 1,000.00: cash 1,109.40, TQQQ 4,564.30. Line 7,770.174 - 4,564.30 = 3,205.874
+    // (3,205.87). Cap 0.90 x (1,109.40 + 1,000.00) = 1,898.46, minus 1,000.00 already bought = 898.46.
+    const partial = calc({ now: "2026-12-31T22:30:00Z", state: beforeQ3, cash: "1109.40", tqqq: "4564.30", filledBuy: "1000" });
+    expect(partial.actionType).toBe("BUY");
+    expect(partial.amount?.toFixed(2)).toBe("898.46");
+    // A recorded purchase is never followed by a sale in the same quarter (line below TQQQ 8,000.00).
+    const overshoot = calc({ now: "2026-12-31T22:30:00Z", state: beforeQ3, cash: "100", tqqq: "8000", filledBuy: "1898.46" });
+    expect(overshoot.actionType).toBe("HOLD");
+  });
+
   it("offers a review-closing HOLD for a remainder the execution settings cannot trade", () => {
     const p = calc({ now: "2026-12-31T22:00:00Z", state: beforeQ3, cash: "2109.40", tqqq: "3564.30" });
     expect(p.unexecutableFallback?.actionType).toBe("HOLD");
@@ -262,10 +279,15 @@ describe("9Sig v1.1 periods: resume, migration and new cash", () => {
   it("reads the new-cash window by recording time and the fills since the open review", () => {
     const now = new Date("2026-12-31T22:00:00Z");
     const startedAt = new Date("2026-01-05T15:00:00Z");
+    // No open review: fills since max(last review 1 Oct, Q4 cutoff 31 Dec 21:00Z) = the Q4 cutoff.
     expect(kellyLedgerWindow({ state: closedQ3, config: CONFIG, now, startedAt })).toEqual({
-      newCashFrom: new Date("2026-09-30T20:00:00.000Z"), newCashTo: new Date("2026-12-31T21:00:00.000Z"), fillsFrom: null
+      newCashFrom: new Date("2026-09-30T20:00:00.000Z"), newCashTo: new Date("2026-12-31T21:00:00.000Z"),
+      fillsFrom: new Date("2026-12-31T21:00:00.000Z")
     });
-    expect(kellyLedgerWindow({ state: { forceReview: true }, config: CONFIG, now, startedAt })?.newCashFrom).toEqual(startedAt);
+    // A review closed late, after the cutoff (2 Jan 2027): fills before that belong to the closed review.
+    expect(kellyLedgerWindow({ state: { ...closedQ3, lastReviewAt: "2027-01-02T15:00:00.000Z" }, config: CONFIG,
+      now: new Date("2027-01-02T16:00:00Z"), startedAt })?.fillsFrom).toEqual(new Date("2027-01-02T15:00:00.000Z"));
+    expect(kellyLedgerWindow({ state: { forceReview: true }, config: CONFIG, now, startedAt })).toMatchObject({ newCashFrom: startedAt, fillsFrom: startedAt });
     expect(kellyLedgerWindow({ state: { targetValue: "1", lastReviewAt: "2026-08-15T14:00:00.000Z" }, config: CONFIG, now, startedAt })?.newCashFrom)
       .toEqual(new Date("2026-08-15T14:00:00.000Z"));
     const review = { periodIndex: 8107, periodEnd: "2026-12-31", newCashFrom: "2026-12-31T21:00:00.000Z", side: "BUY", orderAmount: "10",

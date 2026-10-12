@@ -45,6 +45,8 @@ import { calendarQuarterEndAt, calendarQuarterIndexAfter, latestCalendarQuarterE
  * - Missed quarters compound: anchor x 1.09^n for n elapsed calendar quarters.
  * - The order is sized at the first calculation the user executes; partial fills continue the same
  *   frozen order. New cash recorded after the quarter-end cutoff belongs to the next quarter.
+ * - One order per quarter: broker fills imported for the due quarter outside the action flow count
+ *   against its single capped order, and a recorded buy is never followed by a sell (or vice versa).
  */
 export const KELLY_SIGNAL_REVISION = "KELLY_SIGNAL_2026_10";
 /** Ledger event types counted as the quarter's new cash (R6). Fixed constants, never user input. */
@@ -146,10 +148,20 @@ export function kellyLedgerWindow(input: { state: Record<string, unknown>; confi
     const newCashTo = latestCalendarQuarterEnd({ now: input.now, ...calendar }).cutoff;
     const review = parseOpenReview(input.state[KELLY_REVIEW_STATE_KEY]);
     if (review === "INVALID") return null;
-    const fillsFrom = review ? isoInstant(review.openedAt) : null;
     const savedFrom = input.state.newCashFrom ?? input.state.lastReviewAt;
     const newCashFrom = savedFrom == null ? input.startedAt : isoInstant(savedFrom);
     if (!newCashFrom || !Number.isFinite(input.startedAt.getTime())) return null;
+    // Open review: fills since it started count against its frozen order. No open review: fills
+    // already recorded for the due quarter (for example a broker fill imported through the trades
+    // route instead of confirming the action) count against the quarter's order when it is sized.
+    let fillsFrom: Date | null;
+    if (review) fillsFrom = isoInstant(review.openedAt);
+    else if (input.state.targetValue == null && input.state.anchorValue == null) fillsFrom = input.startedAt;
+    else {
+      const lastReview = input.state.lastReviewAt == null ? null : isoInstant(input.state.lastReviewAt);
+      if (input.state.lastReviewAt != null && !lastReview) return null;
+      fillsFrom = lastReview && lastReview.getTime() > newCashTo.getTime() ? lastReview : newCashTo;
+    }
     return { newCashFrom, newCashTo, fillsFrom };
   } catch {
     return null;
@@ -330,15 +342,27 @@ export function calculateKellySignal(ctx: EngineContext): ProposedAction {
   const closing = { periodIndex, periodEnd, newCashFrom, signalLine: target.toString(), anchorOverrideId };
   const gap = target.minus(current).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
   explanation.push({ label: "Calculated adjustment", value: money(gap), kind: "money" });
+  // Fills already recorded for this quarter outside the action flow (imported broker fills).
+  const priorBuy = ledger.filledBuy;
+  const priorSell = ledger.filledSell;
+  if (priorBuy.gt(0) || priorSell.gt(0))
+    explanation.push({ label: "Already recorded this quarter", value: money(priorBuy.minus(priorSell)), kind: "money" });
   if (gap.eq(0)) return hold(closing, "The holding is exactly on the signal line. Confirm to close this quarter's review.", explanation);
   if (gap.gt(0)) {
-    // R9 (author-sourced, 2018, possibly outdated): cap sized once, from cash at review start.
-    const cap = Decimal.max(ctx.cash, 0).mul(ratio(ctx.config, "reviewBuyCapRatio")).toDecimalPlaces(2, Decimal.ROUND_DOWN);
-    const order = Decimal.min(gap, cap);
+    // One order per quarter: never buy back what this quarter already sold.
+    if (priorSell.gt(0)) return hold(closing, "This quarter's sale is already recorded, so the strategy does not buy in the same quarter. Confirm to close the review.", explanation);
+    // R9 (author-sourced, 2018, possibly outdated): cap sized once, from the cash at review start
+    // (cash before any purchase already recorded this quarter), minus those purchases.
+    const startCash = Decimal.max(ctx.cash.plus(priorBuy), 0);
+    const cap = startCash.mul(ratio(ctx.config, "reviewBuyCapRatio")).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    const order = Decimal.min(gap, cap.minus(priorBuy)).toDecimalPlaces(2, Decimal.ROUND_DOWN);
     explanation.push({ label: "Buying-power cap this quarter", value: money(cap), kind: "money" });
-    if (order.lte(0)) return hold(closing, "The strategy calls for a buy, but no cash is available. Under the strategy rules it holds what it has until buying power returns; no outside cash is required.", explanation);
+    if (order.lte(0)) return hold(closing, priorBuy.gt(0)
+      ? "This quarter's buying power is used by the purchases already recorded. Confirm to close the review."
+      : "The strategy calls for a buy, but no cash is available. Under the strategy rules it holds what it has until buying power returns; no outside cash is required.", explanation);
     return trade(opened("BUY", order), order, explanation, fallbackText);
   }
+  if (priorBuy.gt(0)) return hold(closing, "This quarter's purchase is already recorded, so the strategy does not sell in the same quarter. Confirm to close the review.", explanation);
   const order = gap.abs();
   return trade(opened("SELL", order), order, explanation, fallbackText);
 }

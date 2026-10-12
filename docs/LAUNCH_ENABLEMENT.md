@@ -31,7 +31,7 @@ Checks that exist but are **not** proof of tradability: the code states that EXA
 
 ### Exact blockers per strategy
 
-**9Sig**: (1) no spec card, so ATTEST cannot honestly be recorded; (2) no author-source golden cases; (3) it is already `enabled` and `PUBLISHED` without attestation, so Admin > Launch lists a gap and live Stripe checkout refuses until a sign-off exists (`src/lib/strategy-evidence.ts`); (4) EXACT mapping for `NASDAQ_100_3X_LONG`; (5) leverage disclosure on the version is the generic default (legal review); (6) canonical config has no `reviewTimezone` and an empty holiday list (UNVERIFIED how the engine resolves the timezone; see `docs/strategy-engines.md`: strategy timezone, else the user's). Note: the published 9Sig version is immutable, so a changed disclosure needs a new version (a new code-reviewed release).
+**9Sig**: (1) the spec card `docs/strategy-specs/9sig.md` is a DRAFT, not signed off (public sources only), so ATTEST cannot honestly be recorded yet; (2) author-source golden cases exist only for the DRAFT version 1.1 (`tests/kelly-signal-golden.test.ts`), not for the published 1.0; (3) it is already `enabled` and `PUBLISHED` without attestation, so Admin > Launch lists a gap and live Stripe checkout refuses until a sign-off exists (`src/lib/strategy-evidence.ts`); (4) EXACT mapping for `NASDAQ_100_3X_LONG`; (5) leverage disclosure on the version is the generic default (legal review); (6) canonical config has no `reviewTimezone` and an empty holiday list (UNVERIFIED how the engine resolves the timezone; see `docs/strategy-engines.md`: strategy timezone, else the user's). Note: the published 9Sig version is immutable, so a changed disclosure needs a new version (a new code-reviewed release).
 
 **HFEA**: (1) human review of `hfea.md` against the original author thread and calendar; (2) independently computed golden cases are present for the three headline cases but the card itself says "independently run golden cases" are still a blocker; (3) EXACT mappings for `US_EQUITY_3X_LONG` and `LONG_TREASURY_3X_LONG`; (4) market-holiday coverage and the 16:00 cutoff are marked as needing independent verification in the card; (5) licensed provider and disclosure/legal review.
 
@@ -90,9 +90,10 @@ Legend: **Code** = done in this repository; **Owner** = only a human can do it.
 
 ### 9Sig (`9sig`)
 - [x] Code: engine, canonical config, curated-rules guard, behavioural tests (`tests/value-target.test.ts`, `tests/curated-release.test.ts`).
-- [ ] Owner: write and review a spec card `docs/strategy-specs/9sig.md` from the author's primary source (the catalogue points at https://jasonkelly.com/2017/01/how-my-signal-system-works/ for 3Sig/6Sig; the 9Sig source must be identified by the owner). Code PR needed for the card file; the card must not guess parameters.
+- [x] Code: DRAFT spec card `docs/strategy-specs/9sig.md` from public author sources, and version 1.1 implementing its Confirmed and author-sourced rules (seeded as DRAFT, not attested or published).
+- [ ] Owner: review and sign off the spec card, answering its open questions (Q1, Q2, Q2b, Q4, Q9 and Q10 block publishing 1.1) from the paid user guide.
 - [ ] Owner: independently computed golden cases from the source's own worked examples (current tests use self-computed values).
-- [ ] Owner: ATTEST path `docs/strategy-specs/9sig.md`; golden tests location `tests/value-target.test.ts` (plus whatever file holds the independent cases).
+- [ ] Owner: ATTEST path `docs/strategy-specs/9sig.md`; golden tests location `tests/value-target.test.ts` for 1.0, `tests/kelly-signal-golden.test.ts` for 1.1.
 - [ ] Owner: EXACT, broker-less mapping for `NASDAQ_100_3X_LONG`, GB / ISA / GBP (needed so customers can act on 9Sig actions; the enable gate never ran for it).
 - [ ] Owner: review the version disclosure (currently the generic default for a 3x product).
 - [ ] Owner: resolve that 9Sig is already enabled and published without an attestation (decide whether to disable it in Admin until the card is signed; this is a business decision, not changed here).

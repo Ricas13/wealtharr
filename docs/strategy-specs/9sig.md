@@ -90,6 +90,7 @@ Wealtharr conventions in 1.1 (the sources are silent; each one is tested):
   - Its committed 1.0 target is the first anchor, because 1.0 stored no post-order balance.
   - The upgrade itself never counts as a review or adds growth.
 - A missed quarter compounds: anchor × 1.09^n.
+- One order per quarter, including broker fills imported through the trades route instead of the action. Those fills count against the quarter's single capped order: the cap is sized from cash before the recorded purchases. A recorded purchase is never followed by a sale in the same quarter, and a recorded sale is never followed by a purchase.
 - An empty portfolio (no cash, no holdings) and a zero line return DATA_REQUIRED. A zero target is never committed.
 - A target override replaces the previous-quarter reference for **one** review. It is deactivated, with an audit row, in the transaction that closes that review.
 
@@ -175,6 +176,7 @@ Version 1.1: `tests/kelly-signal-golden.test.ts` has the following cases, with t
 - A partial fill inside the cap.
 - Cash running out mid-review.
 - No cash at review start.
+- A broker fill imported outside the action flow.
 - A resume mid-quarter.
 - A 1.0 upgrade.
 - A contribution plus a dividend.
