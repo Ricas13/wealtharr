@@ -1,13 +1,14 @@
 import { Bell, CheckCircle2 } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
 import { sql } from "@/lib/db";
+import { reminderStillCurrentSql } from "@/lib/review-reminder-sql";
 
 export default async function NotificationsPage(){
   const user=await requirePageUser();
   const rows=await sql.unsafe(
     "SELECT id,type,title,body,read_at,created_at FROM ("+
     " SELECT DISTINCT ON (COALESCE(action_id,id)) id,action_id,type,title,body,read_at,created_at"+
-    " FROM notifications WHERE user_id=$1"+
+    " FROM notifications n WHERE n.user_id=$1 AND (n.type<>'REVIEW_UPCOMING' OR "+reminderStillCurrentSql("n")+")"+
     " ORDER BY COALESCE(action_id,id),created_at DESC"+
     ") latest ORDER BY created_at DESC LIMIT 100",
     [user.id]
@@ -22,4 +23,4 @@ export default async function NotificationsPage(){
       </div>):<div className="empty activity-empty"><CheckCircle2 size={26}/><strong>Quiet is good.</strong><p>There is no activity to catch up on.</p></div>}
     </section>
   </>;
-}
+}

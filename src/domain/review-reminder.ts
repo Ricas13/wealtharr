@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { localDateInZone } from "@/domain/schedule";
 
 // Advance "your review is due on <date>" heads-up. Pure rules only; the database work lives in
 // src/lib/review-reminder.ts. A reminder carries the review DATE and nothing else: amounts and trade
@@ -22,7 +23,7 @@ export function parseReminderLeadDays(raw: unknown): number {
 
 export type ReminderWindowResult = {
   due: boolean;
-  reason: "DISABLED" | "INVALID_INPUT" | "PAST_DUE" | "OUTSIDE_LEAD" | "QUIET_HOURS" | "DUE";
+  reason: "DISABLED" | "INVALID_INPUT" | "PAST_DUE" | "SAME_DAY" | "OUTSIDE_LEAD" | "QUIET_HOURS" | "DUE";
 };
 
 function localHour(instant: Date, timezone: string): number | null {
@@ -50,6 +51,9 @@ export function reminderWindow(input: { dueAt: Date | null | undefined; now: Dat
   if (dueAt.getTime() > now.getTime() + leadDays * DAY_MS) return { due: false, reason: "OUTSIDE_LEAD" };
   const hour = localHour(now, timezone);
   if (hour === null) return { due: false, reason: "INVALID_INPUT" };
+  // A review that falls on today's local date (including every-check THRESHOLD_ONLY schedules) is the
+  // on-the-day alert's job, not an advance heads-up.
+  if (localDateInZone(dueAt, timezone) <= localDateInZone(now, timezone)) return { due: false, reason: "SAME_DAY" };
   if (hour < REVIEW_REMINDER_EARLIEST_LOCAL_HOUR) return { due: false, reason: "QUIET_HOURS" };
   return { due: true, reason: "DUE" };
 }

@@ -6,6 +6,7 @@ import { loadEntitlements } from "@/lib/entitlement-service";
 import { DELIVERY_MAX_ATTEMPTS,retryDelaySeconds } from "@/domain/delivery-retry";
 import { telegramCall } from "@/lib/telegram";
 import { calculateAction } from "@/lib/action-service";
+import { reminderStillCurrentSql } from "@/lib/review-reminder-sql";
 
 async function refreshActionNotification(notificationId:string,userId:string){
   const owner=await sql.unsafe(
@@ -30,15 +31,8 @@ async function refreshActionNotification(notificationId:string,userId:string){
 }
 
 // Is the review announced by a REVIEW_UPCOMING reminder still going to happen on that date?
-async function reviewReminderStillCurrent(strategyInstanceId:unknown,reminderDueAt:unknown){
-  if(!strategyInstanceId||!reminderDueAt)return false;
-  const rows=await sql.unsafe(
-    "SELECT 1 FROM strategy_instances i JOIN users u ON u.id=i.user_id "+
-    "JOIN LATERAL (SELECT x.action_type,x.due_at FROM actions x WHERE x.strategy_instance_id=i.id ORDER BY x.calculated_at DESC,x.created_at DESC LIMIT 1) a ON true "+
-    "WHERE i.id=$1 AND i.status='ACTIVE' AND u.deleted_at IS NULL "+
-    "AND a.action_type='NO_ACTION' AND a.due_at=$2::timestamptz AND a.due_at>now()",
-    [strategyInstanceId,reminderDueAt]
-  );
+async function reviewReminderStillCurrent(notificationId:string){
+  const rows=await sql.unsafe("SELECT 1 FROM notifications n WHERE n.id=$1 AND "+reminderStillCurrentSql("n"),[notificationId]);
   return Boolean(rows[0]);
 }
 
@@ -164,7 +158,7 @@ async function processDeliveryBatch(limit:number,deadline:number){
       );
       continue;
     }
-    if(d.action_id==null&&String(d.type)==="REVIEW_UPCOMING"&&!(await reviewReminderStillCurrent(d.strategy_instance_id,d.reminder_due_at))){
+    if(d.action_id==null&&String(d.type)==="REVIEW_UPCOMING"&&!(await reviewReminderStillCurrent(String(d.notification_id)))){
       // An advance reminder has no action to revalidate. It is only sent while its strategy is still
       // active, its review is still scheduled for the announced date, and that date has not arrived
       // (from then on the on-the-day notification is the message).

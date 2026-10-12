@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import postgres from "postgres";
 import * as email from "@/lib/email";
 import { createReviewReminders } from "@/lib/review-reminder";
+import { reminderStillCurrentSql } from "@/lib/review-reminder-sql";
 import { createDeliveriesForNotification, processDeliveryBacklog } from "@/lib/notification-service";
 
 // Advance "review due on <date>" reminders: one per review, only for active strategies, on the
@@ -39,7 +40,7 @@ describe.skipIf(!url)("review reminders", () => {
     );
     await sql!.unsafe(
       "INSERT INTO actions (strategy_instance_id,strategy_version_id,fingerprint,action_type,title,instruction,due_at) " +
-        "VALUES ($1,$2,$3,$4,'Everything is on track','No review is due yet.',now()+($5::numeric*interval '1 day'))",
+        "VALUES ($1,$2,$3,$4,'Everything is on track','No review is due yet.',date_trunc('milliseconds',now()+($5::numeric*interval '1 day')))",
       [instance.id, instance.strategy_version_id, "fp-" + label + "-" + run, options.actionType ?? "NO_ACTION", options.dueInDays ?? 2]
     );
     return { userId, instanceId: String(instance.id) };
@@ -152,5 +153,16 @@ describe.skipIf(!url)("review reminders", () => {
     const [delivery] = await sql!.unsafe("SELECT status,last_error_code FROM notification_deliveries WHERE notification_id=$1 AND channel='EMAIL'", [row.id]);
     expect(delivery).toMatchObject({ status: "CANCELLED", last_error_code: "REMINDER_NO_LONGER_CURRENT" });
     expect(sent).not.toContain(String(row.title));
+  });
+
+  it("hides the in-app copy once the reminder is stale (same predicate the worker uses)", async () => {
+    process.env.REVIEW_REMINDER_LEAD_DAYS = "3";
+    const f = await fixture("hide", {});
+    await createReviewReminders();
+    const row = (await reminders(f.instanceId))[0];
+    const visible = () => sql!.unsafe("SELECT 1 FROM notifications n WHERE n.id=$1 AND " + reminderStillCurrentSql("n"), [row.id]);
+    expect(await visible()).toHaveLength(1);
+    await sql!.unsafe("UPDATE actions SET due_at=due_at+interval '7 days' WHERE strategy_instance_id=$1", [f.instanceId]);
+    expect(await visible()).toHaveLength(0);
   });
 });

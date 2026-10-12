@@ -4,3 +4,4 @@
 -- has moved) before anything is sent. Nullable and additive: existing notifications are untouched.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS strategy_instance_id uuid REFERENCES strategy_instances(id) ON DELETE CASCADE;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS reminder_due_at timestamptz;
+CREATE INDEX IF NOT EXISTS notifications_strategy_instance_idx ON notifications(strategy_instance_id) WHERE strategy_instance_id IS NOT NULL;

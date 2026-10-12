@@ -378,7 +378,7 @@ export const notifications = pgTable("notifications", {
   readAt: timestamp("read_at", { withTimezone: true }),
   deliveriesCreatedAt: timestamp("deliveries_created_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-}, (t) => [index("notification_user_idx").on(t.userId, t.readAt, t.createdAt), uniqueIndex("notification_action_unique").on(t.actionId), uniqueIndex("notification_review_key_unique").on(t.reviewKey).where(sql`${t.reviewKey} IS NOT NULL`)]);
+}, (t) => [index("notification_user_idx").on(t.userId, t.readAt, t.createdAt), index("notifications_strategy_instance_idx").on(t.strategyInstanceId).where(sql`${t.strategyInstanceId} IS NOT NULL`), uniqueIndex("notification_action_unique").on(t.actionId), uniqueIndex("notification_review_key_unique").on(t.reviewKey).where(sql`${t.reviewKey} IS NOT NULL`)]);
 
 export const notificationEndpoints = pgTable("notification_endpoints", {
   id: uuid("id").primaryKey().defaultRandom(),

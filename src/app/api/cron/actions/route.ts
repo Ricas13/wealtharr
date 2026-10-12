@@ -113,9 +113,13 @@ export async function GET(request: Request) {
     // Optional advance heads-up (off unless REVIEW_REMINDER_LEAD_DAYS is set). It runs after the
     // calculations so it sees fresh review dates, and before delivery creation so the same run sends it.
     // Best effort: a failure here must never block the on-the-day alerts.
-    let reviewReminders: unknown = { enabled: false, considered: 0, created: 0 };
+    let reviewReminders: Record<string, unknown> = { enabled: false, considered: 0, created: 0 };
+    let reviewReminderFailed = false;
     if (Date.now() < phaseEnds(0.8)) {
-      reviewReminders = await createReviewReminders().catch((error) => ({ enabled: true, failed: true, error: safeErrorCode(error) }));
+      reviewReminders = await createReviewReminders(new Date(), phaseEnds(0.8)).catch((error) => {
+        reviewReminderFailed = true;
+        return { enabled: true, failed: true, error: safeErrorCode(error) };
+      });
     }
 
     // Notifications: drain in batches until nothing is left or the budget for this phase is spent.
@@ -134,7 +138,7 @@ export async function GET(request: Request) {
     const marketDegraded = marketDataRequired && (!marketData.configured || marketData.failed > 0 || marketData.skipped > 0);
     const deferred = { entitlements: entitlementPool.deferred, calculations: calculationDeferred, deliveriesBacklog: !delivery.exhausted, deliveriesHeldBack: delivery.heldBack ?? 0 };
     const backlog = deferred.entitlements > 0 || deferred.calculations > 0 || deferred.deliveriesBacklog || deferred.deliveriesHeldBack > 0 || billing.deferred>0 || billing.hasMore;
-    const ok = calculationFailures === 0 && entitlementFailures === 0 && billing.failed===0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog;
+    const ok = calculationFailures === 0 && entitlementFailures === 0 && !reviewReminderFailed && billing.failed===0 && !marketDegraded && accountDeletions.stalled === 0 && !backlog;
     const summary = {
       ok, status: ok ? "healthy" : "degraded", durationMs: Date.now() - startedAt, accountDeletions, marketData, billing,
       entitlementPaused, entitlementFailures, calculated, calculationFailures, deferred,

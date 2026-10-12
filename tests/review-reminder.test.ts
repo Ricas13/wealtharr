@@ -30,7 +30,9 @@ describe("reminderWindow", () => {
 
   it("is due when the review is inside the lead time", () => {
     expect(reminderWindow({ ...base, dueAt: new Date(now.getTime() + 2 * DAY) })).toEqual({ due: true, reason: "DUE" });
-    expect(reminderWindow({ ...base, dueAt: new Date(now.getTime() + 1) }).due).toBe(true);
+    // Later today on the user's calendar is the on-the-day alert's job, not a heads-up.
+    expect(reminderWindow({ ...base, dueAt: new Date(now.getTime() + 1) })).toEqual({ due: false, reason: "SAME_DAY" });
+    expect(reminderWindow({ ...base, dueAt: new Date(now.getTime() + DAY) }).due).toBe(true);
   });
   it("includes exactly the lead boundary and excludes one millisecond beyond it", () => {
     expect(reminderWindow({ ...base, dueAt: new Date(now.getTime() + 3 * DAY) }).due).toBe(true);
@@ -96,8 +98,10 @@ describe("buildReminderMessage", () => {
     expect(text).not.toMatch(/\b(buy|sell)\b/i);
     expect(text).toContain("calculated on the day");
   });
-  it("takes no amount input at all", () => {
-    expect(Object.keys({ strategyName: "", dueAt: new Date(), timezone: "UTC", brand: "" }).sort()).toEqual(["brand", "dueAt", "strategyName", "timezone"]);
+  it("has no digits other than the date and no currency in the body", () => {
+    const stripped = message.body.replace("2 November 2026", "");
+    expect(stripped).not.toMatch(/[0-9]/);
+    expect(message.title.replace("2 November 2026", "")).not.toMatch(/[0-9£$€]/);
     expect(REVIEW_REMINDER_TYPE).toBe("REVIEW_UPCOMING");
   });
 });
@@ -124,7 +128,7 @@ describe("worker wiring and delivery safeguards", () => {
     expect(remind).toBeLessThan(route.indexOf("createPendingDeliveries(200)"));
     expect(remind).toBeLessThan(route.indexOf("processDeliveryBacklog("));
     // Best effort: a reminder failure must not abort the on-the-day alerts.
-    expect(route).toMatch(/createReviewReminders\([^)]*\)\.catch\(/);
+    expect(route).toMatch(/createReviewReminders\(.*\)\.catch\(/);
   });
   it("only reads an action's date and never its amounts when writing a reminder", () => {
     const service = read("src/lib/review-reminder.ts");
@@ -136,12 +140,13 @@ describe("worker wiring and delivery safeguards", () => {
   it("cancels a stale reminder delivery before sending", () => {
     const worker = read("src/lib/notification-service.ts");
     expect(worker).toContain("REMINDER_NO_LONGER_CURRENT");
-    expect(worker.indexOf("reviewReminderStillCurrent(d.strategy_instance_id")).toBeLessThan(worker.indexOf('getEmailProvider().send('));
+    expect(worker.indexOf("reviewReminderStillCurrent(String(d.notification_id)")).toBeLessThan(worker.indexOf('getEmailProvider().send('));
   });
   it("adds only nullable columns in a new migration", () => {
-    const migration = read("db/migrations/0035_review_reminder_notifications.sql");
+    const migration = read("db/migrations/0036_review_reminder_notifications.sql");
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS strategy_instance_id uuid REFERENCES strategy_instances(id) ON DELETE CASCADE");
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS reminder_due_at timestamptz");
-    expect(migration).not.toMatch(/NOT NULL|DROP |UPDATE |DELETE FROM/i);
+    expect(migration).toContain("CREATE INDEX IF NOT EXISTS notifications_strategy_instance_idx ON notifications(strategy_instance_id) WHERE strategy_instance_id IS NOT NULL");
+    expect(migration).not.toMatch(/ADD COLUMN[^;]*NOT NULL|DROP |UPDATE |DELETE FROM/i);
   });
 });
