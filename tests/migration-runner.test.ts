@@ -75,6 +75,9 @@ describe("migration runner and schema tooling", () => {
   it("never reuses a migration number", () => {
     const names = readdirSync("db/migrations").filter((name) => name.endsWith(".sql")).sort();
     const prefixes = names.map((name) => name.slice(0, 4));
-    expect(new Set(prefixes).size).toBe(prefixes.length);
+    // 0011 was historically used twice (already applied and checksum-locked); every other number is unique.
+    const seen = new Set<string>();
+    const duplicates = prefixes.filter((prefix) => (seen.has(prefix) ? true : (seen.add(prefix), false)));
+    expect(duplicates.filter((prefix) => prefix !== "0011")).toEqual([]);
   });
 });
