@@ -8,14 +8,14 @@ import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified
 import { LEVERAGE_DISCLOSURE, STRATEGY_PLUGINS, curatedRelease } from "@/domain/strategy/catalog";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
 import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
-import { EXPLORE_STATE_LABEL, exploreCardState, summariseRules } from "@/domain/explore-catalogue";
+import { EXPLORE_STATE_LABEL, GENERIC_RISK_NOTE, cardDescription, exploreCardState, summariseRules } from "@/domain/explore-catalogue";
 
 export const dynamic = "force-dynamic";
 
 export default async function ExplorePage() {
   const user = await requirePageUser();
   const [definitions, available, existing, entitlements, mappingRows] = await Promise.all([
-    sql.unsafe("SELECT key,name,description,enabled FROM strategy_definitions"),
+    sql.unsafe("SELECT key,enabled FROM strategy_definitions"),
     listAvailableStrategies(),
     listUserStrategies(user.id),
     loadEntitlements(user.id),
@@ -60,10 +60,9 @@ export default async function ExplorePage() {
     });
     return {
       key: plugin.key,
-      name: String(definition?.name ?? plugin.seedDefinition?.name ?? plugin.profile?.name ?? plugin.key),
-      description: String(definition?.description ?? plugin.seedDefinition?.description ?? ""),
+      name: String(plugin.seedDefinition?.name ?? plugin.profile?.name ?? plugin.key),
+      description: cardDescription(plugin),
       summary,
-      risks: plugin.profile?.risks ?? [],
       disclosure: plugin.profile?.disclosure ?? (summary.leveraged ? LEVERAGE_DISCLOSURE : null),
       result
     };
@@ -75,7 +74,7 @@ export default async function ExplorePage() {
     <div className="page-title">
       <div>
         <div className="eyebrow">Explore / Strategies</div>
-        <h1>Popular strategies, in plain English.</h1>
+        <h1>Strategy catalogue, in plain English.</h1>
         <p>{brand} does not choose a strategy for you and this is not suitability advice. Each card describes a published set of rules; it does not promise or imply any return. Check that a strategy fits your own circumstances before you start it.</p>
       </div>
       <Link className="button" href="/app/community"><BarChart3 size={16}/>Community stats</Link>
@@ -93,8 +92,8 @@ export default async function ExplorePage() {
         </>}
         {card.summary.allocations.length===0&&card.summary.targetExposure&&
           <p className="help">Follows a target value for: {card.summary.targetExposure}{card.summary.reviewFrequency?`, reviewed ${card.summary.reviewFrequency}`:""}.</p>}
-        {card.risks.length>0&&<details className="advanced-details"><summary>Main risks</summary><ul>{card.risks.map((risk) => <li key={risk}>{risk}</li>)}</ul></details>}
         {card.disclosure&&<p className="help">{card.disclosure}</p>}
+        {card.result.state==="AVAILABLE"&&<p className="help">{GENERIC_RISK_NOTE}</p>}
         {card.result.reason&&<p className="help">{card.result.reason}</p>}
         {card.result.startAction==="START"&&
           <Link className="button primary" href={"/app/strategies/new?strategy="+encodeURIComponent(card.key)}>Start this strategy <ArrowRight size={16}/></Link>}

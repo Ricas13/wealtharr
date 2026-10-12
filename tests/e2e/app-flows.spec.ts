@@ -284,13 +284,13 @@ test("Explore lists the catalogue and offers Start only for released strategies 
   const user=await createVerifiedUser(testInfo,"explore");
   await login(page,user);
   await page.goto("/app/explore");
-  await expect(page.getByRole("heading",{name:"Popular strategies, in plain English."})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Strategy catalogue, in plain English."})).toBeVisible();
   const cards=page.locator("[data-strategy-key]");
   expect(await cards.count()).toBeGreaterThan(1);
   await expect(page.getByRole("link",{name:"Community stats"})).toHaveAttribute("href","/app/community");
   // Every Start link belongs to an AVAILABLE card; no other state may offer one.
   await expect(page.locator('[data-state]:not([data-state="AVAILABLE"]) a[href^="/app/strategies/new"]')).toHaveCount(0);
-  // HFEA is installed disabled and has no verified market in the test database.
+  // hfea is installed disabled.
   const hfea=page.locator('[data-strategy-key="hfea"]');
   await expect(hfea).toHaveAttribute("data-state","COMING_SOON");
   await expect(hfea.getByRole("link",{name:/Start this strategy/})).toHaveCount(0);

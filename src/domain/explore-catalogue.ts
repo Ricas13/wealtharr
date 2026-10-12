@@ -118,3 +118,26 @@ export function preselectedStrategyKey(raw:unknown,allowedKeys:readonly string[]
   if(typeof value!=="string")return null;
   return allowedKeys.includes(value)?value:null;
 }
+
+const OPERATOR_NOTE=/licen[cs]|brand|trade\s?mark|research|pending|verif|draft/i;
+const GENERATED_DESCRIPTION:Record<string,string>={
+  FIXED_ALLOCATION:"Holds fixed target weights and rebalances them on a set review schedule.",
+  VALUE_TARGET:"Follows a target value path and compares your portfolio with it at each review.",
+  MOMENTUM_ROTATION:"Rotates between assets according to price-trend signals. Not yet available.",
+  RESEARCH_PENDING:"The method is still being researched. Not yet available."
+};
+
+/**
+ * Customer-facing description built only from code-owned copy. It never reads the database
+ * description (research rows store internal rules text there) and never uses `profile.rules`, which
+ * can name funds. Seed descriptions that read like operator notes fall back to a generic sentence.
+ */
+export function cardDescription(plugin:StrategyPlugin):string{
+  const seed=plugin.seedDefinition?.description?.trim()??"";
+  if(seed&&seed!==plugin.profile?.rules&&!OPERATOR_NOTE.test(seed))return seed;
+  const engine=plugin.profile?.engine??plugin.codeRelease?.engine??plugin.seedDefinition?.engine??"RESEARCH_PENDING";
+  return GENERATED_DESCRIPTION[engine]??GENERATED_DESCRIPTION.RESEARCH_PENDING;
+}
+
+/** The only risk line shown on a card besides the leverage disclosure; `profile.risks` are operator notes. */
+export const GENERIC_RISK_NOTE="All investing carries risk, including loss of capital.";

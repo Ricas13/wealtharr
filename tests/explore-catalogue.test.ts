@@ -1,7 +1,7 @@
 import { describe,expect,it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  exploreCardState,preselectedStrategyKey,summariseRules,
+  cardDescription,exploreCardState,preselectedStrategyKey,summariseRules,
   type ExploreCardInput
 } from "../src/domain/explore-catalogue";
 import { STRATEGY_PLUGINS,getStrategyPlugin } from "../src/domain/strategy/catalog";
@@ -104,6 +104,33 @@ describe("preselectedStrategyKey",()=>{
   });
 });
 
+describe("customer-facing copy",()=>{
+  const TICKERS=/\b(UPRO|TMF|TQQQ|SPXL|TMV|UDOW|TNA|SOXL|SSO|QLD|SPY|QQQ|VTI|BND|AGG)\b/i;
+  it("never uses profile rules or internal notes as the card description",()=>{
+    for(const plugin of STRATEGY_PLUGINS){
+      const text=cardDescription(plugin);
+      expect(text.length).toBeGreaterThan(0);
+      expect(text).not.toBe(plugin.profile?.rules);
+      expect(text).not.toMatch(TICKERS);
+      expect(text).not.toMatch(/licen[cs]|trade\s?mark/i);
+    }
+  });
+
+  it("does not read descriptions, names or risk notes from the database or the profile",()=>{
+    const page=read("src/app/app/explore/page.tsx");
+    expect(page).not.toContain("definition?.description");
+    expect(page).not.toContain("definition.description");
+    expect(page).not.toMatch(/SELECT[^"]*description/);
+    expect(page).toMatch(/description:\s*cardDescription\(plugin\)/);
+    expect(page).not.toContain("profile?.risks");
+    expect(page).not.toContain("Main risks");
+  });
+
+  it("shows the generic risk line only on AVAILABLE cards",()=>{
+    const page=read("src/app/app/explore/page.tsx");
+    expect(page).toContain('card.result.state==="AVAILABLE"&&<p className="help">{GENERIC_RISK_NOTE}</p>');
+  });
+});
 describe("Explore wiring",()=>{
   const page=read("src/app/app/explore/page.tsx");
 

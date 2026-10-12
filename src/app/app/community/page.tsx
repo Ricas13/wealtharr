@@ -3,7 +3,7 @@ import { PerformanceChart } from "@/components/PerformanceChart";
 
 export default async function CommunityPage(){
   const strategies=await sql.unsafe(
-    "SELECT d.id,d.name,d.key,d.description,v.id AS version_id,v.version FROM strategy_definitions d JOIN LATERAL (SELECT id,version FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) ORDER BY v.effective_from DESC LIMIT 1) v ON true WHERE d.enabled=true ORDER BY d.name"
+    "SELECT d.id,d.name,d.key,d.description,v.id AS version_id,v.version FROM strategy_definitions d JOIN LATERAL (SELECT id,version FROM strategy_versions v WHERE v.strategy_definition_id=d.id AND v.lifecycle_status='PUBLISHED' AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) ORDER BY v.effective_from DESC,v.published_at DESC NULLS LAST LIMIT 1) v ON true WHERE d.enabled=true ORDER BY d.name"
   );
   const cards=[];
   for(const strategy of strategies){
