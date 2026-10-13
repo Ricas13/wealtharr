@@ -17,4 +17,4 @@ US reference £10,000: five £2,000 sleeves. Later £3,000 large cap / £1,000 s
 
 Reviewer: PENDING; independent approval: NO.
 
-**Execution convention (Wealtharr implementation, not part of this strategy):** when order sizing (whole shares, minimum trade size) leaves residual drift for which no order of a permitted size exists, and no preference such as disabled selling or a cash buffer is what blocks it, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".
+**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".

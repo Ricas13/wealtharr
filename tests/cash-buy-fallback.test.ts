@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
 import { fixedAllocationEngine, REBALANCE_STUCK_TITLE } from "../src/domain/strategy/fixed-allocation";
-import { assessExecutionResidue, residueHoldProposal, residueLegs } from "../src/domain/strategy/execution-residue";
+import { assessStuckResidue, residueHoldProposal, residueLegs } from "../src/domain/strategy/execution-residue";
 import { isCashBuyShortfall, settleCashBuyFallback } from "../src/domain/strategy/cash-buy-fallback";
 import { planPracticalTrade } from "../src/domain/execution";
 import type { ProposedAction } from "../src/domain/strategy/types";
@@ -78,28 +78,36 @@ describe("fixed allocation with residual cash that cannot buy a share", () => {
     expect(result.actionType).toBe("DATA_REQUIRED");
     expect(result.title).toBe(REBALANCE_STUCK_TITLE);
 
-    // Threshold 5% x 300 = 15. Excess beyond the threshold: A 50-15=35, B 30-15=15, C 20-15=5.
-    // With one whole share worth 100 per leg every excess is <= one share, so the residue closes.
     const { legs, total } = residueLegs({
       allocations: [{ exposure: "A", weight: "0.5" }, { exposure: "B", weight: "0.3" }, { exposure: "C", weight: "0.2" }],
       exposures: stuckContext.exposures,
       cash: new Decimal("100")
     });
     expect(total.toFixed(2)).toBe("300.00");
-    const shares = { A: new Decimal("100"), B: new Decimal("100"), C: new Decimal("100") };
-    // Whole shares, no minimum, buffer or fee, selling allowed: granularity = 100 per leg; deviations 50 / 30 / 20 are
-    // all below it, and there is no overweight leg, so no permitted order exists.
     const whole = { fractionalShares: false, minimumTradeAmount: new Decimal(0), cashBufferAmount: new Decimal(0), flatFee: new Decimal(0), allowSelling: true };
-    const assessment = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), cash: new Decimal("100"), constraints: whole, wholeShareValues: shares });
-    expect(assessment.closes).toBe(true);
-    const hold = residueHoldProposal(result, assessment, { state: {}, now: new Date("2026-10-07T12:00:00Z"), cash: new Decimal("100"), currency: "GBP", reason: "NO_PRACTICAL_STEP" });
+    const assess = (price: string) => assessStuckResidue({
+      legs: legs.map((leg) => ({ ...leg, price: new Decimal(price) })), cash: new Decimal("100"),
+      constraints: whole, total, threshold: new Decimal("0.05")
+    });
+    // One share = 100. S before = 50^2 + 30^2 + 20^2 = 2500 + 900 + 400 = 3800. Buying one share of A (100) overshoots:
+    // A 200 is 50 over, S = 2500 + 900 + 400 = 3800 (not strictly lower); B 160 is 70 over, S = 2500 + 4900 + 400 = 7800;
+    // C 140 is 80 over, S = 2500 + 900 + 6400 = 9800. Nothing improves and nothing is overweight to sell.
+    // Guard: A 100 >= 75, B 60 >= 45, C 40 >= 30. So the residue closes.
+    const assessment = assess("100");
+    expect(assessment.kind).toBe("CLOSE");
+    const hold = residueHoldProposal(result, legs, { state: {}, now: new Date("2026-10-07T12:00:00Z"), cash: new Decimal("100"), currency: "GBP", fractionalShares: false });
     expect(hold.actionType).toBe("HOLD");
     expect(hold.explanation.find((row) => row.label === "Residual cash")?.value).toBe("100.00");
-    // A share worth 10 per leg makes A (excess 35) and B (excess 15) material: the review stays open.
-    const tiny = { A: new Decimal("10"), B: new Decimal("10"), C: new Decimal("10") };
-    const material = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), cash: new Decimal("100"), constraints: whole, wholeShareValues: tiny });
-    expect(material.closes).toBe(false);
-    expect(material.code).toBe("MATERIAL_DRIFT");
+    // One share = 10: BUY A k = min(floor(50/10), floor(100/10)) = 5 shares = 50 -> A 150 on target, so
+    // S = 0 + 900 + 400 = 1300 < 3800: the improving order is proposed instead of closing.
+    const cheap = assess("10");
+    expect(cheap.kind).toBe("PROPOSE");
+    if (cheap.kind === "PROPOSE") {
+      expect(cheap.trade.side).toBe("BUY");
+      expect(cheap.trade.exposure).toBe("A");
+      expect(cheap.trade.amount.toFixed(2)).toBe("50.00");
+      expect(cheap.trade.sAfter.toFixed(2)).toBe("1300.00");
+    }
     // Unblocked, the largest underweight leg is bought with the cash: min(50, 100) = 50.
     const unblocked = fixedAllocationEngine.calculate({
       ...context("100"),

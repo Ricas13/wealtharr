@@ -87,16 +87,28 @@ describe.skipIf(!dbUrl)("fixed allocation whole-share review closes on execution
   expect(afterSecond.forceReview).toBe(true);
   expect(afterSecond.lastReviewAt).toBeUndefined();
 
-  // Residual cash 4589.70 - 4461.90 = 127.80. Remaining deltas: equity 5500 - 5410.30 = 89.70 (< 91.70 one share)
-  // and bonds 4500 - 4461.90 = 38.10 (< 41.70). Both buys are below one whole share, nothing is overweight:
-  // previously DATA_REQUIRED forever; now a HOLD that records the residue.
-  const holdId=filledSecond.actionId??(await calculateAction(instanceId)).actionId;
+  // Cash 4589.70 - 4461.90 = 127.80. Remaining gaps: equity 5500 - 5410.30 = 89.70 (< 91.70 one share) and bonds
+  // 4500 - 4461.90 = 38.10 (< 41.70): the engine's capped buys are below one share. S = 89.70^2 + 38.10^2
+  // = 8046.09 + 1451.61 = 9497.70. One more equity share (91.70, affordable) leaves equity 2.00 over:
+  // S = 4.00 + 1451.61 = 1455.61 < 9497.70 (one more bonds share gives 8046.09 + 12.96 = 8059.05), so the
+  // improving order BUY 1 equity share = 91.70 is proposed (it overshoots the 89.70 gap by 2.00).
+  const thirdId=filledSecond.actionId??(await calculateAction(instanceId)).actionId;
+  const third=await actionRow(thirdId);
+  expect(third.action_type).toBe("BUY");
+  expect(third.ticker).toBe("RSQE"+suffix);
+  expect(Number(third.amount)).toBeCloseTo(91.70,2);
+  const filledThird=await executeAction(userId,thirdId,{price:"91.70",quantity:"1",fee:"0"});
+
+  // Cash 127.80 - 91.70 = 36.10; equity 5502.00 (2.00 over), bonds 4461.90 (38.10 under). No purchase fits
+  // (36.10 < 41.70); selling one equity share and buying one bonds share gives S = 8046.09 + 12.96 = 8059.05
+  // > 1455.61. A local optimum: the review closes with a HOLD that records the residue.
+  const holdId=filledThird.actionId??(await calculateAction(instanceId)).actionId;
   const hold=await actionRow(holdId);
   expect(hold.action_type).toBe("HOLD");
   const rows=hold.explanation as Array<{label:string;value:string}>;
-  expect(rows.find(row=>row.label==="Residual cash")?.value).toBe("127.80");
-  expect(rows.find(row=>row.label==="Residual drift US_EQUITY_3X_LONG")?.value).toContain("89.70");
-  expect(rows.find(row=>row.label==="Residual drift LONG_TREASURY_3X_LONG")?.value).toContain("38.10");
+  expect(rows.find(row=>row.label==="Residual cash")?.value).toBe("36.10");
+  expect(rows.find(row=>row.label==="Residual drift US_EQUITY_3X_LONG")?.value).toContain("over target by 2.00");
+  expect(rows.find(row=>row.label==="Residual drift LONG_TREASURY_3X_LONG")?.value).toContain("under target by 38.10");
 
   const beforeClose=Date.now();
   await executeAction(userId,holdId);
@@ -106,8 +118,8 @@ describe.skipIf(!dbUrl)("fixed allocation whole-share review closes on execution
   expect(closedAt).toBeGreaterThanOrEqual(beforeClose-5000);
 
   const ledger=await db!.unsafe("SELECT quantity,cash_amount FROM ledger_events WHERE strategy_instance_id=$1 AND event_type='BUY' ORDER BY occurred_at,created_at",[instanceId]);
-  expect(ledger.map(row=>Number(row.quantity))).toEqual([59,107]);
-  expect(ledger.map(row=>Number(row.cash_amount))).toEqual([-5410.3,-4461.9]);
+  expect(ledger.map(row=>Number(row.quantity))).toEqual([59,107,1]);
+  expect(ledger.map(row=>Number(row.cash_amount))).toEqual([-5410.3,-4461.9,-91.7]);
 
   // The review is closed: the next calculation is NO_ACTION and the next review is a future quarter end.
   const next=await calculateAction(instanceId);

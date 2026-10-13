@@ -59,48 +59,52 @@ Changing an existing strategy:
 - `assertCuratedRules` compares every stored version of a key with the single rule set in its plugin, so editing a plugin's `config` in place makes installed versions read "Stored rules need code review". A genuinely different rule set (for example a regional variant) is added as its own plugin with its own key and its own spec card and golden tests, as described in `docs/strategy-specs/README.md`.
 - Metadata-only changes (sources, risks, spec-card or golden-test paths, descriptions) do not alter rules and can be edited in the plugin file directly. The seed does not rewrite installed definitions (except the guarded research-only realignment above), so seed-definition edits generally only affect fresh installs.
 
-## Execution-residue closure (fixed-allocation engine)
+## Execution convention for residual drift (fixed-allocation engine)
 
-This is a Wealtharr **implementation convention**, not a strategy rule. A fixed-allocation review closes only
-on a HOLD, and a HOLD needs drift <= threshold. Order sizing (orders are sized down to whole shares and never
-exceed a leg's remaining gap to its target; minimum trade size applies) can leave drift for which no order of a
-permitted size exists. Without a closure rule the review would stay open forever (the engine previously returned
-`DATA_REQUIRED` "no executable rebalance step"). The convention is deliberately **not** "no trade could ever
-reduce drift": for example buying one extra whole share that overshoots a leg's gap can reduce the worst
-deviation, and the sizing convention does not propose it.
+This is a Wealtharr **implementation convention**, not a strategy rule. A fixed-allocation review closes only on a
+HOLD, and a HOLD needs drift <= threshold. Order sizing (whole shares, minimum trade size, cash buffer, selling
+preference) can leave drift that the engine's capped orders cannot remove; previously the engine returned
+`DATA_REQUIRED` "no executable rebalance step" and the review never closed.
 
-Rules, all in `src/domain/strategy/execution-residue.ts`, `src/domain/execution.ts` and `src/lib/action-service.ts`:
+Code: `src/domain/strategy/execution-residue.ts`, `src/domain/execution.ts`, `src/lib/action-service.ts`.
 
-1. **Sub-unit amounts are converged.** Any amount below 0.005 of the account currency (it rounds to 0.00) is never
-   traded. The engine returns a HOLD when the worst leg differs by less than that, ignores sub-unit legs, and
-   `planPracticalTrade` refuses an order below it (`BELOW_MINIMUM_TRADE`).
-2. **Fallback first.** PR #61's cash-buy fallback runs (each blocked exposure is marked once, bounded attempts),
-   and a blocked funding SALE (`BELOW_ONE_SHARE`, `BELOW_MINIMUM_TRADE`, `SELLING_DISABLED`) is marked too so the
-   engine tries the next overweight leg. Closure is evaluated only after it is exhausted and the result is still
-   `DATA_REQUIRED` because of a practical-trade refusal or the engine's "no executable step" outcome, with data
-   status `CURRENT`.
-3. **Closure predicate** (money in the account currency; `unit` = 0.005, which assumes a 2-decimal currency).
-   Per leg: `deviation = |target - current|`, `excess = deviation - threshold x total`,
-   `granularity = fractionalShares ? max(minimumTrade, unit) : max(whole-share value, minimumTrade)`,
-   `spendable = max(cash - flatFee, 0)` (the cash buffer is deliberately ignored). The review closes only if:
-   a. every leg outside the threshold has `excess <=` the value of one whole share of that leg (inclusive);
-   b. every overweight leg (deviation >= unit, inside the threshold or not) has `deviation < granularity`, so no
-      sale of a permitted size exists even with a preference such as disabled selling removed;
-   c. every underweight leg outside the threshold has `deviation < granularity` or `spendable < granularity`;
-   d. (whole shares, selling allowed) selling ONE whole share of an overweight leg and buying whole shares of an
-      underweight leg with the cash that frees (minimum trade, buffer and fees respected) does not strictly
-      reduce the worst leg deviation.
-4. **Everything else stays open** with a clear reason: material drift (a), a permitted order that a preference
-   blocks (b/c: disabled selling, a cash buffer that is what stops a purchase), an improving step the sizing
-   convention cannot propose (d, fail closed; the proposal names the sale and purchase), a leg without a verified
-   current price, and any stale, missing, rejected or foreign-currency price, missing mapping or unclassified
-   holding.
-5. **The HOLD records the residue** (residual drift per leg, residual cash, and the convention in its
-   share-mode wording). Confirming it uses the normal HOLD path (`postActionReviewState`): `lastReviewAt`
-   advances and `forceReview` clears, so the next review is scheduled normally.
-6. **Alerts.** Near a boundary the proposal can alternate between this HOLD and a closure-related
-   `DATA_REQUIRED` as prices move. Both use the review's single `REVIEW` alert key, so a review cycle raises one
-   notification that is updated in place (no hysteresis state is stored; the closure decision is recomputed from
-   the ledger and verified prices each time). Genuine data problems keep their own `DATA_REQUIRED` alert.
-7. **Sizing price for a sale** is the held line of the largest position, as in order sizing; a purchase uses the
-   mapped line of the account with the most cash.
+**Objective.** `S = sum over legs of (current_i - target_i)^2`, at the current total (units x validated price plus
+cash). A trade is *improving* only if it strictly decreases `S`.
+
+**1. Sub-unit amounts.** Anything below 0.005 of the account currency (assumes a 2-decimal currency) is never traded:
+the engine ignores such legs and `planPracticalTrade` refuses such an order.
+
+**2. Fallback.** After the engine's capped proposal, PR #61's cash-buy fallback runs, and a blocked funding sale
+(`BELOW_ONE_SHARE`, `BELOW_MINIMUM_TRADE`, `SELLING_DISABLED`) is marked too so the next overweight leg is tried.
+
+**3. When the engine still has no step** (data status `CURRENT`, every leg priced):
+
+a. `bestImprovingTrade` under the user's actual constraints searches a bounded neighbourhood of single trades:
+   whole shares `k in {1, floor(gap/p), ceil(gap/p)}` clipped to cash or holdings; fractional amounts
+   `{min(gap, spendable), minimum trade}`; a purchase must be affordable after buffer and flat fee, a sale needs
+   `allowSelling` and an overweight held leg, and every order respects the minimum trade. The best strictly
+   improving trade is **proposed** as the next BUY/SELL and may overshoot the exact gap (the explanation says by how
+   much). If no single trade improves, a sale of an overweight leg followed by a purchase is judged by `S` after
+   both; the sale is proposed first, and the next recalculation finds the purchase as a strictly improving single
+   trade. Ties: smaller worst deviation, fewer units, leg order. `S` at the start of each pair strictly decreases,
+   so recalculation terminates.
+b. Otherwise the same search with selling allowed and/or the cash buffer removed (each preference individually, then
+   together). If it finds an improving trade the proposal stays **DATA_REQUIRED** and names the blocking preference.
+   The minimum trade size is part of the sizing granularity and is not relaxed (a residue below it is closable).
+c. Otherwise the portfolio is a local optimum. If a leg with a positive target holds less than 50% of it the
+   proposal stays **DATA_REQUIRED** ("portfolio too small to fund one unit of X: minimum investable amount about
+   price / weight"). Otherwise the review **closes** with a HOLD that records residual drift and cash.
+
+A leg without a validated current price fails closed (ordinary `DATA_REQUIRED`). Stale, rejected or
+foreign-currency prices, missing mappings and unclassified holdings are never closed.
+
+**4. Alerts.** The closing HOLD and the "preference / too small" DATA_REQUIRED use their own alert class `RESIDUE`
+(a separate `review_key`, so one notification per review cycle that is updated in place as the outcome alternates).
+A genuine data problem keeps the `DATA_REQUIRED` class and raises its own notification.
+
+**5. Price used.** A sale is priced on the held line of the largest position (as in order sizing); a purchase on the
+mapped line of the account with the most cash.
+
+Known limits: the search is bounded (single trades and one sale-then-purchase pair), not a global optimiser; fees do
+not change the targets; confirming the HOLD closes the review even though a larger, unconstrained trade sequence
+might reduce drift further.
