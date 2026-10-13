@@ -18,6 +18,8 @@ try{
     "WHERE d.key='9sig' AND v.lifecycle_status='PUBLISHED' ORDER BY v.published_at DESC NULLS LAST LIMIT 1"
   );
   if(!rows[0])throw new Error("CI_9SIG_TEST_VERSION_MISSING");
+  // Disposable CI-only synthetic customer paths. Never apply this enablement in production.
+  await sql.unsafe("UPDATE strategy_definitions SET enabled=true WHERE key='9sig'");
   await sql.unsafe(
     "INSERT INTO strategy_version_attestations (strategy_version_id,spec_card,golden_tests,notes,attested_by_email) "+
     "VALUES ($1,'docs/strategy-specs/ci-only-fixture.md','tests/value-target.test.ts',"+
