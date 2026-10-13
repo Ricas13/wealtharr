@@ -27,6 +27,14 @@ describe("Trading 212 local-only transaction preview",()=>{
    expect(()=>parseTrading212Csv(header+"\n"+row.replace(",1,1,USD",",,1,USD"))).toThrow("BROKER_CSV_AMBIGUOUS_TRADE");
    expect(()=>parseTrading212Csv("Action,Time\nMarket buy,2026")).toThrow("BROKER_CSV_UNSUPPORTED_HEADERS");
  });
+ it("rejects impossible dates, nonsensical currency and malformed ISIN before trade preview",()=>{
+   const row="Market buy,2026-01-05 10:00:00,US0378331005,AAPL,Apple Inc,2,123.45,USD,0.77,190.00,lot-a";
+   expect(()=>parseTrading212Csv(header+"\n"+row.replace("2026-01-05","2026-02-30"))).toThrow("BROKER_CSV_AMBIGUOUS_TRADE");
+   expect(()=>parseTrading212Csv(header+"\n"+row.replace("10:00:00","25:00:00"))).toThrow("BROKER_CSV_AMBIGUOUS_TRADE");
+   expect(()=>parseTrading212Csv(header+"\n"+row.replace("US0378331005","NOT-AN-ISIN"))).toThrow("BROKER_CSV_AMBIGUOUS_TRADE");
+   expect(()=>parseTrading212Csv(header+"\n"+row.replace(",USD,0.77",",US D,0.77"))).toThrow("BROKER_CSV_AMBIGUOUS_TRADE");
+   expect(parseTrading212Csv(header+"\n"+row.replace("2026-01-05","2024-02-29"))).toHaveLength(1);
+ });
  it("does not accept malformed quoting or a browser-killing oversize statement",()=>{
    expect(()=>parseTrading212Csv(header+'\n"Market buy,2026')).toThrow("BROKER_CSV_UNCLOSED_QUOTE");
    expect(()=>parseTrading212Csv("x".repeat(2_500_001))).toThrow("BROKER_CSV_TOO_LARGE");

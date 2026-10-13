@@ -2,6 +2,17 @@
  * Trading 212 changes currency-labelled/optional columns by export period; use header names, not positions.
  */
 export type Trading212CsvTrade={id:string;side:"BUY"|"SELL";ticker:string;isin:string;quantity:string;price:string;currency:string;time:string};
+/** Parse exported wall-clock timestamps without silently rolling invalid calendar dates.
+ * The trade-confirmation form still requires the exchange and timezone.
+ */
+function validBrokerCsvTime(value:string):boolean{
+  const m=/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?$/.exec(value);
+  if(!m)return false;
+  const [y,mo,d,h,mi,sec]=m.slice(1,7).map(Number);
+  if(y<2000||mo<1||mo>12||d<1||h>23||mi>59||sec>59)return false;
+  const day=new Date(Date.UTC(y,mo-1,d));
+  return day.getUTCFullYear()===y&&day.getUTCMonth()===mo-1&&day.getUTCDate()===d;
+}
 export function parseTrading212Csv(text:string):Trading212CsvTrade[]{
   if(text.length>2_500_000)throw new Error("BROKER_CSV_TOO_LARGE");
   const records:string[][]=[];
@@ -39,7 +50,8 @@ export function parseTrading212Csv(text:string):Trading212CsvTrade[]{
     const id=read(r,"ID"),isin=read(r,"ISIN"),ticker=read(r,"Ticker");
     const quantity=read(r,"No. of shares"),price=read(r,"Price / share");
     const time=read(r,"Time"),currency=priceCurrency>=0?r[priceCurrency].trim():"";
-    if(!id||!isin||!ticker||!time||!/^[0-9]+(?:\.[0-9]{1,12})?$/.test(quantity)||
+    if(!id||id.length>200||!/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin.toUpperCase())||!ticker||ticker.length>100||!validBrokerCsvTime(time)||
+       (currency!==""&&!/^[A-Za-z]{3}$/.test(currency))||!/^[0-9]+(?:\.[0-9]{1,12})?$/.test(quantity)||
        !/^[0-9]+(?:\.[0-9]{1,10})?$/.test(price)||!Number.isFinite(Number(quantity))||
        Number(quantity)<=0||Number(price)<=0)throw new Error("BROKER_CSV_AMBIGUOUS_TRADE");
     if(seen.has(id))throw new Error("BROKER_CSV_DUPLICATE_ID");
