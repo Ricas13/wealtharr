@@ -7,7 +7,7 @@ import { authFailure } from "@/lib/api-auth";
 import { ALL_CHANNELS, ALL_FEATURES } from "@/domain/entitlements";
 
 const schema=z.object({
-  slug:z.string().regex(/^[a-z][a-z0-9-]{0,59}$/).refine((slug)=>slug!=="admin",{message:"\"admin\" is reserved for the administrator entitlement snapshot."}),displayName:z.string().min(1),description:z.string().default(""),
+  slug:z.string().regex(/^[a-z][a-z0-9-]{0,59}$/).refine((slug)=>slug!=="admin",{message:"\"admin\" is reserved for the administrator entitlement snapshot."}),displayName:z.string().min(1),description:z.string().default(""),homepageHighlights:z.array(z.string().trim().min(1).max(90)).max(5).default([]),
   monthlyPriceMinor:z.number().int().nonnegative(),annualPriceMinor:z.number().int().nonnegative(),
   annualDiscountBps:z.number().int().min(0).max(10000).default(0),
   currency:z.string().length(3),supportedBillingCurrencies:z.array(z.string().length(3)).min(1),
@@ -18,14 +18,26 @@ const schema=z.object({
 });
 export async function PUT(request:Request){
   try{assertSameOrigin(request);const admin=await requireAdmin();const p=schema.parse(await request.json());
-    await sql.unsafe(
-      "INSERT INTO plans (slug,display_name,description,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,available_strategy_keys,stripe_monthly_price_id,stripe_annual_price_id,entitlements,trial_days,visible,archived,sort_order)" +
-      " VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13::jsonb,$14,$15,$16,$17)" +
-      " ON CONFLICT (slug) DO UPDATE SET display_name=EXCLUDED.display_name,description=EXCLUDED.description,monthly_price_minor=EXCLUDED.monthly_price_minor,annual_price_minor=EXCLUDED.annual_price_minor,annual_discount_bps=EXCLUDED.annual_discount_bps,billing_currency=EXCLUDED.billing_currency,supported_billing_currencies=EXCLUDED.supported_billing_currencies,max_active_strategies=EXCLUDED.max_active_strategies,available_strategy_keys=EXCLUDED.available_strategy_keys,stripe_monthly_price_id=EXCLUDED.stripe_monthly_price_id,stripe_annual_price_id=EXCLUDED.stripe_annual_price_id,entitlements=EXCLUDED.entitlements,trial_days=EXCLUDED.trial_days,visible=EXCLUDED.visible,archived=EXCLUDED.archived,sort_order=EXCLUDED.sort_order,updated_at=now()",
-      [p.slug,p.displayName,p.description,p.monthlyPriceMinor,p.annualPriceMinor,p.annualDiscountBps,p.currency.toUpperCase(),JSON.stringify(p.supportedBillingCurrencies.map(x=>x.toUpperCase())),p.maxActiveStrategies,JSON.stringify(p.availableStrategyKeys),p.stripeMonthlyPriceId??null,p.stripeAnnualPriceId??null,JSON.stringify(p.entitlements),p.trialDays,p.visible,p.archived,p.sortOrder]
-    );
-    // Record the change before enforcement so it is audited even if enforcement is slow or fails.
-    await sql.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id) VALUES ($1,'plan.upsert','plan',$2)",[admin.id,p.slug]);
+    // Publish limit is a database-side invariant, not merely a five-card frontend slice.
+    // Serialise publishes across concurrent admin sessions before reading the count.
+    await sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(907199911::bigint)");
+      if(p.visible&&!p.archived){
+        const existing=await tx.unsafe(
+          "SELECT count(*)::int AS n FROM plans WHERE visible=true AND archived=false AND slug<>$1",
+          [p.slug]
+        );
+        if(Number(existing[0]?.n??0)>=5)throw new Error("PUBLIC_PLAN_LIMIT_5");
+      }
+      await tx.unsafe(
+        "INSERT INTO plans (slug,display_name,description,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,available_strategy_keys,stripe_monthly_price_id,stripe_annual_price_id,entitlements,trial_days,visible,archived,sort_order,homepage_highlights)" +
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13::jsonb, $14,$15,$16,$17,$18::jsonb)" +
+        " ON CONFLICT (slug) DO UPDATE SET display_name=EXCLUDED.display_name,description=EXCLUDED.description,monthly_price_minor=EXCLUDED.monthly_price_minor,annual_price_minor=EXCLUDED.annual_price_minor,annual_discount_bps=EXCLUDED.annual_discount_bps,billing_currency=EXCLUDED.billing_currency,supported_billing_currencies=EXCLUDED.supported_billing_currencies,max_active_strategies=EXCLUDED.max_active_strategies,available_strategy_keys=EXCLUDED.available_strategy_keys,stripe_monthly_price_id=EXCLUDED.stripe_monthly_price_id,stripe_annual_price_id=EXCLUDED.stripe_annual_price_id,entitlements=EXCLUDED.entitlements,trial_days=EXCLUDED.trial_days,visible=EXCLUDED.visible,archived=EXCLUDED.archived,sort_order=EXCLUDED.sort_order,homepage_highlights=EXCLUDED.homepage_highlights,updated_at=now()",
+        [p.slug,p.displayName,p.description,p.monthlyPriceMinor,p.annualPriceMinor,p.annualDiscountBps,p.currency.toUpperCase(),JSON.stringify(p.supportedBillingCurrencies.map(x=>x.toUpperCase())),p.maxActiveStrategies,JSON.stringify(p.availableStrategyKeys),p.stripeMonthlyPriceId??null,p.stripeAnnualPriceId??null,JSON.stringify(p.entitlements),p.trialDays,p.visible,p.archived,p.sortOrder,JSON.stringify(p.homepageHighlights)]
+      );
+      // Audit the mutation in the same transaction, before enforcing against subscribers.
+      await tx.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id) VALUES ($1,'plan.upsert','plan',$2)",[admin.id,p.slug]);
+    });
     // Limits changed under existing subscribers must apply to them too. Users whose
     // subscription is not live fall back to the free plan, so they are covered by its slug.
     const subscribers=await sql.unsafe(
@@ -42,5 +54,5 @@ export async function PUT(request:Request){
     }
     await sql.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'plan.enforced','plan',$2,$3::jsonb)",[admin.id,p.slug,JSON.stringify({subscribersChecked:subscribers.length,strategiesPaused:paused,enforcementFailures})]);
     return Response.json({ok:true,subscribersChecked:subscribers.length,strategiesPaused:paused,enforcementFailures});
-  }catch(error){const denied=authFailure(error);if(denied)return denied;if(error instanceof z.ZodError)return Response.json({error:"Invalid plan configuration."},{status:400});return Response.json({error:"Could not update plan."},{status:500});}
+  }catch(error){const denied=authFailure(error);if(denied)return denied;if(error instanceof z.ZodError)return Response.json({error:"Invalid plan configuration."},{status:400});if(error instanceof Error&&error.message==="PUBLIC_PLAN_LIMIT_5")return Response.json({error:"You can publish a maximum of five plans. Hide or archive another plan first."},{status:409});return Response.json({error:"Could not update plan."},{status:500});}
 }

@@ -12,16 +12,18 @@ for (const path of ["/", "/demo", "/login", "/register"]) {
   });
 }
 
-test("landing page exposes the three product questions clearly", async ({ page }) => {
+test("approved landing page exposes the strategy proposition and a usable mobile navigation", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Know where you are. Know what comes next.")).toBeVisible();
+  await expect(page.getByRole("heading",{level:1,name:/Follow the strategy.*Lose the spreadsheet/i})).toBeVisible();
+  await expect(page.getByRole("link",{name:"Explore your options"})).toBeVisible();
+  await expect(page.getByText("ILLUSTRATIVE DATA")).toBeVisible();
   if(page.viewportSize()&&page.viewportSize()!.width<=680){
-    const menu=page.locator(".public-mobile-menu > summary");
+    const menu=page.locator(".wm-mobile-menu > summary");
     await expect(menu).toBeVisible();
     await menu.click();
-    await expect(page.getByRole("link",{name:"Start free"})).toBeVisible();
+    await expect(page.locator(".wm-mobile-menu").getByRole("link",{name:"Get started"})).toBeVisible();
   }
-  await expect(page.getByRole("link", { name: "Explore demo" })).toBeVisible();
+  await expect(page.getByRole("link",{name:"Explore the interactive demo"})).toBeVisible();
 });
 
 test("demo is unmistakably fictional", async ({ page }) => {
