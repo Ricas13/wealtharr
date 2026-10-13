@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/session";
 import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
-import { PROMOTION_REFUSALS,PromotionRefused,promoteMappingSchema,rejectMappingSchema } from "@/domain/instrument-promotion";
+import { EvidenceRefused,PROMOTION_REFUSALS,PromotionRefused,promoteMappingSchema,rejectMappingSchema } from "@/domain/instrument-promotion";
 import { insertCandidateMapping,promoteCandidateMapping,rejectCandidateMapping,updateInstrumentGuarded,upsertTradingLineGuarded } from "@/lib/instrument-promotion";
 
 const instrument=z.object({kind:z.literal("instrument"),id:z.string().uuid().optional(),isin:z.string().nullable().optional(),providerInstrumentId:z.string().nullable().optional(),name:z.string().min(1),economicExposure:z.string().min(1),leverage:z.string(),direction:z.string().default("LONG"),fundCurrency:z.string().nullable().optional()});
@@ -27,5 +27,5 @@ export async function PUT(request:Request){
       await insertCandidateMapping({economicExposure:p.economicExposure,leverage:p.leverage,direction:p.direction,country:p.country,wrapper:p.wrapper,broker:p.broker??null,preferredCurrency:p.preferredCurrency??null,tradingLineId:p.tradingLineId,effectiveFrom:p.effectiveFrom,effectiveTo:p.effectiveTo??null});
     }
     await sql.unsafe("INSERT INTO audit_events (actor_user_id,action,entity_type,metadata) VALUES ($1,'instrument-config.upsert','instrument_config',$2::jsonb)",[admin.id,JSON.stringify({kind:p.kind})]);return Response.json({ok:true});
-  }catch(error){const denied=authFailure(error);if(denied)return denied;if(error instanceof PromotionRefused){const refusal=PROMOTION_REFUSALS[error.code];return Response.json({error:refusal.message,code:error.code},{status:refusal.status});}if(error instanceof z.ZodError)return Response.json({error:error.issues[0]?.message&&error.issues[0].path.some((part)=>["checklist","note","isin","providerSymbol"].includes(String(part)))?error.issues[0].message:"Invalid instrument configuration."},{status:400});return Response.json({error:"Could not update instrument configuration."},{status:500});}
+  }catch(error){const denied=authFailure(error);if(denied)return denied;if(error instanceof EvidenceRefused){return Response.json({error:"Evidence is incomplete or invalid: "+error.issues.join("; "),code:error.code,issues:error.issues},{status:400});}if(error instanceof PromotionRefused){const refusal=PROMOTION_REFUSALS[error.code];return Response.json({error:refusal.message,code:error.code},{status:refusal.status});}if(error instanceof z.ZodError)return Response.json({error:error.issues[0]?.message&&error.issues[0].path.some((part)=>["checklist","note","isin","providerSymbol","evidence"].includes(String(part)))?error.issues[0].message:"Invalid instrument configuration."},{status:400});return Response.json({error:"Could not update instrument configuration."},{status:500});}
 }

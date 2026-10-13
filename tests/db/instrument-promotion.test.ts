@@ -23,7 +23,7 @@ function isinFor(body:string){
 let seq=0;
 function freshIsin(){seq+=1;const body="ZZ"+run.padEnd(6,"0").slice(0,6)+String(seq).padStart(3,"0");return isinFor(body);}
 
-async function seed(opts:{isin?:string|null;exposure?:string;leverage?:number;fidelity?:string;country?:string}={}){
+async function seed(opts:{isin?:string|null;exposure?:string;leverage?:number;fidelity?:string;country?:string;wrapper?:string;broker?:string|null}={}){
   const isin=opts.isin===undefined?freshIsin():opts.isin;
   const inst=await sql.unsafe("INSERT INTO instruments (isin,name,economic_exposure,leverage,direction,fund_currency) VALUES ($1,$2,$3,$4,'LONG','GBP') RETURNING id",[isin,"Promo "+run,opts.exposure??"BROAD_EQUITY",opts.leverage??1]);
   const instrumentId=String(inst[0].id);instruments.push(instrumentId);
@@ -31,16 +31,16 @@ async function seed(opts:{isin?:string|null;exposure?:string;leverage?:number;fi
   const line=await sql.unsafe("INSERT INTO trading_lines (instrument_id,ticker,exchange,currency,exchange_timezone,effective_from) VALUES ($1,$2,'LSE','GBP','Europe/London','2026-01-01') RETURNING id",[instrumentId,"P"+run+seq]);
   const lineId=String(line[0].id);
   const country=opts.country??"GB";
-  const mapping=await sql.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,direction,country,wrapper,trading_line_id,fidelity,effective_from,enabled) VALUES ($1,$2,'LONG',$3,$4,$5,$6,'2026-01-01',true) RETURNING id",[opts.exposure??"BROAD_EQUITY",opts.leverage??1,country,wrapper,lineId,opts.fidelity??"CANDIDATE"]);
-  return {isin,instrumentId,lineId,mappingId:String(mapping[0].id),country};
+  const mapping=await sql.unsafe("INSERT INTO regional_instrument_mappings (economic_exposure,leverage,direction,country,wrapper,trading_line_id,fidelity,effective_from,enabled,broker) VALUES ($1,$2,'LONG',$3,$4,$5,$6,'2026-01-01',true,$7) RETURNING id",[opts.exposure??"BROAD_EQUITY",opts.leverage??1,country,opts.wrapper??wrapper,lineId,opts.fidelity??"CANDIDATE",opts.broker??null]);
+  return {isin,instrumentId,lineId,mappingId:String(mapping[0].id),country,ticker:"P"+run+seq,wrapper:opts.wrapper??wrapper};
 }
-const subjectOf=(s:{lineId:string;country:string})=>({economicExposure:"BROAD_EQUITY",leverage:"1",direction:"LONG",country:s.country,wrapper,tradingLineId:s.lineId});
+const subjectOf=(s:{lineId:string;country:string;wrapper?:string})=>({economicExposure:"BROAD_EQUITY",leverage:"1",direction:"LONG",country:s.country,wrapper:s.wrapper??wrapper,tradingLineId:s.lineId});
 async function put(body:unknown){
   const {PUT}=await import("@/app/api/admin/instruments/route");
   const response=await PUT(new Request(ORIGIN+"/api/admin/instruments",{method:"PUT",headers:{origin:ORIGIN,"content-type":"application/json"},body:JSON.stringify(body)}));
   return {status:response.status,body:await response.json() as Record<string,unknown>};
 }
-const promote=(s:{mappingId:string;isin:string|null;lineId:string;country:string},over:Record<string,unknown>={})=>put({kind:"promote",mappingId:s.mappingId,isin:s.isin,providerSymbol:null,checklist,subject:subjectOf(s),note,...over});
+const promote=(s:{mappingId:string;isin:string|null;lineId:string;country:string;wrapper?:string},over:Record<string,unknown>={})=>put({kind:"promote",mappingId:s.mappingId,isin:s.isin,providerSymbol:null,checklist,subject:subjectOf(s),note,...over});
 const fidelityOf=async(id:string)=>(await sql.unsafe("SELECT fidelity,enabled FROM regional_instrument_mappings WHERE id=$1",[id]))[0];
 const resolvable=async(id:string)=>(await sql.unsafe("SELECT m.id FROM ("+VERIFIED_MARKET_MAPPINGS_SQL+") m WHERE m.id=$1",[id])).length;
 
@@ -190,6 +190,66 @@ describe.skipIf(!process.env.DATABASE_URL)("candidate promotion",()=>{
     const result=await put({kind:"promote",mappingId:String(extra[0].id),isin:first.isin,providerSymbol:"BBB.L",checklist,subject:{...subjectOf(first),country:"BE"},note});
     expect(result.status).toBe(409);expect(result.body.code).toBe("PROVIDER_SYMBOL_CONFLICT");
     expect((await sql.unsafe("SELECT provider_symbol FROM trading_lines WHERE id=$1",[first.lineId]))[0].provider_symbol).toBe("AAA.L");
+  });
+
+  describe("GB / ISA evidence",()=>{
+    const hash="b".repeat(64);
+    const evidenceFor=(s:{ticker:string},over:Record<string,unknown>={})=>({
+      kidUrl:"https://issuer.example/kid.pdf",kidRetrievedAt:"2026-10-01",kidSha256:hash,
+      isaEligibility:{basis:"UCITS_OR_AUTHORISED_FUND",sourceUrl:"https://www.gov.uk/guidance/example",checkedAt:"2026-10-02"},
+      listingEvidence:{exchange:"LSE",ticker:s.ticker,currency:"GBP"},
+      ...over
+    });
+    // A run-unique broker keeps these mappings out of every other test's lookup key.
+    const broker="PROMOBROKER-"+run;
+    const snapshot={broker,source:"Instrument list export, test fixture",capturedAt:"2026-10-05",fractionalSupported:true};
+
+    it("refuses a GB / ISA promotion without evidence, listing every missing item, and changes nothing",async()=>{
+      const s=await seed({country:"GB",wrapper:"ISA",broker});
+      const result=await promote(s);
+      expect(result.status).toBe(400);
+      expect(result.body.code).toBe("EVIDENCE_REQUIRED");
+      const issues=(result.body.issues as string[]).join("|");
+      for(const item of ["KID or factsheet","isaEligibility","brokerSnapshot"])expect(issues).toContain(item);
+      expect((await fidelityOf(s.mappingId)).fidelity).toBe("CANDIDATE");
+      expect(await sql.unsafe("SELECT id FROM audit_events WHERE entity_id=$1",[s.mappingId])).toHaveLength(0);
+    });
+
+    it("refuses a missing KID hash, a mismatching listing and a missing broker snapshot",async()=>{
+      const s=await seed({country:"GB",wrapper:"ISA",broker});
+      const {kidSha256:_h,...noHash}=evidenceFor(s,{brokerSnapshot:snapshot}) as Record<string,unknown>;
+      expect((await promote(s,{evidence:noHash})).status).toBe(400);
+      const wrongLine=await promote(s,{evidence:evidenceFor(s,{brokerSnapshot:snapshot,listingEvidence:{exchange:"LSE",ticker:"NOTTHIS",currency:"GBP"}})});
+      expect(wrongLine.status).toBe(400);
+      expect((wrongLine.body.issues as string[]).join("|")).toContain("listingEvidence.ticker");
+      const noSnapshot=await promote(s,{evidence:evidenceFor(s)});
+      expect(noSnapshot.status).toBe(400);
+      expect((noSnapshot.body.issues as string[]).join("|")).toContain("brokerSnapshot");
+      expect((await fidelityOf(s.mappingId)).fidelity).toBe("CANDIDATE");
+    });
+
+    it("refuses a broker-agnostic GB / ISA promotion without evidence, even with a complete checklist",async()=>{
+      const s=await seed({country:"GB",wrapper:"ISA"});
+      const result=await promote(s,{evidence:{}});
+      expect(result.status).toBe(400);
+      expect((await fidelityOf(s.mappingId)).fidelity).toBe("CANDIDATE");
+    });
+
+    it("promotes with complete evidence, stores it on the mapping and audits its hash",async()=>{
+      const s=await seed({country:"GB",wrapper:"ISA",broker});
+      const evidence=evidenceFor(s,{brokerSnapshot:snapshot,distributionPolicy:"ACCUMULATING",ter:"0.0007"});
+      const result=await promote(s,{evidence});
+      expect(result.status).toBe(200);
+      const row=(await sql.unsafe("SELECT fidelity,evidence FROM regional_instrument_mappings WHERE id=$1",[s.mappingId]))[0];
+      expect(row.fidelity).toBe("EXACT");
+      expect(row.evidence.kidSha256).toBe(hash);
+      expect(row.evidence.brokerSnapshot.broker).toBe(broker);
+      expect(row.evidence.listingEvidence.currency).toBe("GBP");
+      const audit=await sql.unsafe("SELECT metadata FROM audit_events WHERE action='instrument-mapping.promoted' AND entity_id=$1",[s.mappingId]);
+      expect(audit).toHaveLength(1);
+      expect(audit[0].metadata.evidenceSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(audit[0].metadata.evidence.kidSha256).toBe(hash);
+    });
   });
 
   it("answers an unknown mapping with 404",async()=>{
