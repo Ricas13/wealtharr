@@ -8,11 +8,13 @@ import {CreditCard,UsersRound,Layers3} from "lucide-react";
 export const dynamic="force-dynamic";
 export default async function PlansAdmin(){
  await requireAdminPage();
- const [rows,definitions,prices,active]=await Promise.all([
+ const [rows,definitions,prices,active,lifecycle,webhookFailures]=await Promise.all([
   sql.unsafe("SELECT slug,display_name,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,trial_days,visible,archived,entitlements,description,homepage_highlights,available_strategy_keys,sort_order,stripe_monthly_price_id,stripe_annual_price_id FROM plans ORDER BY sort_order"),
   sql.unsafe("SELECT key,name,enabled FROM strategy_definitions ORDER BY name"),
   sql.unsafe("SELECT p.slug,pp.currency,pp.cadence,pp.amount_minor,pp.stripe_price_id,pp.apple_product_id,pp.google_product_id,pp.active FROM plan_prices pp JOIN plans p ON p.id=pp.plan_id ORDER BY p.sort_order,pp.currency,pp.cadence"),
-  sql.unsafe("SELECT count(*)::int AS c FROM subscriptions WHERE status IN ('ACTIVE','TRIALING')")
+  sql.unsafe("SELECT count(*)::int AS c FROM subscriptions WHERE status IN ('ACTIVE','TRIALING')"),
+  sql.unsafe("SELECT status,count(*)::int AS c FROM subscriptions GROUP BY status ORDER BY status"),
+  sql.unsafe("SELECT count(*)::int AS c FROM billing_webhook_events WHERE status='FAILED' AND created_at>=now()-interval '24 hours'")
  ]);
  const summary=[
   {label:"Published plans",count:rows.filter(p=>p.visible&&!p.archived).length,Icon:Layers3,detail:"Visible and not archived"},
@@ -25,6 +27,17 @@ export default async function PlansAdmin(){
   <div className="admin-overview-kpis admin-three-kpis">{summary.map(({label,count,detail,Icon})=>
     <div className="admin-design-kpi" key={label}><span className="admin-design-kpi-title">{label}<Icon size={17}/></span>
      <strong>{count}</strong><span className="admin-design-kpi-detail">{detail}</span></div>)}</div>
+  <section className="admin-design-panel" aria-labelledby="commerce-lifecycle-title">
+   <header className="admin-design-panel-header"><div><h2 id="commerce-lifecycle-title">Subscription lifecycle</h2>
+    <p>Recorded subscription states, not recognised revenue or verified payment receipts.</p></div></header>
+   {lifecycle.length?<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Subscription status counts">
+    <table className="admin-studio-table"><thead><tr><th scope="col">STATUS</th><th scope="col">SUBSCRIPTIONS</th></tr></thead>
+    <tbody>{lifecycle.map(s=><tr key={String(s.status)}><td><strong>{String(s.status)}</strong></td><td>{Number(s.c)}</td></tr>)}</tbody></table></div>:
+    <p className="admin-data-caveat">No subscription records yet.</p>}
+   <div className="admin-design-info-row"><span>Failed Stripe webhook events (last 24 hours)</span><strong>{Number(webhookFailures[0]?.c??0)}</strong></div>
+   <p className="admin-data-caveat">A failed webhook may mean a plan change was not applied. Check Operations for recorded failures and use Stripe for payment verification.</p>
+   <a href="/admin/operations" className="admin-panel-footer-link">Inspect billing delivery and operational alerts →</a>
+  </section>
   <section className="admin-design-panel">
    <header className="admin-design-panel-header"><div><h2>Plans & entitlements</h2>
     <p>Default billing amounts and strategy access, sourced from current plan records.</p></div></header>
