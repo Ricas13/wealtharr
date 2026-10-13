@@ -8,13 +8,14 @@ const url=process.env.DATABASE_URL;
 const sql=url?postgres(url,{max:1,prepare:false}):null;
 const suffix=Math.random().toString(36).slice(2,11);
 const slug="priceidentity-"+suffix;
+const otherSlug="priceidentity-other-"+suffix;
 const original="price_priceidentity_original_"+suffix;
 const replacement="price_priceidentity_replacement_"+suffix;
-let planId="";
-const request=(id:string,amountMinor:number,cadence="MONTHLY",currency="GBP")=>
+let planId="",otherPlanId="";
+const request=(id:string,amountMinor:number,cadence="MONTHLY",currency="GBP",targetSlug=slug)=>
   new Request("http://localhost/api/admin/plan-prices",{method:"PUT",
     headers:{"content-type":"application/json"},body:JSON.stringify({
-      planSlug:slug,currency,cadence,amountMinor,stripePriceId:id,active:true
+      planSlug:targetSlug,currency,cadence,amountMinor,stripePriceId:id,active:true
     })});
 
 describe.skipIf(!url)("Stripe Price identity is immutable across admin edits",()=>{
@@ -23,13 +24,15 @@ describe.skipIf(!url)("Stripe Price identity is immutable across admin edits",()
    session.adminId=String(admin[0].id);
    const plan=await sql!.unsafe("INSERT INTO plans (slug,display_name,visible) VALUES ($1,'Billing identity test',false) RETURNING id",[slug]);
    planId=String(plan[0].id);
+   const second=await sql!.unsafe("INSERT INTO plans (slug,display_name,visible) VALUES ($1,'Billing identity secondary',false) RETURNING id",[otherSlug]);
+   otherPlanId=String(second[0].id);
  });
  afterAll(async()=>{
    if(!sql)return;
    await sql.unsafe("DELETE FROM audit_events WHERE actor_user_id=$1",[session.adminId]);
-   await sql.unsafe("DELETE FROM stripe_price_mappings WHERE plan_id=$1",[planId]);
-   await sql.unsafe("DELETE FROM plan_prices WHERE plan_id=$1",[planId]);
-   await sql.unsafe("DELETE FROM plans WHERE id=$1",[planId]);
+   await sql.unsafe("DELETE FROM stripe_price_mappings WHERE plan_id=ANY($1::uuid[])",[[planId,otherPlanId]]);
+   await sql.unsafe("DELETE FROM plan_prices WHERE plan_id=ANY($1::uuid[])",[[planId,otherPlanId]]);
+   await sql.unsafe("DELETE FROM plans WHERE id=ANY($1::uuid[])",[[planId,otherPlanId]]);
    await sql.unsafe("DELETE FROM users WHERE id=$1",[session.adminId]);
    await sql.end();
  });
@@ -56,5 +59,20 @@ describe.skipIf(!url)("Stripe Price identity is immutable across admin edits",()
    const active=await sql!.unsafe("SELECT amount_minor,stripe_price_id FROM plan_prices WHERE plan_id=$1",[planId]);
    expect(Number(active[0].amount_minor)).toBe(1099);
    expect(String(active[0].stripe_price_id)).toBe(replacement);
+  it("serialises concurrent first-time claims of one Stripe Price ID across different plans",async()=>{
+   const {PUT}=await import("@/app/api/admin/plan-prices/route");
+   const shared="price_concurrent_claim_"+suffix;
+   const [first,second]=await Promise.all([
+     PUT(request(shared,1499,"MONTHLY","GBP",slug)),
+     PUT(request(shared,1899,"MONTHLY","GBP",otherSlug))
+   ]);
+   expect([first.status,second.status].sort()).toEqual([200,409]);
+   const mapping=await sql!.unsafe("SELECT plan_id,amount_minor FROM stripe_price_mappings WHERE stripe_price_id=$1",[shared]);
+   expect(mapping).toHaveLength(1);
+   const current=await sql!.unsafe("SELECT plan_id,amount_minor FROM plan_prices WHERE stripe_price_id=$1",[shared]);
+   expect(current).toHaveLength(1);
+   expect(String(mapping[0].plan_id)).toBe(String(current[0].plan_id));
+   expect(Number(mapping[0].amount_minor)).toBe(Number(current[0].amount_minor));
  });
+});
 });
