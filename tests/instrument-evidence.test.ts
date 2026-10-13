@@ -118,7 +118,7 @@ describe("promotion schema carries evidence", () => {
     expect(service.indexOf("EvidenceRefused(")).toBeLessThan(service.indexOf("SET fidelity='EXACT'"));
     const route = readFileSync("src/app/api/admin/instruments/route.ts", "utf8");
     expect(route).toContain("error instanceof EvidenceRefused");
-    const migration = readFileSync("db/migrations/0055_instrument_mapping_evidence.sql", "utf8");
+    const migration = readFileSync("db/migrations/0056_instrument_mapping_evidence.sql", "utf8");
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS evidence jsonb NOT NULL DEFAULT '{}'");
     expect(migration).toContain("pg_constraint");
   });
