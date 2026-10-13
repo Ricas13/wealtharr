@@ -14,6 +14,7 @@ const descriptions:Record<string,{title:string;where:string}>={
  stripe_webhook:{title:"Stripe webhook signing",where:"Create the Stripe webhook, then enter its signing secret in Admin › Settings › Billing."},
  email:{title:"Transactional email",where:"Enter the email service details in Admin › Settings › Email."},
  market_data_mode:{title:"Licensed market data",where:"Enter the market data service in Admin › Settings › Market data. It must offer intraday history, current quotes and adjusted prices. Users may confirm or correct actual fills."},
+ turnstile:{title:"Cloudflare Turnstile",where:"Open Admin › Settings › Cloudflare Turnstile, save the widget site key and encrypted secret, test the live challenge, then enable protection. No environment-file changes required."},
  backup_operator_attestation:{title:"Backup restoration evidence",where:"Perform a real point-in-time restore drill. Only then tick the backup sign-off in Admin › Settings › Launch sign-offs."},
  regulatory_signoff:{title:"UK legal and regulatory review",where:"Get written UK regulatory/financial-promotion and privacy advice. Do not self-certify legal approval."},
  instrument_review:{title:"UK ISA and regional instruments",where:"Use Instruments to map actual eligible trading lines and verify broker/ISA tradability before ticking the instruments sign-off in Admin › Settings › Launch sign-offs."},
