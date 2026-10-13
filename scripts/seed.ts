@@ -25,7 +25,7 @@ async function main(){
     // catalogue is preferable to automatically offering research/partial financial methods.
     // Historical catalogue fixtures remain available ONLY in ephemeral GitHub Actions tests.
     const syntheticCiCatalogue=process.env.GITHUB_ACTIONS==="true" && process.env.CI==="true" &&
-      /^postgres(?:ql)?:\\/\\/[^@]+@127\\.0\\.0\\.1:5432\\/strategyos_test$/.test(process.env.DATABASE_URL??"");
+      /^postgres(?:ql)?:\/\/[^@]+@127\.0\.0\.1:5432\/strategyos_test$/.test(process.env.DATABASE_URL??"");
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
