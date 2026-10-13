@@ -1,3 +1,41 @@
+# Release truth — 13 October 2026 (supersedes older snapshots below)
+
+> **NOT PRODUCTION-LAUNCH CERTIFIED.** GitHub merges and CI passing do not mean the deployed
+> host was upgraded, an investor strategy was independently validated, or any real brokerage /
+> payment provider was verified. Never enable paid live subscriptions on the basis of this
+> document alone. Historical sections below describe their date-of-writing state only.
+
+## Source-level changes confirmed merged to `main`
+
+| Area | Current source evidence | Honest limits |
+|---|---|---|
+| Member workspace | [#57](https://github.com/Ricas13/wealtharr/pull/57) | Merged, but live-host browser/session acceptance not established |
+| Marketing and plans | [#58](https://github.com/Ricas13/wealtharr/pull/58) | Real admin-controlled 0–5 published plans and pricing; live Stripe/PayPal, archived-plan behaviour and launch acceptance require independent testing |
+| Historical PR audit | [#60](https://github.com/Ricas13/wealtharr/pull/60), [audit document](PR_COMPLETION_AUDIT_2026-10-13.md) | Merged/source-audited 55 then-existing PRs, not an external certification |
+| Corporate actions | [#59](https://github.com/Ricas13/wealtharr/pull/59) | Stock/reverse-split ledger events and price guard tested; real broker corporate-action cases not exercised |
+| Practical rebalance | [#61](https://github.com/Ricas13/wealtharr/pull/61) | Cash buy that cannot be executed is skipped with bounded fallback; financial methods still need independent correctness proof |
+| Confirmed fills | [#62](https://github.com/Ricas13/wealtharr/pull/62) | Instructed quantity/quoted price and broker consideration validation; no broker has been accessed |
+| Market quote rejection | [#63](https://github.com/Ricas13/wealtharr/pull/63) | Persisted rejected provider quotes stop stale cached trade instructions; licensed real provider verification outstanding |
+| Account ledger fold | [#64](https://github.com/Ricas13/wealtharr/pull/64) | Canonical per-account attribution and null legacy events with regression cases |
+| Binary release policy | [#65](https://github.com/Ricas13/wealtharr/pull/65) | Incomplete methods are **unavailable** to customers: production bootstrap deliberately ships none of the unverified reference/partial 9Sig strategies. Existing ledgers preserved. This is a launch blocker until some complete methods and instruments are actually verified |
+| Optional Trading 212 import pilot | [#66](https://github.com/Ricas13/wealtharr/pull/66) | Local-only CSV transaction chooser plus unconnected GET-only transport; **NOT a live connected broker account** or automatic verified holdings |
+
+## Gates that remain OPEN
+
+- **Issue [#56](https://github.com/Ricas13/wealtharr/issues/56)**: 9Sig is incomplete compared with the author method and intentionally unavailable. Do not invent proprietary quarter/bond/down/spike rules, mark a partial engine complete, or silently re-enable.
+- **Fully usable strategy catalogue**: new production installs have **zero pre-approved active strategies** by design. For each named method, supply primary-source rule evidence, independently calculated golden cases, complete lifecycle / notification / contributions, and exact verified instruments available in the *user's actual* region/wrapper/broker. Admin, plan and per-user controls remain.
+- **Issue [#54](https://github.com/Ricas13/wealtharr/issues/54)**: source-level finance fixes were merged and CI-passed. Real provider quote -> action -> user-confirmed broker fill -> linked-account reconciliation and market-data integrity require end-to-end external verification.
+- **Issue [#27](https://github.com/Ricas13/wealtharr/issues/27)**: real optional read-only Trading 212 sync still needs consent/scope and credential management, explicit globally exclusive transaction-lot assignment, reliable paging and discrepancy workflow. The pilot does not auto-assign ETFs by ticker; no unrelated holdings should be displayed or stored.
+- **Issue [#53](https://github.com/Ricas13/wealtharr/issues/53)**: homepage/plan UI is merged; live Stripe checkout, webhook renewal/failure/refund/archival, and any real PayPal implementation must be individually exercised and verified.
+- **Production**: no evidence of completed HTTPS host upgrade, off-site restore, live email/notifications, production rollback rehearsal, monitoring reliability, independent security review, licensed quote vendor contract, verified UK trading lines/ISA eligibility, UK legal/regulatory sign-off or company/consumer policy documentation.
+- **Connected Stripe account caution**: never assume an available Stripe account belongs to Wealtharr. Confirm account ownership and use test mode with explicit authorisation before attempting customer billing. Never mutate third-party live financial records to make a launch check appear passed.
+
+## Customer release truth
+
+Code merges are done for the UI and listed financial safety subsystems, but these gates make the **commercial launch NOT READY**. The existing production launch preflight must remain fail-closed. A real end-to-end completion certificate requires sourced method proofs, verified market mappings/data rights and actual operator-controlled environment/access plus independent evidence. Do **not** flip approval flags or manufacture evidence as a workaround.
+
+---
+
 # Status of the audit and launch-gate items
 
 ## 2026-10-12 policy correction: no mandatory human strategy attestation
