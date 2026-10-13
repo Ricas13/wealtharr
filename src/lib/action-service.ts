@@ -1,5 +1,6 @@
 import "server-only";
 import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
+import { assertReleaseMethodComplete } from "@/domain/strategy/curated-release";
 import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
@@ -44,7 +45,7 @@ type CalculationScenario={
 };
 
 async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:string,scenario?:CalculationScenario){
-  const rows=await db.unsafe("SELECT i.id,i.user_id,i.account_id,i.strategy_definition_id,i.strategy_version_id,i.started_at,i.onboarding_mode,i.last_reconciled_at,v.effective_from AS version_effective_from,v.engine_key AS engine,v.config,i.settings,i.execution_constraints,a.name AS primary_account_name,a.country,a.wrapper,a.currency,a.broker_name,s.state,u.timezone AS user_timezone FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id JOIN strategy_versions v ON v.id=i.strategy_version_id JOIN accounts a ON a.id=i.account_id JOIN users u ON u.id=i.user_id JOIN strategy_states s ON s.strategy_instance_id=i.id WHERE i.id=$1 AND i.status='ACTIVE' LIMIT 1",[strategyInstanceId]);
+  const rows=await db.unsafe("SELECT i.id,i.user_id,i.account_id,i.strategy_definition_id,i.strategy_version_id,i.started_at,i.onboarding_mode,i.last_reconciled_at,d.key AS strategy_key,v.effective_from AS version_effective_from,v.engine_key AS engine,v.config,i.settings,i.execution_constraints,a.name AS primary_account_name,a.country,a.wrapper,a.currency,a.broker_name,s.state,u.timezone AS user_timezone FROM strategy_instances i JOIN strategy_definitions d ON d.id=i.strategy_definition_id JOIN strategy_versions v ON v.id=i.strategy_version_id JOIN accounts a ON a.id=i.account_id JOIN users u ON u.id=i.user_id JOIN strategy_states s ON s.strategy_instance_id=i.id WHERE i.id=$1 AND i.status='ACTIVE' LIMIT 1",[strategyInstanceId]);
   const instance=rows[0];if(!instance)throw new Error("STRATEGY_INSTANCE_NOT_FOUND");
   const linkedAccounts=await db.unsafe(
     "SELECT a.id,a.name,a.country,a.wrapper,a.currency,a.broker_name,sa.role FROM strategy_accounts sa JOIN accounts a ON a.id=sa.account_id WHERE sa.strategy_instance_id=$1 ORDER BY CASE WHEN sa.role='PRIMARY' THEN 0 ELSE 1 END,a.created_at,a.name",
@@ -97,7 +98,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const exposurePositions:Array<{economicExposure:string;value:Decimal;tradingLineId?:string;accountId:string;accountName:string}>=[];
   const foreignCash=[...folded.cashByCurrency.entries()].filter(([currency,value])=>currency!==baseCurrency&&!value.eq(0));
   let dataStatus:"CURRENT"|"STALE"|"MISSING"=state.resumeNeedsReconciliation||state.unresolvedReconciliation?"MISSING":"CURRENT";
+  // Historic pinned instances and immutable ledgers remain readable; partial rule engines
+  // must never emit a financial instruction just because an old database has a PUBLISHED row.
+  let incompleteRuleEngine=false;
+  try{assertReleaseMethodComplete(String(instance.strategy_key));}catch{incompleteRuleEngine=true;}
   let dataMessage=state.resumeNeedsReconciliation?"Quick resume needs an opening holdings snapshot before a high-confidence action can be calculated.":state.unresolvedReconciliation?"An unresolved broker discrepancy must be classified before financial actions resume.":undefined;
+  if(incompleteRuleEngine){dataStatus="MISSING";dataMessage="This strategy method is not fully implemented and cannot generate financial instructions. Existing history remains available.";}
   if(accountCurrencies.size!==1||!accountCurrencies.has(baseCurrency)){dataStatus="MISSING";dataMessage="Linked accounts use different currencies. Explicit FX support is required before this strategy can calculate a trade.";}
   if(foreignCash.length){dataStatus="MISSING";dataMessage="Foreign-currency cash is present. An explicit FX conversion is required before financial actions can resume.";}
   if(requiredRelease[0]){dataStatus="MISSING";dataMessage="Strategy version "+String(requiredRelease[0].version)+" is a required rules update. Update this strategy before new financial actions are calculated.";}
