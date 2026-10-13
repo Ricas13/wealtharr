@@ -37,3 +37,5 @@ Reference: https://www.bogleheads.org/blog/2021/01/02/david-swensens-portfolio-f
 ## Release blockers
 
 The amounts in `tests/strategy-reference-golden.test.ts` are independently worked arithmetic examples for the **chosen platform reference splits**, NOT independent author-endorsed strategy backtests. Before publication, verify the exact historical methodology, identify broker-eligible real securities for each sleeve, settle currency and calendar conventions, check source rights, attest the reviewed version and pass real full-journey staging tests. Do not populate mappings with superficially similar ETFs just to enable a portfolio.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** when whole shares, a minimum trade or a cash buffer leave residue that no practical order can remove, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".

@@ -58,3 +58,31 @@ Changing an existing strategy:
 - Published versions are immutable (database trigger, migration 0014). Corrections are new versions, never in-place edits.
 - `assertCuratedRules` compares every stored version of a key with the single rule set in its plugin, so editing a plugin's `config` in place makes installed versions read "Stored rules need code review". A genuinely different rule set (for example a regional variant) is added as its own plugin with its own key and its own spec card and golden tests, as described in `docs/strategy-specs/README.md`.
 - Metadata-only changes (sources, risks, spec-card or golden-test paths, descriptions) do not alter rules and can be edited in the plugin file directly. The seed does not rewrite installed definitions (except the guarded research-only realignment above), so seed-definition edits generally only affect fresh installs.
+
+## Execution-residue closure (fixed-allocation engine)
+
+This is a Wealtharr **implementation convention**, not a strategy rule. A fixed-allocation review closes only
+on a HOLD, and a HOLD needs drift <= threshold. With whole shares, a minimum trade size or a cash buffer, a few
+pounds of drift can remain that no practical order removes. Without a closure rule the review would stay open
+forever (the engine previously returned `DATA_REQUIRED` "no executable rebalance step").
+
+Rules, all in `src/domain/strategy/execution-residue.ts`, `src/domain/execution.ts` and `src/lib/action-service.ts`:
+
+1. **Sub-unit amounts are converged.** Any amount below 0.005 of the account currency (it rounds to 0.00) is never
+   traded. The engine returns a HOLD when the worst leg differs by less than that, ignores sub-unit legs, and
+   `planPracticalTrade` refuses an order below it (`BELOW_MINIMUM_TRADE`).
+2. **Fallback first.** PR #61's cash-buy fallback runs unchanged (each blocked exposure is marked once, bounded
+   attempts). Closure is evaluated only after it is exhausted and the result is still `DATA_REQUIRED` because of
+   `BELOW_ONE_SHARE`, `BELOW_MINIMUM_TRADE`, `INSUFFICIENT_SPENDABLE_CASH`, `SELLING_DISABLED` or the engine's
+   "no executable step" outcome, with data status `CURRENT`.
+3. **Closure predicate.** For every leg `deviation = |target - current|` and
+   `excess = deviation - threshold x total`. A leg is closable when `deviation < 0.005`, or `excess <= 0`, or
+   `excess <=` the value of **one whole share** of that leg (its verified sizing price). The review closes only if
+   every leg is closable (the boundary is inclusive).
+4. **Material drift stays open.** If any leg has `excess >` one whole share, the proposal stays `DATA_REQUIRED` and
+   says which leg is beyond the threshold by more than a share. A leg outside the threshold without a verified
+   current whole-share price also stays `DATA_REQUIRED` (fail closed). Stale, missing, rejected or foreign-currency
+   prices, missing mappings and unclassified holdings are never closed.
+5. **The HOLD records the residue** (residual drift per leg, residual cash, why no order is practical).
+   Confirming it uses the normal HOLD path (`postActionReviewState`): `lastReviewAt` advances and `forceReview`
+   clears, so the next review is scheduled normally.

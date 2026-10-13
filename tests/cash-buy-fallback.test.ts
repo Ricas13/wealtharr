@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
-import { fixedAllocationEngine } from "../src/domain/strategy/fixed-allocation";
+import { fixedAllocationEngine, REBALANCE_STUCK_TITLE } from "../src/domain/strategy/fixed-allocation";
+import { assessExecutionResidue, residueHoldProposal, residueLegs } from "../src/domain/strategy/execution-residue";
 import { isCashBuyShortfall, settleCashBuyFallback } from "../src/domain/strategy/cash-buy-fallback";
 import { planPracticalTrade } from "../src/domain/execution";
 import type { ProposedAction } from "../src/domain/strategy/types";
@@ -58,19 +59,44 @@ describe("fixed allocation with residual cash that cannot buy a share", () => {
     expect(result.amount?.toFixed(2)).toBe("10.00");
   });
 
-  it("is still DATA_REQUIRED when nothing can be sold either", () => {
+  it("has no engine step when nothing can be sold either, and the review then closes as execution residue", () => {
     // Holdings 100 / 60 / 40 plus cash 100: total 300, targets 150 / 90 / 60, deltas +50 / +30 / +20.
     // Every leg is underweight, so there is no overweight leg to sell once all cash buys are blocked.
+    // The engine alone cannot close this (it knows no prices): it still reports "no executable step".
+    // The OLD expectation of this test ended here and encoded the defect: the review stayed open
+    // forever. The execution layer now decides (src/domain/strategy/execution-residue.ts).
     const blocked = { A: new Decimal("100"), B: new Decimal("100"), C: new Decimal("100") };
-    const result = fixedAllocationEngine.calculate({
+    const stuckContext = {
       ...context("100", blocked),
       exposures: [
         { economicExposure: "A", value: new Decimal("100") },
         { economicExposure: "B", value: new Decimal("60") },
         { economicExposure: "C", value: new Decimal("40") }
       ]
-    });
+    };
+    const result = fixedAllocationEngine.calculate(stuckContext);
     expect(result.actionType).toBe("DATA_REQUIRED");
+    expect(result.title).toBe(REBALANCE_STUCK_TITLE);
+
+    // Threshold 5% x 300 = 15. Excess beyond the threshold: A 50-15=35, B 30-15=15, C 20-15=5.
+    // With one whole share worth 100 per leg every excess is <= one share, so the residue closes.
+    const { legs, total } = residueLegs({
+      allocations: [{ exposure: "A", weight: "0.5" }, { exposure: "B", weight: "0.3" }, { exposure: "C", weight: "0.2" }],
+      exposures: stuckContext.exposures,
+      cash: new Decimal("100")
+    });
+    expect(total.toFixed(2)).toBe("300.00");
+    const shares = { A: new Decimal("100"), B: new Decimal("100"), C: new Decimal("100") };
+    const assessment = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), wholeShareValues: shares });
+    expect(assessment.closes).toBe(true);
+    const hold = residueHoldProposal(result, assessment, { state: {}, now: new Date("2026-10-07T12:00:00Z"), cash: new Decimal("100"), currency: "GBP", reason: "NO_PRACTICAL_STEP" });
+    expect(hold.actionType).toBe("HOLD");
+    expect(hold.explanation.find((row) => row.label === "Residual cash")?.value).toBe("100.00");
+    // A share worth 10 per leg makes A (excess 35) and B (excess 15) material: the review stays open.
+    const tiny = { A: new Decimal("10"), B: new Decimal("10"), C: new Decimal("10") };
+    const material = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), wholeShareValues: tiny });
+    expect(material.closes).toBe(false);
+    expect(material.code).toBe("MATERIAL_DRIFT");
     // Unblocked, the largest underweight leg is bought with the cash: min(50, 100) = 50.
     const unblocked = fixedAllocationEngine.calculate({
       ...context("100"),

@@ -7,6 +7,8 @@ import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
+import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
+import { assessExecutionResidue, isResidueClosureReason, legsNeedingShareValue, materialDriftNote, residueHoldProposal, residueLegs } from "@/domain/strategy/execution-residue";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
 import { assertExecutionCurrencyMatch, executionPriceBand, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
@@ -229,8 +231,73 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
+  const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
+    const mappingRows=await db.unsafe(
+      "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
+      [economicExposure,String(account.country),String(account.wrapper)]
+    );
+    const candidates:MappingCandidate[]=mappingRows.map((r)=>({
+      id:String(r.id),economicExposure:String(r.economic_exposure),leverage:String(r.leverage),direction:String(r.direction),
+      country:String(r.country),wrapper:String(r.wrapper),broker:r.broker?String(r.broker):null,
+      preferredCurrency:r.preferred_currency?String(r.preferred_currency):null,fidelity:String(r.fidelity),
+      effectiveFrom:isoDate(r.effective_from),effectiveTo:r.effective_to?isoDate(r.effective_to):null,
+      tradingLineId:String(r.trading_line_id),tradingLineCurrency:String(r.trading_line_currency),
+      tradingLineEffectiveFrom:isoDate(r.trading_line_effective_from),
+      tradingLineEffectiveTo:r.trading_line_effective_to?isoDate(r.trading_line_effective_to):null
+    }));
+    return resolveMapping(candidates,{
+      economicExposure,leverage,direction:"LONG",
+      country:String(account.country),wrapper:String(account.wrapper),
+      broker:account.broker_name?String(account.broker_name):null,
+      preferredCurrency:String(account.currency),asOf:new Date().toISOString().slice(0,10)
+    });
+  };
+  // Value of one whole share of an exposure's execution line, for the residue-closure materiality test.
+  // Mirrors order sizing (same account ranking, mapping, override and quote rules); null means "unknown".
+  const wholeShareValueFor=async(economicExposure:string,leverageRaw:unknown):Promise<Decimal|null>=>{
+    try{
+      const leverage=exposureLeverage(economicExposure,leverageRaw);
+      const ranked=accounts
+        .filter(account=>fullyEligibleAccountIds.has(String(account.id)))
+        .map((account)=>{
+          const accountId=String(account.id);
+          const scenarioDelta=scenario?.cashDelta&&accountId===primaryAccountId?new Decimal(scenario.cashDelta):new Decimal(0);
+          return {account,cash:(accountPositions.get(accountId)?.cash??new Decimal(0)).plus(scenarioDelta)};
+        })
+        .sort((a,b)=>b.cash.cmp(a.cash));
+      for(const candidate of ranked){
+        const mapping=await findMapping(economicExposure,leverage,candidate.account);
+        if(!mapping)continue;
+        const quoteRows=await db.unsafe(
+          "SELECT tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency,r.observed_at AS rejected_observed_at FROM trading_lines tl LEFT JOIN market_data_rejections r ON r.trading_line_id=tl.id LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
+          [mapping.tradingLineId]
+        );
+        const quote=quoteRows[0];
+        if(!quote)return null;
+        const overrideRows=quote.instrument_id
+          ?await db.unsafe("SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[strategyInstanceId,"market_price:"+String(quote.instrument_id)])
+          :[];
+        const override=overrideRows[0];
+        const price=override?.manual_value!=null?validatedEffectivePrice(override.manual_value):quote.price!=null?validatedEffectivePrice(String(quote.price)):null;
+        const observedAt=override?.observed_at??quote.observed_at;
+        const rejectedAt=quote.rejected_observed_at?new Date(quote.rejected_observed_at):null;
+        const quoteAt=quote.observed_at?new Date(quote.observed_at):null;
+        const overrideAt=override?.observed_at?new Date(override.observed_at):null;
+        if(rejectedAt&&(!quoteAt||rejectedAt>=quoteAt)&&(!override||!overrideAt||overrideAt<=rejectedAt))return null;
+        if(!price||String(quote.observation_currency??quote.currency)!==String(instance.currency))return null;
+        if(!observedAt||!Number.isFinite(new Date(observedAt).getTime()))return null;
+        const ageHours=(Date.now()-new Date(observedAt).getTime())/3600000;
+        if(ageHours>36||new Date(observedAt).getTime()>Date.now()+60_000)return null;
+        return new Decimal(price.toString());
+      }
+      return null;
+    }catch{
+      return null;
+    }
+  };
   const resolveProposal=async(unaffordableCashBuys:Record<string,Decimal>)=>{
   let blockedCashBuyExposure:string|null=null;
+  let practicalBlockReason:string|null=null;
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
   let sizingBand:Decimal|null=null;
@@ -265,25 +332,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       let mappedAccount:typeof accounts[number]|null=null;
       for(const candidateAccount of rankedAccounts){
         const account=candidateAccount.account;
-        const mappingRows=await db.unsafe(
-          "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
-          [proposal.economicExposure,String(account.country),String(account.wrapper)]
-        );
-        const candidates:MappingCandidate[]=mappingRows.map((r)=>({
-          id:String(r.id),economicExposure:String(r.economic_exposure),leverage:String(r.leverage),direction:String(r.direction),
-          country:String(r.country),wrapper:String(r.wrapper),broker:r.broker?String(r.broker):null,
-          preferredCurrency:r.preferred_currency?String(r.preferred_currency):null,fidelity:String(r.fidelity),
-          effectiveFrom:isoDate(r.effective_from),effectiveTo:r.effective_to?isoDate(r.effective_to):null,
-          tradingLineId:String(r.trading_line_id),tradingLineCurrency:String(r.trading_line_currency),
-          tradingLineEffectiveFrom:isoDate(r.trading_line_effective_from),
-          tradingLineEffectiveTo:r.trading_line_effective_to?isoDate(r.trading_line_effective_to):null
-        }));
-        const mapping=resolveMapping(candidates,{
-          economicExposure:proposal.economicExposure,leverage,direction:"LONG",
-          country:String(account.country),wrapper:String(account.wrapper),
-          broker:account.broker_name?String(account.broker_name):null,
-          preferredCurrency:String(account.currency),asOf:new Date().toISOString().slice(0,10)
-        });
+        const mapping=await findMapping(proposal.economicExposure,leverage,account);
         if(mapping){
           mappedAccount=account;
           executionAccountId=String(account.id);
@@ -365,6 +414,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
             BELOW_MINIMUM_TRADE:"This action is below your minimum trade size.",
             NO_HOLDINGS:"The strategy wants to reduce this exposure, but no matching holding is recorded."
           } as const;
+          practicalBlockReason=practical.reason;
           if(proposal.actionType==="BUY"&&calculationEngineKey==="FIXED_ALLOCATION"&&isCashBuyShortfall(practical.reason))
             blockedCashBuyExposure=proposal.economicExposure??null;
           proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
@@ -404,10 +454,42 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       ...skippedBuys.map(exposure=>({label:"Cash purchase of "+exposure+" skipped",value:"Below one whole share, your minimum trade, or spendable cash",kind:"text" as const}))
     ]};
   }
-  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand,blockedCashBuyExposure};
+  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand,blockedCashBuyExposure,practicalBlockReason};
   };
-  const {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand}=
-    await settleCashBuyFallback(resolveProposal,effectiveCash);
+  const settled=await settleCashBuyFallback(resolveProposal,effectiveCash);
+  let {proposal}=settled;
+  const {sizingPrice,instructedQuantity,sizingBand}=settled;
+  let {tradingLineId,executionTicker,executionAccountId}=settled;
+
+  // Execution-residue closure (docs/strategy-engines.md): when the fallback is exhausted and what is left
+  // is whole-share / minimum-trade / cash-buffer residue, close the review with a HOLD instead of leaving
+  // it open forever. Material drift, an unknown share value or any data problem stays DATA_REQUIRED.
+  if(calculationEngineKey==="FIXED_ALLOCATION"&&dataStatus==="CURRENT"&&proposal.actionType==="DATA_REQUIRED"){
+    const reason=settled.practicalBlockReason??(proposal.title===REBALANCE_STUCK_TITLE?"NO_PRACTICAL_STEP":null);
+    const allocations=effectiveAllocations(config,settings);
+    if(reason&&isResidueClosureReason(reason)&&allocations){
+      const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
+      const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});
+      if(total.gt(0)){
+        const wholeShareValues:Record<string,Decimal|null>={};
+        // Only legs still outside the threshold need a price; resolution is the same mapping + quote
+        // rules as order sizing, and any doubt (no mapping, stale, rejected, other currency) is "unknown".
+        for(const exposure of legsNeedingShareValue(legs,total,threshold)){
+          const allocation=allocations.find(a=>String(a.exposure)===exposure);
+          wholeShareValues[exposure]=await wholeShareValueFor(exposure,allocation?.leverage);
+        }
+        const assessment=assessExecutionResidue({legs,total,threshold,wholeShareValues});
+        if(assessment.closes){
+          proposal=residueHoldProposal(proposal,assessment,{state,now:new Date(),cash:effectiveCash,currency:String(instance.currency),reason});
+          // A HOLD instructs no trade, so it carries no execution line, account or ticker.
+          tradingLineId=null;executionTicker=null;executionAccountId=null;
+        }else{
+          const note=materialDriftNote(assessment,String(instance.currency));
+          if(note.rows.length)proposal={...proposal,instruction:proposal.instruction+" "+note.sentence,explanation:[...proposal.explanation,...note.rows]};
+        }
+      }
+    }
+  }
 
   const stableHoldings=accounts.flatMap((account)=>{
     const accountId=String(account.id);

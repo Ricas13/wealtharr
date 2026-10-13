@@ -3,6 +3,11 @@ import { REVIEW_FREQUENCY_MONTHS } from "../schedule";
 import { planRebalance } from "./rebalance-plan";
 import type { EngineContext, ProposedAction, StrategyEngine } from "./types";
 
+import { SMALLEST_TRADE_UNIT } from "../execution";
+
+/** Title of the engine's "outside threshold but no executable step" proposal; the service may close it as residue. */
+export const REBALANCE_STUCK_TITLE = "Rebalance needs attention";
+
 type Allocation = { exposure: string; weight: string | number; leverage?: string | number };
 
 function money(v: Decimal) {
@@ -118,11 +123,16 @@ export const fixedAllocationEngine: StrategyEngine = {
       kind: "text" as const
     }));
 
-    if (drift.lte(threshold)) {
+    // A difference that rounds to 0.00 cannot be traded: treat it as already converged rather than
+    // proposing a micro-trade such as "Buy 0 units for about 0.00" (execution-residue convention).
+    const withinThreshold=drift.lte(threshold);
+    if (withinThreshold||worst.delta.abs().lt(SMALLEST_TRADE_UNIT)) {
       return {
         actionType: "HOLD",
         title: "No rebalance required",
-        instruction: "All configured exposures are within the strategy rebalance threshold.",
+        instruction: withinThreshold
+          ? "All configured exposures are within the strategy rebalance threshold."
+          : "Remaining differences are smaller than the smallest tradable amount, so there is nothing practical to rebalance.",
         explanation,
         nextState: { ...ctx.state, lastCalculatedAt: ctx.now.toISOString() },
         confidence: "HIGH",
@@ -143,8 +153,8 @@ export const fixedAllocationEngine: StrategyEngine = {
       const limit=ctx.unaffordableCashBuys?.[exposure];
       return limit!==undefined&&ctx.cash.lte(limit);
     };
-    const underweight=[...rows].filter((row)=>row.delta.gt(0)&&!cashBuyBlocked(row.exposure)).sort((a,b)=>b.delta.cmp(a.delta))[0];
-    if(underweight&&ctx.cash.gt(0)){
+    const underweight=[...rows].filter((row)=>row.delta.gte(SMALLEST_TRADE_UNIT)&&!cashBuyBlocked(row.exposure)).sort((a,b)=>b.delta.cmp(a.delta))[0];
+    if(underweight&&ctx.cash.gte(SMALLEST_TRADE_UNIT)){
       const amount=Decimal.min(underweight.delta,ctx.cash);
       const projected=rows.map((row)=>row.exposure===underweight.exposure?{...row,current:row.current.plus(amount)}:row);
       const projectedWorst=projected.reduce((max,row)=>Decimal.max(max,row.target.minus(row.current).abs().div(total)),new Decimal(0));
@@ -164,7 +174,7 @@ export const fixedAllocationEngine: StrategyEngine = {
       };
     }
 
-    const overweight=[...rows].filter((row)=>row.delta.lt(0)).sort((a,b)=>a.delta.cmp(b.delta))[0];
+    const overweight=[...rows].filter((row)=>row.delta.lte(SMALLEST_TRADE_UNIT.neg())).sort((a,b)=>a.delta.cmp(b.delta))[0];
     if(overweight){
       const amount=overweight.delta.abs();
       return {
@@ -185,7 +195,7 @@ export const fixedAllocationEngine: StrategyEngine = {
 
     return {
       actionType:"DATA_REQUIRED",
-      title:"Rebalance needs attention",
+      title:REBALANCE_STUCK_TITLE,
       instruction:"The allocation is outside its threshold but no executable rebalance step could be determined.",
       explanation,
       nextState:ctx.state,

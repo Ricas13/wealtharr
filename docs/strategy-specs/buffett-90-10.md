@@ -9,3 +9,5 @@ Code profile `buffett-90-10`: fixed 90/10; **annual calendar rebalance is a Weal
 Open: independent source/rebalancing review, goldens, trading line eligibility, brand/likeness and financial regulatory sign-off. No Buffett endorsement or release permission implied.
 
 Reviewer: PENDING; independent approval: NO.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** when whole shares, a minimum trade or a cash buffer leave residue that no practical order can remove, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".

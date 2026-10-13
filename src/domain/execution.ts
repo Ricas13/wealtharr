@@ -90,6 +90,9 @@ export type NormalizedExecutionConstraints = {
   allowSelling: boolean;
 };
 
+/** Half of the smallest displayed unit (0.01) of a two-decimal currency: any smaller amount rounds to 0.00. */
+export const SMALLEST_TRADE_UNIT = new Decimal("0.005");
+
 export type PracticalTradePlan =
   | {
       status: "EXECUTABLE";
@@ -178,7 +181,8 @@ export function planPracticalTrade(input: {
   }
 
   const amount = quantity.mul(price);
-  if (amount.lt(constraints.minimumTradeAmount)) {
+  // An order that rounds to 0.00 in the account currency is not a trade: it is residue (see execution-residue.ts).
+  if (amount.lt(Decimal.max(constraints.minimumTradeAmount, SMALLEST_TRADE_UNIT))) {
     return { status:"BLOCKED", reason:"BELOW_MINIMUM_TRADE", estimatedFee:constraints.flatFee };
   }
 

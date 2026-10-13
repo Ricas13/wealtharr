@@ -15,3 +15,5 @@ Arithmetic independently from 55/45:
 **Release blockers**: original-author calendar and update-version sign-off; independently run golden cases; actual broker/country/account-wrapper eligibility (including UK ISA); licensed provider/FX and risk disclosure; legal and branding review. Source research **does not** enable this strategy.
 
 Reviewer: PENDING; independent approval: NO.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** when whole shares, a minimum trade or a cash buffer leave residue that no practical order can remove, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".
