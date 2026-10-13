@@ -27,11 +27,21 @@ export async function PUT(request:Request){
           [previous[0].stripe_price_id,plans[0].id,previous[0].currency,previous[0].cadence,previous[0].amount_minor]);
       }
       if(p.stripePriceId){
-        const owner=await tx.unsafe("SELECT plan_id,currency,cadence FROM stripe_price_mappings WHERE stripe_price_id=$1",[p.stripePriceId]);
-        if(owner[0]&&String(owner[0].plan_id)!==String(plans[0].id))throw new Error("STRIPE_PRICE_BELONGS_TO_OTHER_PLAN");
-        if(owner[0]&&(String(owner[0].currency).toUpperCase()!==p.currency.toUpperCase()||
-          String(owner[0].cadence)!==p.cadence))
-          throw new Error("STRIPE_PRICE_HISTORY_MISMATCH");
+        // A Stripe Price represents immutable money, currency and cadence. It may remain
+        // on old subscriptions, so an admin edit must never silently rewrite its identity.
+        // Check the historical registry AND the currently published row: earlier installs
+        // may not yet have a historical mapping for their current Stripe Price.
+        const owner=await tx.unsafe("SELECT plan_id,currency,cadence,amount_minor FROM stripe_price_mappings WHERE stripe_price_id=$1 FOR UPDATE",[p.stripePriceId]);
+        const activeOwners=await tx.unsafe(
+          "SELECT plan_id,currency,cadence,amount_minor FROM plan_prices WHERE stripe_price_id=$1 FOR UPDATE",
+          [p.stripePriceId]
+        );
+        for(const recorded of [...owner,...activeOwners]){
+          if(String(recorded.plan_id)!==String(plans[0].id))throw new Error("STRIPE_PRICE_BELONGS_TO_OTHER_PLAN");
+          if(String(recorded.currency).toUpperCase()!==p.currency.toUpperCase()||
+             String(recorded.cadence)!==p.cadence)throw new Error("STRIPE_PRICE_HISTORY_MISMATCH");
+          if(Number(recorded.amount_minor)!==p.amountMinor)throw new Error("STRIPE_PRICE_AMOUNT_MISMATCH");
+        }
         await tx.unsafe("INSERT INTO stripe_price_mappings (stripe_price_id,plan_id,currency,cadence,amount_minor) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (stripe_price_id) DO NOTHING",
           [p.stripePriceId,plans[0].id,p.currency.toUpperCase(),p.cadence,p.amountMinor]);
       }
@@ -48,6 +58,8 @@ export async function PUT(request:Request){
     if(error instanceof Error&&error.message==="STRIPE_PRICE_BELONGS_TO_OTHER_PLAN")return Response.json({error:"That Stripe price is already assigned to another plan."},{status:409});
     if(error instanceof Error&&error.message==="STRIPE_PRICE_HISTORY_MISMATCH")
       return Response.json({error:"This Stripe price is already recorded for a different currency or billing cycle."},{status:409});
+    if(error instanceof Error&&error.message==="STRIPE_PRICE_AMOUNT_MISMATCH")
+      return Response.json({error:"This Stripe Price ID is locked to its original amount. Create a new Stripe Price for the new amount; existing subscriptions retain the old price."},{status:409});
     if(error instanceof Error&&/plan_price_(apple|google)_unique/.test(error.message))return Response.json({error:"That store product is already assigned to another price."},{status:409});
     return Response.json({error:"Could not update plan price."},{status:500});
   }
