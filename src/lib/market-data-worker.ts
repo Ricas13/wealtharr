@@ -1,9 +1,25 @@
 import "server-only";
+import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { classifyFreshness } from "@/domain/market-freshness";
 import { runBounded } from "@/lib/work-pool";
 import { assessQuote } from "@/domain/quote-plausibility";
+
+// A newer rejected observation must supersede cached accepted market data for action sizing.
+async function markRejected(lineId:string, observation:{observedAt:Date;price:string;currency:string;provider:string},reason:string){
+  await sql.unsafe(
+    "INSERT INTO market_data_rejections (trading_line_id,observed_at,price,currency,provider,reason) VALUES ($1,$2,$3,$4,$5,$6) "+
+    "ON CONFLICT (trading_line_id) DO UPDATE SET observed_at=EXCLUDED.observed_at,price=EXCLUDED.price,currency=EXCLUDED.currency,"+
+    "provider=EXCLUDED.provider,reason=EXCLUDED.reason,rejected_at=now() WHERE market_data_rejections.observed_at<=EXCLUDED.observed_at",
+    [lineId,observation.observedAt,observation.price,observation.currency,observation.provider,reason]
+  );
+}
+function maxMove():Decimal|undefined{
+  try{const n=new Decimal(String(process.env.MARKET_MAX_QUOTE_MOVE??""));
+    return n.isFinite()&&n.gt(0)?n:undefined;
+  }catch{return undefined;}
+}
 
 // `deadline` (epoch ms) stops new lookups once reached; lines not refreshed are reported as skipped
 // so a slow provider shows up as a degraded run instead of silently eating the whole worker.
@@ -64,17 +80,22 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
             return;
           }
           const previous = await sql.unsafe(
-            "SELECT price,observed_at FROM market_data_observations WHERE trading_line_id=$1 AND observed_at<$2 ORDER BY observed_at DESC LIMIT 1",
-            [line.id, observation.observedAt]
+            "SELECT price,observed_at FROM market_data_observations WHERE trading_line_id=$1 ORDER BY observed_at DESC LIMIT 1",
+            [line.id]
           );
-          const maxMove = Number(process.env.MARKET_MAX_QUOTE_MOVE);
-          const assessment = assessQuote(
-            Number(observation.price),
-            previous[0] ? { price: Number(previous[0].price), observedAt: new Date(previous[0].observed_at) } : null,
-            new Date(),
-            Number.isFinite(maxMove) && maxMove > 0 ? maxMove : undefined
-          );
+          const last = previous[0];
+          if(last && new Date(last.observed_at)>=observation.observedAt){
+            failed+=1;
+            failures.push({tradingLineId:String(line.id),code:"QUOTE_OUT_OF_ORDER"});
+            return;
+          }
+          const unresolved = await sql.unsafe("SELECT observed_at FROM market_data_rejections WHERE trading_line_id=$1",[line.id]);
+          // Do not let an unresolved erroneous quote become acceptable merely by waiting seven days.
+          const assessment = assessQuote(observation.price,
+            last?{price:String(last.price),observedAt:new Date(last.observed_at)}:null,
+            new Date(),maxMove(),{ignoreReferenceAge:unresolved.length>0});
           if (!assessment.ok) {
+            await markRejected(String(line.id),observation,assessment.code);
             failed += 1;
             failures.push({ tradingLineId: String(line.id), code: assessment.code });
             return;
@@ -83,6 +104,8 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
             "INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness) VALUES ($1,$2,$3,$4,$5,'CURRENT') ON CONFLICT (trading_line_id,observed_at,provider) DO NOTHING",
             [line.id, observation.observedAt, observation.price, observation.currency, observation.provider]
           );
+          await sql.unsafe("DELETE FROM market_data_rejections WHERE trading_line_id=$1 AND observed_at<=$2",
+            [line.id,observation.observedAt]);
           refreshed += 1;
         } catch {
           failed += 1;

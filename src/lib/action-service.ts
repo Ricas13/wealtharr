@@ -134,6 +134,18 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         continue;
       }
       const manualPrice=priceOverride[0]?.manual_value==null?null:validatedEffectivePrice(priceOverride[0].manual_value);
+      const rejection=m?.trading_line_id
+        ?await db.unsafe("SELECT observed_at FROM market_data_rejections WHERE trading_line_id=$1",[m.trading_line_id])
+        :[];
+      const rejectedAt=rejection[0]?.observed_at?new Date(rejection[0].observed_at):null;
+      const acceptedAt=m?.observed_at?new Date(m.observed_at):null;
+      const manualAt=priceOverride[0]?.observed_at?new Date(priceOverride[0].observed_at):null;
+      if(rejectedAt && (!acceptedAt||rejectedAt>=acceptedAt) &&
+        (!manualPrice||!manualAt||manualAt<=rejectedAt)){
+        dataStatus="MISSING";
+        dataMessage="The latest provider quote was rejected as implausible. Verify the price, corporate action and units before trading.";
+        continue;
+      }
       // A split changes the unit basis: never value post-split units using older prices or overrides.
       if(m?.split_at){
         const sourceTime=manualPrice?priceOverride[0]?.observed_at:m?.observed_at;
@@ -296,7 +308,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
 
     if(tradingLineId&&["BUY","SELL"].includes(proposal.actionType)&&proposal.amount){
       const quoteRows=await db.unsafe(
-        "SELECT tl.ticker,tl.instrument_id,tl.currency,i.leverage AS instrument_leverage,o.price,o.observed_at,o.currency AS observation_currency FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
+        "SELECT tl.ticker,tl.instrument_id,tl.currency,i.leverage AS instrument_leverage,o.price,o.observed_at,o.currency AS observation_currency,r.observed_at AS rejected_observed_at FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id LEFT JOIN market_data_rejections r ON r.trading_line_id=tl.id LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
         [tradingLineId]
       );
       const quote=quoteRows[0];
@@ -311,7 +323,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         ?validatedEffectivePrice(chosenOverride.manual_value)
         :quote?.price!=null?validatedEffectivePrice(String(quote.price)):null;
       const priceObservedAt=chosenOverride?.observed_at??quote?.observed_at;
-      if(!effectivePrice){
+      const rejectedAt=quote?.rejected_observed_at?new Date(quote.rejected_observed_at):null;
+      const quoteAt=quote?.observed_at?new Date(quote.observed_at):null;
+      const overrideAt=chosenOverride?.observed_at?new Date(chosenOverride.observed_at):null;
+      const rejectedNewer=Boolean(rejectedAt&&(!quoteAt||rejectedAt>=quoteAt)&&
+        (!chosenOverride||!overrideAt||overrideAt<=rejectedAt));
+      if(rejectedNewer){
+        proposal={actionType:"DATA_REQUIRED",title:"Verify rejected price",instruction:"The latest provider quote was rejected as implausible. Resolve the discrepancy before recording any trade.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
+      }else if(!effectivePrice){
         proposal={actionType:"DATA_REQUIRED",title:"Price needed before you trade",instruction:"A current price is not available for the instrument this strategy would use.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(String(quote.observation_currency??quote.currency)!==String(instance.currency)){
         proposal={actionType:"DATA_REQUIRED",title:"FX data needed",instruction:"The selected trading line is not priced in your account currency, so we will not estimate an order without an explicit FX conversion.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
