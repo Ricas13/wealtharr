@@ -1,8 +1,8 @@
 /** Optional Cloudflare Turnstile security boundary for public authentication forms.
  * The widget alone is never proof: every submission validates the single-use token at Siteverify.
- * Set TURNSTILE_ENABLED=true only after BOTH widget and secret credentials are deployed.
+ * Admin config is stored encrypted in app_settings and loaded by ensureSettings().
  */
-export type TurnstileAction="register"|"login"|"reset";
+export type TurnstileAction="register"|"login"|"reset"|"admin-test";
 export type TurnstileEnvironment={
   [key:string]:string|undefined;
   TURNSTILE_ENABLED?:string;TURNSTILE_SITE_KEY?:string;TURNSTILE_SECRET_KEY?:string;
