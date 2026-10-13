@@ -1,69 +1,64 @@
-# Cloudflare Turnstile: Wealtharr public authentication protection
+# Cloudflare Turnstile — managed in Wealtharr Admin
 
-## Coverage and security model
+All Turnstile configuration happens **inside Wealtharr**, without editing environment
+files, container definitions, source code or restarting the application.
 
-When `TURNSTILE_ENABLED=true`, Wealtharr requires a fresh Cloudflare Turnstile
-token **before** registration (`POST /api/register`), password-reset email requests
-(`POST /api/password-reset/request`) and Auth.js **password** sign-in (the
-credentials provider's `authorize` callback). The security check happens on
-the server at Cloudflare's Siteverify endpoint. It cannot be bypassed by hiding,
-removing or forging the browser widget.
+## Set up
 
-The verifier rejects missing/oversized tokens, unsuccessful responses, token
-replays and expiry (enforced by Cloudflare), unexpected origin hostname,
-mismatched `action`, malformed responses, timeout and provider outages.
-Rate limits remain in place. A failed verification must not create accounts,
-send reset links or authenticate sessions.
+1. In your Cloudflare dashboard, create a Turnstile **Managed** widget for the
+   exact hostname configured as Wealtharr's **Admin → Settings → General →
+   Public web address**. If you run staging and production, create a separate
+   Turnstile widget for each hostname. Copy the *site key* and *secret key*.
+2. Sign in to Wealtharr as an administrator and open **Admin → Settings →
+   Cloudflare Turnstile**.
+3. Paste the **site key** and **secret key**, leave **Enable Cloudflare Turnstile**
+   set to **Off**, and select **Save changes**. The secret is encrypted in
+   Wealtharr's existing operator-settings database and hidden on subsequent visits.
+4. Under **Test your saved configuration**, complete the actual challenge and
+   select **Test connection**. Wealtharr sends only the browser-issued token
+   to its own admin endpoint, which verifies it using the saved private secret
+   at Cloudflare's Siteverify service. Cloudflare must confirm the expected
+   hostname and the special `admin-test` action.
+5. Once the test succeeds, turn **Enable Cloudflare Turnstile** **On** and
+   **Save changes**. There is no redeploy or restart. Visit registration,
+   password login and password-reset pages to verify the user experience.
+6. If you need to rotate credentials, disable protection, save, then replace
+   both the site key and secret key, test, and re-enable. Admin settings prevent
+   enabling with incomplete or mismatched stored-key changes.
 
-Google/Apple OAuth flows continue to use their provider's authentication and
-are **not** Turnstile-gated. Password reset **confirmation** is protected by
-the one-time reset token, rather than consuming another challenge.
+## Protected routes
 
-## Production configuration
+With the setting enabled, the following require a fresh widget token validated
+on the server: registration, password-based sign-in and request-a-reset-link.
+OAuth providers are not challenged by Wealtharr; a reset confirmation still
+requires its one-time email recovery token.
 
-1. In the Cloudflare Dashboard, create a Turnstile widget restricted to the
-   *actual public hostname* configured by `NEXT_PUBLIC_APP_URL`. Use distinct
-   widgets for staging and production. Choose managed mode.
-2. On the **app server only**, configure:
-   - `TURNSTILE_ENABLED=true`
-   - `TURNSTILE_SITE_KEY=<public widget site key>`
-   - `TURNSTILE_SECRET_KEY=<private Siteverify secret>`
-   - `NEXT_PUBLIC_APP_URL=https://<same public hostname>`
-3. Restart/redeploy the application. The app's Docker Compose `env_file`
-   injects these values into the app service. Do not put them in the scheduler,
-   browser bundle, logs or repository. The site key is rendered by the server
-   into the page; **only** the site key is public.
-4. Confirm from real browsers that registration, password sign-in and reset
-   requests each complete the widget and that a replayed/invalid challenge
-   is rejected. Test with a real production-domain hostname and separately
-   with test keys on staging.
-5. Run `npm run launch:preflight`. Commercial launch is blocked while
-   Turnstile is disabled, keys are absent, or official dummy keys are configured.
-   This is a necessary configuration check, **not** a substitute for a live
-   challenge plus Siteverify smoke test.
+The same old rate limits remain. Cloudflare rejects expired/replayed tokens;
+Wealtharr additionally validates the returned hostname and action. Outages or
+invalid responses fail closed. Siteverify secrets and tokens are never
+stored in frontend settings or application logs.
 
-If keys are absent but `TURNSTILE_ENABLED=true`, the challenge cannot be
-completed and these sensitive actions **fail closed**. Enabling is opt-in to
-avoid breaking existing staging installs before credentials are supplied.
+**Disable protection immediately from Admin → Settings** if your Cloudflare
+widget becomes unavailable or you cannot solve it from the real site. An
+administrator with an existing session can still access Admin to switch it off.
 
-The client widget uses explicit rendering (React SPA-safe) and refreshes after
-every submission, because Cloudflare tokens are single-use and expire after
-five minutes. No provider response, token or secret is logged.
+## Launch gate
 
-The configured CSP explicitly allows Turnstile's iframe origin. Any future
-strict `script-src` should include `https://challenges.cloudflare.com`
-and preserve Next.js's own nonce policy.
+Admin → Launch readiness checks the *saved* configuration through Wealtharr's
+settings loader and blocks live paid checkout until Turnstile is enabled and
+its credentials appear configured. This is not equivalent to a live verified
+challenge; perform the on-screen test before enabling live sales.
 
-## Official documentation
+The CLI `npm run launch:preflight` may not load database-stored operator settings
+in a standalone terminal process. For up-to-date effective settings and live
+readiness, use **Admin → Launch readiness**.
+
+## Notes
+
+Only the initial core server bootstrap (database connection, authentication
+session secret and the encryption key that protects settings) remains a host-level
+responsibility in Wealtharr. **No Cloudflare Turnstile settings need a .env file.**
 
 - https://developers.cloudflare.com/turnstile/get-started/
 - https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
 - https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/
-- https://developers.cloudflare.com/turnstile/troubleshooting/testing/
-
-## Scope boundaries
-
-Turnstile is one layer of bot mitigation, not user identity verification,
-DDoS prevention, rate limiting, a WAF, a substitute for email verification
-or MFA, or a claim that the site is safe to sell financial subscriptions.
-It does not enable paid subscriptions or change strategy release gates.
