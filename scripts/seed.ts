@@ -21,11 +21,18 @@ async function main(){
     await seedPlan("investor","Investor",999,9900,1742,3,{features:["history","reconciliation","resume","community","analytics","comparisons"],notificationChannels:["EMAIL","DISCORD","TELEGRAM"]},10);
     await seedPlan("pro","Pro",2999,29900,1692,null,{features:["history","reconciliation","resume","community","analytics","comparisons","what_if","advanced_imports","multi_account"],notificationChannels:["EMAIL","DISCORD","TELEGRAM"]},20);
 
+    // Existing installs preserve their immutable versions and ledgers. An empty production
+    // catalogue is preferable to automatically offering research/partial financial methods.
+    // Historical catalogue fixtures remain available ONLY in ephemeral GitHub Actions tests.
+    const syntheticCiCatalogue=process.env.GITHUB_ACTIONS==="true" && process.env.CI==="true" &&
+      /^postgres(?:ql)?:\/\/[^@]+@127\.0\.0\.1:5432\/strategyos_test$/.test(process.env.DATABASE_URL??"");
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
     for(const plugin of STRATEGY_PLUGINS){
       const definition=plugin.seedDefinition;
+      // No incomplete/DRAFT reference model or partial 9Sig release is seeded on a real install.
+      if(!syntheticCiCatalogue)continue;
       if(!definition)continue;
       const key=plugin.key;
       const {name,family,description,engine,proprietary,enabled}=definition;
@@ -66,6 +73,8 @@ async function main(){
     // Published versions and engine validation remain separate review and code gates.
     for(const plugin of STRATEGY_PLUGINS){
       const research=plugin.profile;
+      // Research names are documentation, not selectable code. Do not seed them in production.
+      if(!syntheticCiCatalogue)continue;
       if(!research)continue;
       await sql.unsafe(
         "INSERT INTO strategy_definitions (key,name,family,description,engine,enabled,proprietary,supported_regions,supported_wrappers) "+
