@@ -118,12 +118,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     for(const [instrumentId,quantity] of position.quantities.entries()){
       if(quantity.eq(0))continue;
       const market=await db.unsafe(
-        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id, "+
+        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id,q.ca_split_at, "+
         "(SELECT max(s.occurred_at) FROM ledger_events s WHERE s.strategy_instance_id=$3 AND s.instrument_id=i.id "+
         "AND s.event_type='SPLIT' AND (s.account_id=$4 OR (s.account_id IS NULL AND $4=$5)) "+
         "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) AS split_at "+
         "FROM instruments i LEFT JOIN LATERAL ("+
-        " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,o.price,o.observed_at,o.currency AS observation_currency"+
+        " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,tl.corporate_action_split_at AS ca_split_at,o.price,o.observed_at,o.currency AS observation_currency"+
         " FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true"+
         " WHERE tl.instrument_id=i.id AND upper(tl.currency)=upper($2) AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date)"+
         " ORDER BY o.observed_at DESC NULLS LAST,tl.id LIMIT 1"+
@@ -160,6 +160,25 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           dataStatus="MISSING";
           dataMessage="A stock split was recorded after the latest price. Refresh the quote or enter a verified post-split price before recalculating.";
           continue;
+        }
+      }
+      // The market worker accepted a post-split quote because SOME strategy recorded the split. A
+      // strategy that holds units acquired before that split but did not record it still counts
+      // pre-split units: fail closed until it records the split or a manual price is entered.
+      if(m?.ca_split_at){
+        const caSplitAt=new Date(m.ca_split_at);
+        const recorded=m.split_at?new Date(m.split_at).getTime()>=caSplitAt.getTime()-86_400_000:false;
+        const manualCovers=Boolean(manualPrice&&manualAt&&manualAt>=caSplitAt);
+        if(!recorded&&!manualCovers){
+          const preSplit=await db.unsafe(
+            "SELECT 1 FROM ledger_events e WHERE e.strategy_instance_id=$1 AND e.instrument_id=$2 AND e.event_type<>'SPLIT' AND e.occurred_at<$3 LIMIT 1",
+            [strategyInstanceId,instrumentId,caSplitAt]
+          );
+          if(preSplit[0]){
+            dataStatus="MISSING";
+            dataMessage="A stock split was recorded for this instrument by another holder and the price now reflects it, but this strategy has not recorded it. Record the split or enter a verified post-split price before recalculating.";
+            continue;
+          }
         }
       }
       if(manualPrice){

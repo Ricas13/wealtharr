@@ -50,6 +50,46 @@ export function matchesRecordedSplit(
   return false;
 }
 
+/** A recorded, unreversed split together with the time it took effect. */
+export type SplitEvidence = RecordedSplit & { occurredAt: Date };
+/** A recorded split explains quotes only for this long after it took effect. */
+export const SPLIT_EXPLANATION_WINDOW_MS = 14 * 86_400_000;
+/** Splits are often recorded as a bare date; allow this much clock slack on either side of the window. */
+export const SPLIT_EXPLANATION_SLACK_MS = 86_400_000;
+
+/**
+ * The recorded split (latest by effective time) that explains `price` as the post-split form of the
+ * `reference` observation, or null. ALL of the following must hold, so one person's mistaken or
+ * unrelated split cannot excuse an arbitrary move:
+ *  - the split took effect no earlier than 1 day before the reference was observed (so the reference
+ *    is pre-split) and no later than 1 day after the quote was observed;
+ *  - the quote was observed within 14 days after the split took effect;
+ *  - price is within 5% of reference x from / to (`matchesRecordedSplit`).
+ * The caller supplies only unreversed splits, and only their ratio and time, never who recorded them.
+ */
+export function explainingSplit(
+  price: Decimal.Value,
+  reference: { price: Decimal.Value; observedAt: Date },
+  quoteObservedAt: Date,
+  splits: SplitEvidence[],
+  tolerance: Decimal.Value = SPLIT_MATCH_TOLERANCE
+): SplitEvidence | null {
+  const quoteAt = quoteObservedAt.getTime();
+  const referenceAt = reference.observedAt.getTime();
+  if (!Number.isFinite(quoteAt) || !Number.isFinite(referenceAt)) return null;
+  let best: SplitEvidence | null = null;
+  for (const split of splits) {
+    const effective = split.occurredAt.getTime();
+    if (!Number.isFinite(effective)) continue;
+    if (effective < referenceAt - SPLIT_EXPLANATION_SLACK_MS) continue;
+    if (effective > quoteAt + SPLIT_EXPLANATION_SLACK_MS) continue;
+    if (quoteAt > effective + SPLIT_EXPLANATION_WINDOW_MS) continue;
+    if (!matchesRecordedSplit(price, reference.price, [split], tolerance)) continue;
+    if (!best || effective > best.occurredAt.getTime()) best = split;
+  }
+  return best;
+}
+
 export function assessQuote(
   price: Decimal.Value,
   previous: { price: Decimal.Value; observedAt: Date } | null,

@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {assessQuote,matchesRecordedSplit} from "@/domain/quote-plausibility";
+import {assessQuote,explainingSplit,matchesRecordedSplit} from "@/domain/quote-plausibility";
 
 const now=new Date("2026-10-08T12:00:00Z");
 const prev=(price:number,daysAgo=1)=>({price,observedAt:new Date(now.getTime()-daysAgo*86_400_000)});
@@ -67,5 +67,54 @@ describe("matchesRecordedSplit",()=>{
  it("ignores malformed splits and prices",()=>{
   expect(matchesRecordedSplit(50,100,[{to:0,from:1},{to:"x",from:1},{to:2,from:2}])).toBe(false);
   expect(matchesRecordedSplit(0,100,[{to:2,from:1}])).toBe(false);
+ });
+ it("matches 3:2 and the 5% tolerance edge",()=>{
+  // 3-for-2 on 90: expected 60.
+  expect(matchesRecordedSplit(60,90,[{to:3,from:2}])).toBe(true);
+  // 50 x 1.049 = 52.45 (+4.9%) matches; 52.55 (+5.1%) does not.
+  expect(matchesRecordedSplit("52.45",100,[{to:2,from:1}])).toBe(true);
+  expect(matchesRecordedSplit("52.55",100,[{to:2,from:1}])).toBe(false);
+  expect(matchesRecordedSplit("47.55",100,[{to:2,from:1}])).toBe(true);
+  expect(matchesRecordedSplit("47.45",100,[{to:2,from:1}])).toBe(false);
+ });
+});
+
+describe("explainingSplit",()=>{
+ const DAY=86_400_000;
+ const reference={price:"100",observedAt:new Date(now.getTime()-3*DAY)};
+ const split=(daysAgo:number,to=2,from=1)=>({to,from,occurredAt:new Date(now.getTime()-daysAgo*DAY)});
+ it("explains the -50% move of a 2:1 split recorded after the reference",()=>{
+  const s=split(1);
+  expect(explainingSplit("50",reference,now,[s])).toBe(s);
+  expect(assessQuote("50",reference,now)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
+ });
+ it("explains a 1:10 reverse split and a 3:2 split",()=>{
+  expect(explainingSplit("1000",reference,now,[split(1,1,10)])).not.toBeNull();
+  expect(explainingSplit("66.7",reference,now,[split(1,3,2)])).not.toBeNull();
+ });
+ it("does not explain an unrelated -50% move, or one with no recorded split",()=>{
+  expect(explainingSplit("50",reference,now,[])).toBeNull();
+  expect(explainingSplit("50",reference,now,[split(1,3,1)])).toBeNull();
+  expect(explainingSplit("60",reference,now,[split(1)])).toBeNull();
+ });
+ it("never excuses pence-vs-pounds (x100) even with a split recorded",()=>{
+  expect(explainingSplit("10000",reference,now,[split(1)])).toBeNull();
+  expect(explainingSplit("1",reference,now,[split(1)])).toBeNull();
+ });
+ it("honours the window: split must follow the reference and the quote be within 14 days",()=>{
+  // Split long before the reference observation: the reference is already post-split.
+  expect(explainingSplit("50",reference,now,[split(10)])).toBeNull();
+  // Quote 15 days after the split.
+  const oldRef={price:"100",observedAt:new Date(now.getTime()-20*DAY)};
+  expect(explainingSplit("50",oldRef,now,[split(15)])).toBeNull();
+  expect(explainingSplit("50",oldRef,now,[split(13)])).not.toBeNull();
+  // Split dated well after the quote.
+  expect(explainingSplit("50",reference,now,[{to:2,from:1,occurredAt:new Date(now.getTime()+3*DAY)}])).toBeNull();
+ });
+ it("prefers the latest matching split and ignores malformed ones",()=>{
+  const older=split(2);
+  const newer=split(1);
+  expect(explainingSplit("50",reference,now,[older,newer])).toBe(newer);
+  expect(explainingSplit("50",reference,now,[{to:"x",from:1,occurredAt:new Date(now.getTime()-DAY)}])).toBeNull();
  });
 });
