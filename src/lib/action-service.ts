@@ -5,6 +5,7 @@ import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
 import { assertLedgerEvent, foldLedger } from "@/domain/ledger";
+import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
 import { assertExecutionCurrencyMatch, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
@@ -211,7 +212,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  const resolveProposal=async(unaffordableCashBuys:Record<string,Decimal>)=>{
+  let blockedCashBuyExposure:string|null=null;
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage},unaffordableCashBuys});
 
   let tradingLineId:string|null=null;
   let executionTicker:string|null=null;
@@ -335,6 +338,8 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
             BELOW_MINIMUM_TRADE:"This action is below your minimum trade size.",
             NO_HOLDINGS:"The strategy wants to reduce this exposure, but no matching holding is recorded."
           } as const;
+          if(proposal.actionType==="BUY"&&calculationEngineKey==="FIXED_ALLOCATION"&&isCashBuyShortfall(practical.reason))
+            blockedCashBuyExposure=proposal.economicExposure??null;
           proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
         }else{
           const quantityText=practical.quantity.toDecimalPlaces(6,Decimal.ROUND_DOWN).toString();
@@ -358,6 +363,18 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       }
     }
   }
+
+  const skippedBuys=Object.keys(unaffordableCashBuys);
+  if(skippedBuys.length&&proposal.actionType!=="DATA_REQUIRED"){
+    proposal={...proposal,explanation:[
+      ...proposal.explanation,
+      ...skippedBuys.map(exposure=>({label:"Cash purchase of "+exposure+" skipped",value:"Below one whole share, your minimum trade, or spendable cash",kind:"text" as const}))
+    ]};
+  }
+  return {proposal,tradingLineId,executionTicker,executionAccountId,blockedCashBuyExposure};
+  };
+  const {proposal,tradingLineId,executionTicker,executionAccountId}=
+    await settleCashBuyFallback(resolveProposal,effectiveCash);
 
   const stableHoldings=accounts.flatMap((account)=>{
     const accountId=String(account.id);
