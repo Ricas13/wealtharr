@@ -104,7 +104,8 @@ export const SETTINGS: readonly SettingDefinition[] = [
 // redirect a stored token to a host of their choosing without knowing it.
 export const ENDPOINT_SECRET_PAIRS: Readonly<Record<string, string>> = {
   EMAIL_HTTP_ENDPOINT: "EMAIL_HTTP_TOKEN",
-  MARKET_DATA_HTTP_BASE_URL: "MARKET_DATA_HTTP_TOKEN"
+  MARKET_DATA_HTTP_BASE_URL: "MARKET_DATA_HTTP_TOKEN",
+  TURNSTILE_SITE_KEY: "TURNSTILE_SECRET_KEY"
 };
 
 export const SETTING_KEYS = new Set(SETTINGS.map((s) => s.key));
