@@ -49,7 +49,7 @@ export default async function AdminPage(){
  return <div className="admin-overview admin-fidelity-overview">
   <div className="admin-design-heading">
    <div><span className="admin-kicker">WORKSPACE / OVERVIEW</span><h1>Overview</h1><p>Business performance and platform health</p></div>
-   <span className={"admin-design-status "+(launchLocked?"is-prelaunch":"is-live")}>{launchLocked?"Pre-launch":"Launch enabled"}</span>
+   <span className={"admin-design-status "+(launchLocked?"is-prelaunch":"is-live")}>{launchLocked?"Pre-launch":"Checkout switch on"}</span>
   </div>
   <div className="admin-overview-kpis" role="region" aria-label="Key business indicators">{cards.map(({label,value,detail,href,Icon})=>
    <Link key={label} href={href} className="admin-design-kpi">
