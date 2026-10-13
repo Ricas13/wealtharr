@@ -38,7 +38,7 @@ export default async function AdminPage(){
  const cards=[
   {label:"Customers",value:new Intl.NumberFormat("en-GB").format(Number(users[0]?.c??0)),detail:"+"+Number(customers30[0]?.c??0)+" in the last 30 days",href:"/admin/users",Icon:UsersRound},
   {label:"Active strategies",value:new Intl.NumberFormat("en-GB").format(Number(strategies[0]?.c??0)),detail:"Customer strategy instances",href:"/admin/strategies",Icon:Layers3},
-  {label:"Subscriptions",value:new Intl.NumberFormat("en-GB").format(Number(activeSubscriptions[0]?.c??0)),detail:"Active and trialing · not revenue",href:"/admin/plans",Icon:Wallet},
+  {label:"Monthly revenue",value:"—",detail:"Awaiting reconciled billing figures",href:"/admin/plans",Icon:Wallet},
   {label:"Needs attention",value:new Intl.NumberFormat("en-GB").format(pending),detail:"Operational & strategy issues",href:"/admin/operations",Icon:TriangleAlert}
  ];
  const issues=[
