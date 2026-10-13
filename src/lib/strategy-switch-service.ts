@@ -2,7 +2,7 @@ import { EXECUTABLE_ACTION_STATUS_SQL } from "@/domain/actions";
 import "server-only";
 import {assertUserStrategyAccessWith} from "@/lib/user-strategy-access";
 import { sql } from "@/lib/db";
-import { foldLedger } from "@/domain/ledger";
+import { foldAccountLedger } from "@/domain/ledger";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
 import { assertCanCreateStrategy, assertStrategyFeatureAccess } from "@/domain/entitlements";
@@ -93,20 +93,16 @@ export async function switchStrategy(
       cash:string;
       quantities:Array<{instrumentId:string;quantity:string}>;
     }>=[];
+    const ledger=await tx.unsafe(
+      "SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events "+
+      "WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",
+      [strategyInstanceId]
+    );
+    const primaryAccountId=current.account_id?String(current.account_id):null;
     for(const account of accounts){
-      const ledger=await tx.unsafe(
-        "SELECT event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events "+
-        "WHERE strategy_instance_id=$1 AND account_id=$2 ORDER BY occurred_at,created_at",
-        [strategyInstanceId,account.id]
-      );
-      const folded=foldLedger(ledger.map((row)=>({
-        eventType:String(row.event_type),
-        currency:String(row.currency),
-        cashAmount:String(row.cash_amount),
-        feeAmount:String(row.fee_amount),
-        instrumentId:row.instrument_id?String(row.instrument_id):null,
-        quantity:String(row.quantity)
-      })),String(account.currency));
+      // Canonical per-account fold shared with calculation and execution: a null-account row
+      // (legacy / ON DELETE SET NULL) belongs to the strategy's primary account.
+      const folded=foldAccountLedger(ledger,String(account.id),primaryAccountId,String(account.currency));
       const foreign=[...folded.cashByCurrency.entries()].filter(([currency,value])=>currency!==String(account.currency).toUpperCase()&&!value.eq(0));
       if(foreign.length)throw new Error("SWITCH_FOREIGN_CASH_UNSUPPORTED");
       if(folded.cash.lt(0))throw new Error("SWITCH_NEGATIVE_CASH_UNSUPPORTED");

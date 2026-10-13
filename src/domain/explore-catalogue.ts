@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type {StrategyPlugin} from "./strategy/catalog/plugin";
 import {getExposure} from "./strategy/exposures";
+import {assessStrategyMarket,type MarketAssessment,type VerifiedCandidate} from "./strategy/market-eligibility";
 
 /**
  * Pure state machine behind the customer Explore catalogue. It never decides whether a strategy is
@@ -152,3 +153,58 @@ export function cardDescription(plugin:StrategyPlugin):string{
 
 /** The only risk line shown on a card besides the leverage disclosure; `profile.risks` are operator notes. */
 export const GENERIC_RISK_NOTE="All investing carries risk, including loss of capital.";
+
+/**
+ * Wrappers the add-strategy form can start an account with when a strategy does not restrict them.
+ * Mirrors the fallback list in `CreateStrategyForm`.
+ */
+export const STARTABLE_WRAPPERS:readonly string[]=["ISA","SIPP","TAXABLE"];
+
+export type OfferableStrategy={
+  engine:string;
+  config:Record<string,unknown>;
+  /** `strategy_definitions.supported_regions`; empty means unrestricted (as in createStrategy). */
+  supportedRegions:readonly string[];
+  /** `strategy_definitions.supported_wrappers`; empty means unrestricted (as in createStrategy). */
+  supportedWrappers:readonly string[];
+};
+export type OfferableUserMarket={
+  country:string;
+  currency:string;
+  /** Broker the user has stated; null/absent mirrors the form's blank broker field, which only matches generic mappings. */
+  broker?:string|null;
+  /**
+   * Wrapper the user has already chosen, when a page knows one. When absent the strategy is offered
+   * if it is available for at least one wrapper the add-strategy form lets the user pick
+   * (the strategy's own supported wrappers, otherwise `STARTABLE_WRAPPERS`).
+   */
+  wrapper?:string|null;
+};
+export type OfferableResult={offerable:boolean;wrapper:string|null;assessment:MarketAssessment|null};
+
+/**
+ * Pure eligibility predicate shared by Explore, the homepage rail and the add-strategy list. It is
+ * exactly the check `createStrategy` applies for the same inputs: region and wrapper restrictions,
+ * then `assessStrategyMarket(...).available` (all legs, exact country/wrapper/currency/broker),
+ * never the "any market anywhere" `supportedMarkets` list. Fail closed on anything missing.
+ */
+export function isOfferableForUser(input:{
+  strategy:OfferableStrategy;userMarket:OfferableUserMarket;mappings:VerifiedCandidate[];asOf:string;
+}):OfferableResult{
+  const {strategy,userMarket,mappings,asOf}=input;
+  const none:OfferableResult={offerable:false,wrapper:null,assessment:null};
+  const country=userMarket.country?.trim();
+  if(!country)return none;
+  if(strategy.supportedRegions.length&&!strategy.supportedRegions.includes(country))return none;
+  const startable=strategy.supportedWrappers.length?strategy.supportedWrappers:STARTABLE_WRAPPERS;
+  const chosen=userMarket.wrapper?.trim();
+  const wrappers=chosen?startable.filter(wrapper=>wrapper===chosen):startable;
+  let last:MarketAssessment|null=null;
+  for(const wrapper of wrappers){
+    const assessment=assessStrategyMarket(strategy.engine,strategy.config,mappings,
+      {country,wrapper,currency:userMarket.currency,broker:userMarket.broker??null},asOf);
+    last=assessment;
+    if(assessment.available)return {offerable:true,wrapper,assessment};
+  }
+  return {offerable:false,wrapper:null,assessment:last};
+}

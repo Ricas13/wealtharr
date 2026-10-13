@@ -7,8 +7,7 @@ import { loadEntitlements } from "@/lib/entitlement-service";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { LEVERAGE_DISCLOSURE, STRATEGY_PLUGINS, curatedRelease } from "@/domain/strategy/catalog";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
-import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
-import { EXPLORE_STATE_LABEL, GENERIC_RISK_NOTE, cardDescription, exploreCardState, onlyAvailableExploreCards, summariseRules } from "@/domain/explore-catalogue";
+import { EXPLORE_STATE_LABEL, GENERIC_RISK_NOTE, cardDescription, exploreCardState, isOfferableForUser, onlyAvailableExploreCards, summariseRules } from "@/domain/explore-catalogue";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +40,17 @@ export default async function ExplorePage() {
         rulesVerified = true;
       } catch { rulesVerified = false; }
       if (rulesVerified) {
-        marketVerified = assessStrategyMarket(String(release.engine_key), (release.config ?? {}) as Record<string, unknown>,
-          candidates, { country: user.country, wrapper: user.country === "GB" ? "ISA" : "TAXABLE", currency: user.baseCurrency }, asOf
-        ).supportedMarkets.length > 0;
+        // Same predicate createStrategy applies, for the viewer's own country and currency. The viewer's
+        // wrapper is not known here, so any wrapper the start form offers qualifies.
+        marketVerified = isOfferableForUser({
+          strategy: {
+            engine: String(release.engine_key), config: (release.config ?? {}) as Record<string, unknown>,
+            supportedRegions: Array.isArray(release.supported_regions) ? release.supported_regions.map(String) : [],
+            supportedWrappers: Array.isArray(release.supported_wrappers) ? release.supported_wrappers.map(String) : []
+          },
+          userMarket: { country: user.country, currency: user.baseCurrency },
+          mappings: candidates, asOf
+        }).offerable;
       }
     }
     const summary = summariseRules(plugin);
