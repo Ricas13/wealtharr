@@ -39,7 +39,7 @@ export function RegisterForm({turnstileEnabled=false,turnstileSiteKey=""}:{turns
       const result=await postJson("/api/register",{email:f.get("email"),password:f.get("password"),country:f.get("country"),baseCurrency:f.get("currency"),turnstileToken:challenge},{fallbackError:"Could not register."});
       if(!result.ok){status.error(result.errorText);return;}
       if(result.data.verificationDelivery==="unavailable"){status.warning("Account created, but email delivery is not configured. An administrator must configure the email provider.");return;}
-      if(process.env.NODE_ENV!=="production") { await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),redirect:false}); router.push("/app"); }
+      if(process.env.NODE_ENV!=="production"&&!turnstileEnabled) { await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),redirect:false}); router.push("/app"); }
       else router.push("/login?registered=1");
     }catch{
       status.error("Could not complete sign-in. Please try again.");
