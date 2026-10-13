@@ -23,7 +23,13 @@ const inputSchema=z.object({
   fee:decimal.default("0"),
   requestKey:z.string().uuid(),
   brokerFillConfirmed:z.literal(true),
-  note:z.string().max(240).optional()
+  note:z.string().max(240).optional(),
+  brokerTrade:z.object({
+    provider:z.literal("TRADING212"),
+    externalAccountRef:z.string().trim().min(4).max(120).regex(/^[A-Za-z0-9._:-]+$/),
+    externalTradeId:z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9._:-]+$/),
+    consent:z.literal(true)
+  }).strict().optional()
 }).strict();
 
 /**
@@ -49,7 +55,9 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const identity=JSON.stringify({
       accountId:input.accountId,ticker:input.ticker.toUpperCase(),exchange:input.exchange.toUpperCase(),
       executedAt:executedAt.toISOString(),side:input.side,quantity:fill.quantity.abs().toString(),
-      unitPrice:new LedgerDecimal(input.unitPrice).toString(),fee:fill.feeAmount.toString()
+      unitPrice:new LedgerDecimal(input.unitPrice).toString(),fee:fill.feeAmount.toString(),
+      // A request-key replay must also bind the user's exact externally selected trade.
+      brokerTrade:input.brokerTrade??null
     });
     const result=await sql.begin(async(tx)=>{
       const rows=await tx.unsafe(
@@ -149,6 +157,16 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
            notice:"Historical market quote is not a broker fill; no provider price has been substituted."}),input.requestKey]
       );
       const eventId=String(inserted[0].id);
+      if(input.brokerTrade){
+        // Only a user-confirmed actual fill can claim a single external transaction.
+        // The unique index rejects duplicate claims across DIFFERENT Wealtharr strategies
+        // for this user + real brokerage-account reference. This is never ticker matching.
+        await tx.unsafe(
+          "INSERT INTO broker_trade_links (user_id,strategy_instance_id,account_id,ledger_event_id,provider,external_account_ref,external_trade_id) "+
+          "VALUES ($1,$2,$3,$4,'TRADING212',$5,$6)",
+          [user.id,id,input.accountId,eventId,input.brokerTrade.externalAccountRef,input.brokerTrade.externalTradeId]
+        );
+      }
       if(String(instance.onboarding_mode)==="START_NEW"&&!state.lastReviewAt){
         // Importing a fill does not confirm the whole initial allocation. Keep
         // calculating outstanding legs until the user confirms the final HOLD.
@@ -173,6 +191,9 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       actionId:recalculation.actionId,recalculationPending:recalculation.recalculationPending},
       {headers:{"cache-control":"private, no-store"}});
   }catch(error){const denied=authFailure(error);if(denied)return denied;
+    if(error&&typeof error==="object"&&"code" in error&&error.code==="23505"&&
+       "constraint_name" in error&&String(error.constraint_name).startsWith("broker_trade_links_"))
+      return Response.json({error:"This broker trade has already been linked to a strategy. It cannot be assigned twice."},{status:409});
     if(error instanceof z.ZodError)return Response.json({error:"Confirm account, exact broker fill, fee, and ISO execution time with offset."},{status:400});
     const code=error instanceof Error?error.message:"FAILED";
     if(code==="RATE_LIMITED")return Response.json({error:"Too many requests."},{status:429});
