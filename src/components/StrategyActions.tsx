@@ -94,7 +94,11 @@ export function ExecuteAction({ action, currency }: { action: { id: string; acti
       const when=localTime?new Date(localTime):null;
       if(when&&!Number.isFinite(when.getTime())){status.error("Choose a valid execution date and time.");return;}
       const result = await postJson("/api/actions/" + action.id + "/execute", {
-        price: f.get("price") || undefined, quantity: f.get("quantity") || undefined, fee: f.get("fee") || "0", partial:Boolean(f.get("partial")),executedAt:when?.toISOString()
+        price: f.get("price") || undefined, quantity: f.get("quantity") || undefined, fee: f.get("fee") || "0",
+        considerationAmount:f.get("considerationAmount")||undefined,
+        acceptPriceOutsideBand:Boolean(f.get("acceptPriceOutsideBand")),
+        priceBandReason:f.get("acceptPriceOutsideBand")?String(f.get("priceBandReason")||""):undefined,
+        partial:Boolean(f.get("partial")),executedAt:when?.toISOString()
       }, { fallbackError: "Could not complete action." });
       if (!result.ok) { status.error(result.errorText); return; }
       setRecalculationPending(Boolean(result.data.recalculationPending));
@@ -108,6 +112,9 @@ export function ExecuteAction({ action, currency }: { action: { id: string; acti
       <Field label={currency ? "Price per share (" + currency + ")" : "Price per share"}><input name="price" type="number" min="0" step="0.000001" required /></Field>
       <Field label="Quantity (shares)"><input name="quantity" type="number" min="0" step="0.00000001" required /></Field>
       <Field label={currency ? "Fee (" + currency + ")" : "Fee"}><input name="fee" type="number" min="0" step="0.01" defaultValue="0"/></Field>
+      <Field label={currency ? "Broker trade value (" + currency + ", excluding fee)" : "Broker trade value (excluding fee)"} help="Optional. Enter the exact consideration on your broker confirmation, especially for fractional trades."><input name="considerationAmount" type="number" min="0.00000001" step="0.00000001"/></Field>
+      <label className="partial-fill"><input name="acceptPriceOutsideBand" type="checkbox"/><span>I verified a fill price outside the normal range (never accepts a price more than 50% away)</span></label>
+      <Field label="Reason for the price difference" help="Only used when you tick the price-range override. Explain the discrepancy; this reason is audited."><input name="priceBandReason" type="text" minLength={8} maxLength={240}/></Field>
       <Field className="field trade-execution-when" label="Broker execution date & time" help="Optional. Leave blank for now, or enter the actual local time shown by your broker."><input name="executedAt" type="datetime-local"/></Field>
       <label className="partial-fill"><input name="partial" type="checkbox"/><span>I only completed part of this trade</span></label>
     </>}
