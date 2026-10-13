@@ -1,5 +1,6 @@
 "use client";
 import { Field } from "@/components/Field";
+import {Trading212CsvAssistant} from "@/components/Trading212CsvAssistant";
 import {useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 
@@ -10,10 +11,23 @@ export function BrokerTradeForm({strategyId,accounts}:{strategyId:string;account
   const [message,setMessage]=useState("");
   const [side,setSide]=useState<"BUY"|"SELL">("BUY");
   const [unitPrice,setUnitPrice]=useState("");
+  const [ticker,setTicker]=useState("");
+  const [quantity,setQuantity]=useState("");
+  const [exchange,setExchange]=useState("");
+  const [executedAt,setExecutedAt]=useState("");
+  const [note,setNote]=useState("");
   const [quoteNotice,setQuoteNotice]=useState("");
   const key=useRef<string|null>(null);
   if(!accounts.length)return null;
-  return <form className="glass form-card" onSubmit={async(event)=>{
+  return <><Trading212CsvAssistant onSelect={trade=>{
+    setSide(trade.side);
+    setTicker(trade.ticker);
+    setQuantity(trade.quantity);
+    setUnitPrice(trade.price);
+    // The broker CSV often omits exchange and timezone. Never guess either.
+    setExchange("");setExecutedAt("");
+    setNote("Trading 212 CSV transaction "+trade.id+" · ISIN "+trade.isin);
+  }}/><form className="glass form-card" onSubmit={async(event)=>{
     event.preventDefault();
     setBusy(true);setMessage("");
     const form=event.currentTarget;
@@ -39,7 +53,7 @@ export function BrokerTradeForm({strategyId,accounts}:{strategyId:string;account
         ?"Broker fill recorded. Recalculation needs attention."
         :result.duplicate?"This broker fill was already recorded.":"Broker fill recorded in your ledger.");
       form.reset();
-      setUnitPrice("");
+      setUnitPrice("");setTicker("");setQuantity("");setExchange("");setExecutedAt("");setNote("");
       setQuoteNotice("");
       router.refresh();
     }catch(error){
@@ -51,10 +65,10 @@ export function BrokerTradeForm({strategyId,accounts}:{strategyId:string;account
     <div className="form-grid">
       <Field label="Account"><select name="accountId" required>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}</select></Field>
       <Field label="Trade type"><select value={side} onChange={e=>setSide(e.target.value as "BUY"|"SELL")}><option value="BUY">Buy</option><option value="SELL">Sell</option></select></Field>
-      <Field label="Ticker"><input name="ticker" placeholder="TQQQ" maxLength={24} required/></Field>
-      <Field label="Exchange"><input name="exchange" placeholder="NASDAQ or LSE" maxLength={24} required/></Field>
-      <Field className="field full" label="Actual execution time with timezone offset"><input name="executedAt" placeholder="2026-11-02T14:00:00-05:00" required/></Field>
-      <Field label="Executed quantity"><input name="quantity" inputMode="decimal" placeholder="5" required/></Field>
+      <Field label="Ticker"><input name="ticker" placeholder="TQQQ" maxLength={24} value={ticker} onChange={e=>setTicker(e.target.value)} required/></Field>
+      <Field label="Exchange"><input name="exchange" placeholder="NASDAQ or LSE" maxLength={24} value={exchange} onChange={e=>setExchange(e.target.value)} required/></Field>
+      <Field className="field full" label="Actual execution time with timezone offset"><input name="executedAt" placeholder="2026-11-02T14:00:00-05:00" value={executedAt} onChange={e=>setExecutedAt(e.target.value)} required/></Field>
+      <Field label="Executed quantity"><input name="quantity" inputMode="decimal" placeholder="5" value={quantity} onChange={e=>setQuantity(e.target.value)} required/></Field>
       <Field label="Broker fill price per unit"><input name="unitPrice" inputMode="decimal" placeholder="100.12" value={unitPrice} onChange={event=>setUnitPrice(event.target.value)} required/></Field>
       <div className="field full">
         <button type="button" className="button" onClick={async event=>{
@@ -84,10 +98,10 @@ export function BrokerTradeForm({strategyId,accounts}:{strategyId:string;account
         {quoteNotice&&<p className="help" role="status">{quoteNotice}</p>}
       </div>
       <Field label="Fee in account currency"><input name="fee" inputMode="decimal" defaultValue="0" required/></Field>
-      <Field className="field full" label="Note (optional)"><input name="note" maxLength={240}/></Field>
+      <Field className="field full" label="Note (optional)"><input name="note" maxLength={240} value={note} onChange={e=>setNote(e.target.value)}/></Field>
       <label className="field full"><input name="confirmed" type="checkbox" required/> I confirm this price, quantity, currency and timestamp came from my broker fill, not an indicative quote.</label>
     </div>
     <button type="submit" disabled={busy} className="button primary">{busy?"Recording…":"Record broker fill"}</button>
     {message&&<p role="status" className={message.includes("recorded")?"success":"attention-message"}>{message}</p>}
-  </form>;
+  </form></>;
 }
