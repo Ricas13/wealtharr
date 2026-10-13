@@ -159,7 +159,11 @@ describe("Explore wiring",()=>{
     expect(page).toContain("requirePageUser()");
     expect(page).toContain("exploreCardState(");
     expect(page).toContain("assertCuratedRules(");
-    expect(page).toContain("assessStrategyMarket(");
+    expect(page).toContain("isOfferableForUser(");
+    expect(page).not.toContain("supportedMarkets.length");
+    expect(page).not.toContain('"ISA" : "TAXABLE"');
+    expect(read("src/app/app/strategies/new/page.tsx")).toContain("isOfferableForUser(");
+    expect(read("src/app/app/strategies/new/page.tsx")).not.toContain('"ISA":"TAXABLE"');
     expect(page).toContain("onlyAvailableExploreCards(cards)");
     expect(page).not.toContain("sorted.map((card)");
   });
