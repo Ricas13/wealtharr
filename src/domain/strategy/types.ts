@@ -31,6 +31,8 @@ export type EngineContext = {
   dataHealth: DataHealth;
   /** Must be populated by an authenticated licensed market-data adapter, never user settings. */
   trustedHistory?: TrustedHistoricalSeries[];
+  /** Exposures already found unaffordable to buy at the indicated available-cash balance. */
+  unaffordableCashBuys?: Record<string, Decimal>;
 };
 
 export type ExplanationRow = {
