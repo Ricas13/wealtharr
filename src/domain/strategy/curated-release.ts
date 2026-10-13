@@ -20,7 +20,7 @@ function sameRuleConfig(a:unknown,b:unknown){return JSON.stringify(normalised(a)
 export function syntheticCatalogueFixtureAllowed(){
   const u=process.env.DATABASE_URL??"";
   return process.env.CI==="true"&&process.env.GITHUB_ACTIONS==="true"&&
-    /^postgres(?:ql)?:\\/\\/[^@]+@127\\.0\\.0\\.1:5432\\/strategyos_test$/.test(u);
+    /^postgres(?:ql)?:\/\/[^@]+@127\.0\.0\.1:5432\/strategyos_test$/.test(u);
 }
 
 /** Production boundary: research/DRAFT reference material is not an executable customer release.
