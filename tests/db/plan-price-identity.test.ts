@@ -75,4 +75,21 @@ describe.skipIf(!url)("Stripe Price identity is immutable across admin edits",()
    expect(String(mapping[0].plan_id)).toBe(String(current[0].plan_id));
    expect(Number(mapping[0].amount_minor)).toBe(Number(current[0].amount_minor));
  });
+ it("does not share a provider Price ID between plans even when both claim the same amount",async()=>{
+   const {PUT}=await import("@/app/api/admin/plan-prices/route");
+   const shared="price_same_amount_claim_"+suffix;
+   const [first,second]=await Promise.all([
+     PUT(request(shared,1999,"ANNUAL","GBP",slug)),
+     PUT(request(shared,1999,"ANNUAL","GBP",otherSlug))
+   ]);
+   expect([first.status,second.status].sort()).toEqual([200,409]);
+   const matching=await sql!.unsafe(
+     "SELECT pp.plan_id,pp.stripe_price_id,sp.plan_id AS historical_owner FROM plan_prices pp "+
+     "JOIN stripe_price_mappings sp ON sp.stripe_price_id=pp.stripe_price_id "+
+     "WHERE pp.stripe_price_id=$1",[shared]
+   );
+   expect(matching).toHaveLength(1);
+   expect(String(matching[0].plan_id)).toBe(String(matching[0].historical_owner));
+ });
+
 });
