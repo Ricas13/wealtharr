@@ -52,9 +52,14 @@ export async function PUT(request: Request) {
       const hasSecret=values.has("TURNSTILE_SECRET_KEY")?Boolean(values.get("TURNSTILE_SECRET_KEY")):
         current.some(s=>s.key==="TURNSTILE_SECRET_KEY"&&s.source!=="unset");
       const changingSite=values.has("TURNSTILE_SITE_KEY");
-      if(enabled&&(!effective("TURNSTILE_SITE_KEY")||!hasSecret||
-          (changingSite&&!values.get("TURNSTILE_SECRET_KEY")))){
-        errors.TURNSTILE_ENABLED="Save a matching site key and secret key before enabling, or disable protection before changing a key.";
+      const changingSecret=values.has("TURNSTILE_SECRET_KEY");
+      if(changingSite&&!changingSecret){
+        errors.TURNSTILE_SITE_KEY="Change the site key and matching secret together, or clear both.";
+      }
+      if(enabled&&changingSite){
+        errors.TURNSTILE_ENABLED="Turn off protection and save before replacing your Cloudflare keys.";
+      }else if(enabled&&(!effective("TURNSTILE_SITE_KEY")||!hasSecret)){
+        errors.TURNSTILE_ENABLED="Save the Cloudflare site key and secret key before enabling protection.";
       }
     }
     if (Object.keys(errors).length) return Response.json({ error: "Some settings were not saved.", errors }, { status: 400 });
