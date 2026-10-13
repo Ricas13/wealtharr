@@ -1,6 +1,7 @@
 import { sql } from "@/lib/db";
 import {gatherSnapshot} from "@/lib/ops-monitor";
 import {evaluateOps} from "@/domain/ops-health";
+import {safeBillingErrorCode} from "@/domain/billing-event-diagnostics";
 import {requireAdminPage} from "@/lib/session";
 import { RetryDeliveries } from "@/components/RetryDeliveries";
 import { IntegrationTests } from "@/components/IntegrationTests";
@@ -20,10 +21,11 @@ export default async function OperationsPage(){
  await ensureSettings(true);
  const checks=checkCommercialLaunch(process.env);
  const alerts=evaluateOps(await gatherSnapshot());
- const [jobs,delivery,webhooks]=await Promise.all([
+ const [jobs,delivery,webhooks,billingIssues]=await Promise.all([
   sql.unsafe("SELECT DISTINCT ON (worker_key) worker_key,status,started_at,finished_at FROM worker_runs ORDER BY worker_key,started_at DESC LIMIT 50"),
   sql.unsafe("SELECT channel,status,count(*)::int AS n FROM notification_deliveries GROUP BY channel,status ORDER BY channel,status"),
-  sql.unsafe("SELECT status,count(*)::int AS n FROM billing_webhook_events GROUP BY status ORDER BY status")
+  sql.unsafe("SELECT status,count(*)::int AS n FROM billing_webhook_events GROUP BY status ORDER BY status"),
+  sql.unsafe("SELECT event_type,status,last_error_code,created_at FROM billing_webhook_events WHERE status='FAILED' OR (status='PROCESSING' AND created_at<now()-interval '15 minutes') ORDER BY created_at DESC LIMIT 20")
  ]);
  const sections=[
   {title:"Payments · Stripe",keys:["stripe_live","stripe_webhook"]},
@@ -39,6 +41,13 @@ export default async function OperationsPage(){
  <section className="card"><h3>Stripe webhook processing</h3>{webhooks.length?webhooks.map((w:any)=><div className="why-row" key={w.status}><span>{w.status}</span><strong>{w.n}</strong></div>):<p className="help">No webhook events recorded.</p>}<p><a href="/admin/plans">Manage plans and prices</a></p></section>
  <section className="card"><h3>Notification deliveries</h3>{delivery.length?delivery.map((d:any)=><div className="why-row" key={d.channel+":"+d.status}><span>{d.channel} · {d.status}</span><strong>{d.n}</strong></div>):<p className="help">No delivery attempts recorded.</p>}</section>
  </div>
+ <section className="card" style={{marginTop:18}} aria-labelledby="billing-issues-title"><h3 id="billing-issues-title">Billing events needing attention</h3>
+ <p className="help">Most recent 20 failed Stripe events or events still processing after 15 minutes. Customer identifiers and raw provider errors are not displayed. Review protected logs and Stripe before taking corrective action; replay must use the existing idempotent webhook workflow.</p>
+ {billingIssues.length?<div className="table-wrap" role="region" tabIndex={0} aria-label="Billing events needing attention">
+ <table><thead><tr><th scope="col">EVENT TYPE</th><th scope="col">STATUS</th><th scope="col">RECEIVED (UTC)</th><th scope="col">SAFE ERROR CODE</th></tr></thead>
+ <tbody>{billingIssues.map((item,i)=><tr key={i}><td>{String(item.event_type)}</td><td>{String(item.status)}</td><td>{new Date(item.created_at).toLocaleString("en-GB",{timeZone:"UTC"})} UTC</td><td>{item.status==="FAILED"?safeBillingErrorCode(item.last_error_code):"Processing exceeded 15 minutes"}</td></tr>)}</tbody></table></div>:
+ <p className="help">No failed or stuck billing events currently recorded. This does not establish that Stripe webhook delivery is functioning.</p>}
+ </section>
  <div style={{marginTop:18}}><IntegrationTests/></div>
  <div style={{marginTop:18}}><RetryDeliveries/></div>
  <section className="card" style={{marginTop:18}}><h3>Latest worker executions</h3>{jobs.length?jobs.map((job:any)=><div className="why-row" key={job.worker_key}><span>{job.worker_key}<small> · {new Date(job.started_at).toLocaleString("en-GB")}</small></span><strong>{job.status}</strong></div>):<p className="help">No runs recorded. Verify the scheduler service is running.</p>}</section>
