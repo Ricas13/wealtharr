@@ -4,6 +4,7 @@
  */
 export type TurnstileAction="register"|"login"|"reset";
 export type TurnstileEnvironment={
+  [key:string]:string|undefined;
   TURNSTILE_ENABLED?:string;TURNSTILE_SITE_KEY?:string;TURNSTILE_SECRET_KEY?:string;
   NEXT_PUBLIC_APP_URL?:string;
 };
