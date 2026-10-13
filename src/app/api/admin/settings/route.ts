@@ -42,6 +42,18 @@ export async function PUT(request: Request) {
         errors[change.key] = "Turn on two-step sign-in for your own account first (Settings > Security), otherwise you would lock yourself out of admin tools.";
       }
     }
+    // Prevent an operator from enabling bot protection before both credentials exist.
+    // Masked secret values never leave the server or the admin settings response.
+    const enablesTurnstile=input.changes.some(c=>c.key==="TURNSTILE_ENABLED"&&c.value==="true");
+    if(enablesTurnstile){
+      const current=await listSettings();
+      const changes=new Map(input.changes.map(c=>[c.key,c.value]));
+      const key=changes.has("TURNSTILE_SITE_KEY")?changes.get("TURNSTILE_SITE_KEY"):
+        current.find(s=>s.key==="TURNSTILE_SITE_KEY")?.value;
+      const secret=changes.has("TURNSTILE_SECRET_KEY")?Boolean(changes.get("TURNSTILE_SECRET_KEY")):
+        current.some(s=>s.key==="TURNSTILE_SECRET_KEY"&&s.source!=="unset");
+      if(!key||!secret)errors.TURNSTILE_ENABLED="Save both Cloudflare keys before enabling protection.";
+    }
     if (Object.keys(errors).length) return Response.json({ error: "Some settings were not saved.", errors }, { status: 400 });
 
     const result = await saveSettings(admin.id, input.changes);
