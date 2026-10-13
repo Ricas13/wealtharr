@@ -4,11 +4,12 @@
  * See https://docs.trading212.com/api — Invest and Stocks ISA only, beta.
  */
 export type Trading212Mode="demo"|"live";
-export type Trading212ReadResource="positions"|"orders"|"transactions";
+export type Trading212ReadResource="summary"|"positions"|"orders"|"transactions";
 const HOSTS:Record<Trading212Mode,string>={
   demo:"https://demo.trading212.com",live:"https://live.trading212.com"
 };
 const PATHS:Record<Trading212ReadResource,string>={
+  summary:"/api/v0/equity/account/summary",
   positions:"/api/v0/equity/positions",
   orders:"/api/v0/equity/history/orders",
   transactions:"/api/v0/equity/history/transactions"
@@ -21,8 +22,8 @@ export function trading212SafeReadUrl(mode:Trading212Mode,resource:Trading212Rea
   const url=new URL(target,origin);
   if(url.origin!==origin||url.pathname!==PATHS[resource]||url.hash||url.username||url.password)
     throw new Error("BROKER_PATH_UNSUPPORTED");
-  if(resource==="positions"&&url.search)throw new Error("BROKER_QUERY_UNSUPPORTED");
-  if(resource!=="positions"){
+  if((resource==="positions"||resource==="summary")&&url.search)throw new Error("BROKER_QUERY_UNSUPPORTED");
+  if(resource!=="positions"&&resource!=="summary"){
     for(const key of url.searchParams.keys())
       if(key!=="cursor"&&key!=="limit")throw new Error("BROKER_QUERY_UNSUPPORTED");
     if(url.searchParams.getAll("limit").length>1||url.searchParams.getAll("cursor").length>1)
@@ -34,7 +35,7 @@ export function trading212SafeReadUrl(mode:Trading212Mode,resource:Trading212Rea
   return url.toString();
 }
 export async function trading212ReadPage<T>(args:{
-  mode:Trading212Mode;resource:Trading212ReadResource;
+  mode:Trading212Mode;resource:Exclude<Trading212ReadResource,"summary">;
   credentials:{key:string;secret:string};nextPagePath?:string|null;
   fetcher?:typeof fetch;
 }):Promise<BrokerPage<T>>{
@@ -93,4 +94,33 @@ export function selectConfirmedStrategyLots<T extends {id:string|number}>(rows:r
   }
   const missing=[...assignedIds].filter(id=>!seen.has(id));
   return {matched:ambiguous?[]:matched,missing,ambiguous};
+}
+
+/** Verify the actual account ID and currency reported by Trading 212. Never trust a
+ * manually entered account label as proof that two API keys belong to the same account.
+ * Account-wide cash/investments in the provider response are discarded immediately.
+ * Rate limit: provider allows only one account-summary request per five seconds.
+ */
+export async function trading212ReadAccountIdentity(args:{
+  mode:Trading212Mode;
+  credentials:{key:string;secret:string};
+  fetcher?:typeof fetch;
+}):Promise<{id:string;currency:string}>{
+  if(!args.credentials.key||!args.credentials.secret)throw new Error("BROKER_CREDENTIALS_REQUIRED");
+  if(/[\r\n]/.test(args.credentials.key+args.credentials.secret))throw new Error("BROKER_CREDENTIALS_INVALID");
+  const url=trading212SafeReadUrl(args.mode,"summary");
+  const authorization="Basic "+Buffer.from(args.credentials.key+":"+args.credentials.secret).toString("base64");
+  const response=await (args.fetcher??fetch)(url,{
+    method:"GET",headers:{authorization,accept:"application/json"},
+    cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10_000)
+  });
+  if(!response.ok)throw new Error(response.status===429?"BROKER_RATE_LIMIT":response.status===401||response.status===403?"BROKER_AUTH_FAILED":"BROKER_UNAVAILABLE");
+  const raw:unknown=await response.json();
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))throw new Error("BROKER_ACCOUNT_ID_INVALID");
+  const obj=raw as Record<string,unknown>;
+  const id=String(obj.id??"");
+  const currency=String(obj.currency??"").toUpperCase();
+  if(!/^[0-9]{1,20}$/.test(id)||!/^[A-Z]{3}$/.test(currency))
+    throw new Error("BROKER_ACCOUNT_ID_INVALID");
+  return {id,currency};
 }
