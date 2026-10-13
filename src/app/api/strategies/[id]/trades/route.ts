@@ -9,6 +9,7 @@ import {recalculateAfterMutation} from "@/lib/action-service";
 import {exchangeTradingDate,historicalBrokerFill} from "@/domain/historical-trade";
 import {sql} from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
+import { assertNoSplitAfter } from "@/lib/ledger-timeline";
 
 const decimal=z.string().regex(/^\d+(?:\.\d{1,12})?$/);
 const inputSchema=z.object({
@@ -133,6 +134,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
           quantities.set(entry.instrument,units);
         }
       }
+
+      await assertNoSplitAfter(tx,id,input.accountId,String(line.instrument_id),executedAt);
 
       const inserted=await tx.unsafe(
         "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,"+
