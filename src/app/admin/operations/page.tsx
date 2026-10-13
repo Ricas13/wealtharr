@@ -1,4 +1,6 @@
 import { sql } from "@/lib/db";
+import {gatherSnapshot} from "@/lib/ops-monitor";
+import {evaluateOps} from "@/domain/ops-health";
 import {requireAdminPage} from "@/lib/session";
 import { RetryDeliveries } from "@/components/RetryDeliveries";
 import { IntegrationTests } from "@/components/IntegrationTests";
@@ -17,6 +19,7 @@ export default async function OperationsPage(){
  await requireAdminPage();
  await ensureSettings(true);
  const checks=checkCommercialLaunch(process.env);
+ const alerts=evaluateOps(await gatherSnapshot());
  const [jobs,delivery,webhooks]=await Promise.all([
   sql.unsafe("SELECT DISTINCT ON (worker_key) worker_key,status,started_at,finished_at FROM worker_runs ORDER BY worker_key,started_at DESC LIMIT 50"),
   sql.unsafe("SELECT channel,status,count(*)::int AS n FROM notification_deliveries GROUP BY channel,status ORDER BY channel,status"),
@@ -30,6 +33,7 @@ export default async function OperationsPage(){
   {title:"Backups and recovery",keys:["backup_operator_attestation"]}
  ];
  return <><div className="page-title"><div><div className="eyebrow">Admin · Operations</div><h1>Integrations and jobs</h1><p>Configuration status and recorded operational outcomes. Credentials are never exposed; a configured credential is not proof of a successful connection.</p></div></div>
+ <section className="card" aria-labelledby="ops-alerts-title" style={{marginBottom:18}}><h2 id="ops-alerts-title">Active operational alerts ({alerts.length})</h2><p className="help">Evaluated from recorded activity and configured expectations. No alerts does not establish that external services or disaster recovery have been tested.</p>{alerts.length?<div role="list">{alerts.map(a=><div role="listitem" className="why-row" key={a.key}><span><strong>{a.severity==="critical"?"Critical":"Warning"}: {a.title}</strong><br/><small>{a.detail}</small></span></div>)}</div>:<p className="help">No active alerts from the configured monitoring rules.</p>}</section>
  <div className="detail-grid">{sections.map(section=><section className="card" key={section.title}><h3>{section.title}</h3>{section.keys.map(key=>{const c=checks.find(v=>v.key===key);return <div key={key}><p><strong>{c?.passed?"Configured":"Needs setup"}</strong></p><p className="help">{explanations[key]}</p></div>;})}</section>)}</div>
  <div className="detail-grid" style={{marginTop:18}}>
  <section className="card"><h3>Stripe webhook processing</h3>{webhooks.length?webhooks.map((w:any)=><div className="why-row" key={w.status}><span>{w.status}</span><strong>{w.n}</strong></div>):<p className="help">No webhook events recorded.</p>}<p><a href="/admin/plans">Manage plans and prices</a></p></section>
