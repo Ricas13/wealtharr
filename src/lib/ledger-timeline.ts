@@ -38,6 +38,23 @@ export async function assertLedgerTimelineNonNegative(tx: Tx, strategyInstanceId
  * prices cannot be re-applied here, so the stale snapshots from that date on are removed: charts show
  * fewer points rather than invented returns, and the next calculation adds today's value again.
  */
+export async function assertNoSplitAfter(tx: Tx, strategyInstanceId: string, accountId: string | null, instrumentId: string, occurredAt: Date) {
+  // A recorded stock split restates the units held at its effective time. An entry for the same
+  // instrument and account dated BEFORE a (not reversed) split would then be counted in pre-split
+  // units after the split already restated them, so it is refused until the split is reversed or the
+  // entry is dated after it. `accountId` null means the strategy's primary account.
+  const primary = (await tx.unsafe("SELECT account_id FROM strategy_instances WHERE id=$1", [strategyInstanceId]))[0];
+  const primaryId = primary?.account_id ? String(primary.account_id) : null;
+  const account = accountId ?? primaryId;
+  const rows = await tx.unsafe(
+    "SELECT s.id FROM ledger_events s WHERE s.strategy_instance_id=$1 AND s.instrument_id=$2 AND s.event_type='SPLIT' AND s.occurred_at>$3 " +
+    "AND (s.account_id=$4 OR (s.account_id IS NULL AND $4=$5)) " +
+    "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id) LIMIT 1",
+    [strategyInstanceId, instrumentId, occurredAt, account, primaryId]
+  );
+  if (rows[0]) throw new Error("SPLIT_AFTER_ENTRY_DATE");
+}
+
 export async function invalidateValuationsFrom(tx: Tx, strategyInstanceId: string, occurredAt: Date) {
   await tx.unsafe(
     "DELETE FROM performance_series WHERE strategy_instance_id=$1 AND series_type='USER_VALUE' AND date>=$2::date",
