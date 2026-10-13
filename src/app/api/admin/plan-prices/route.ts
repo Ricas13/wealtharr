@@ -21,6 +21,13 @@ export async function PUT(request:Request){
     const plans=await sql.unsafe("SELECT id FROM plans WHERE slug=$1 LIMIT 1",[p.planSlug]);
     if(!plans[0])return Response.json({error:"Plan not found."},{status:404});
     await sql.begin(async tx=>{
+      // Two admins can claim a brand-new remote Price ID simultaneously. Without a
+      // transaction-scoped ID lock both can see an empty mapping and an ON CONFLICT
+      // DO NOTHING could leave the second plan referencing somebody else's Stripe price.
+      // Hash collisions only cause harmless extra serialization, not identity confusion.
+      if(p.stripePriceId)await tx.unsafe(
+        "SELECT pg_advisory_xact_lock(927551::int,hashtext($1))",[p.stripePriceId]
+      );
       const previous=await tx.unsafe("SELECT stripe_price_id,currency,cadence,amount_minor FROM plan_prices WHERE plan_id=$1 AND currency=$2 AND cadence=$3 FOR UPDATE",[plans[0].id,p.currency.toUpperCase(),p.cadence]);
       if(previous[0]?.stripe_price_id){
         await tx.unsafe("INSERT INTO stripe_price_mappings (stripe_price_id,plan_id,currency,cadence,amount_minor) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (stripe_price_id) DO NOTHING",
