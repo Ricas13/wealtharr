@@ -59,7 +59,8 @@ describe.skipIf(!url)("Stripe Price identity is immutable across admin edits",()
    const active=await sql!.unsafe("SELECT amount_minor,stripe_price_id FROM plan_prices WHERE plan_id=$1",[planId]);
    expect(Number(active[0].amount_minor)).toBe(1099);
    expect(String(active[0].stripe_price_id)).toBe(replacement);
-  it("serialises concurrent first-time claims of one Stripe Price ID across different plans",async()=>{
+ });
+ it("serialises concurrent first-time claims of one Stripe Price ID across different plans",async()=>{
    const {PUT}=await import("@/app/api/admin/plan-prices/route");
    const shared="price_concurrent_claim_"+suffix;
    const [first,second]=await Promise.all([
@@ -74,5 +75,4 @@ describe.skipIf(!url)("Stripe Price identity is immutable across admin edits",()
    expect(String(mapping[0].plan_id)).toBe(String(current[0].plan_id));
    expect(Number(mapping[0].amount_minor)).toBe(Number(current[0].amount_minor));
  });
-});
 });
