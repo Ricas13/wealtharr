@@ -48,6 +48,7 @@ describe.skipIf(!url)("quote -> action -> notification",()=>{
     await sql.unsafe("DELETE FROM users WHERE id=$1",[userId]);
     await sql.unsafe("DELETE FROM regional_instrument_mappings WHERE trading_line_id=$1",[lineId]);
     await sql.unsafe("DELETE FROM market_data_observations WHERE trading_line_id=$1",[lineId]);
+    await sql.unsafe("DELETE FROM market_data_rejections WHERE trading_line_id=$1",[lineId]);
     // Shared fixture mapping can be selected by parallel tests. Preserve their action records,
     // but remove references to this test-only trading line before deleting the line.
     await sql.unsafe("UPDATE actions SET trading_line_id=NULL WHERE trading_line_id=$1",[lineId]);
@@ -80,7 +81,19 @@ describe.skipIf(!url)("quote -> action -> notification",()=>{
     expect(await observations()).toEqual([100]);
     const run=(await sql!.unsafe("SELECT details FROM worker_runs WHERE worker_key='market-data-refresh' ORDER BY started_at DESC LIMIT 1"))[0];
     expect(JSON.stringify(run.details)).toContain("IMPLAUSIBLE_MOVE");
+    const refused=await sql!.unsafe("SELECT reason,observed_at FROM market_data_rejections WHERE trading_line_id=$1",[lineId]);
+    expect(refused).toHaveLength(1);
+    expect(refused[0].reason).toBe("IMPLAUSIBLE_MOVE");
+
+    const { calculateAction }=await import("@/lib/action-service");
+    const blocked=await calculateAction(instanceId);
+    const action=(await sql!.unsafe("SELECT action_type,instruction FROM actions WHERE id=$1",[blocked.actionId]))[0];
+    expect(action.action_type).toBe("DATA_REQUIRED");
+    expect(String(action.instruction)).toMatch(/rejected|implausible/i);
     feed.price="100";
+    const recovery=await refreshMarketData();
+    expect(recovery.refreshed).toBeGreaterThanOrEqual(1);
+    expect(await sql!.unsafe("SELECT 1 FROM market_data_rejections WHERE trading_line_id=$1",[lineId])).toHaveLength(0);
   });
 
   it("calculates an action from the stored quote and creates its notification",async()=>{
