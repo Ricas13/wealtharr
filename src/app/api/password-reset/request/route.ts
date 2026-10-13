@@ -4,8 +4,9 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { assertSameOrigin, consumeRateLimit, hashToken, newToken } from "@/lib/security";
 import { getEmailProvider } from "@/lib/email";
+import { requireTurnstile, TurnstileError } from "@/domain/turnstile";
 
-const schema = z.object({email:z.string().email()});
+const schema = z.object({email:z.string().email(),turnstileToken:z.string().max(2048).optional()});
 
 export async function POST(request: Request) {
   await ensureSettings();
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     const ip = requestIp(request);
     await consumeRateLimit("reset:" + ip, 6, 3600);
+    await requireTurnstile({action:"reset",token:input.turnstileToken,env:process.env});
     const rows = await sql.unsafe("SELECT id,email FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL LIMIT 1",[input.email]);
     if (rows[0]) {
       const token = newToken();
@@ -26,7 +28,8 @@ export async function POST(request: Request) {
       await getEmailProvider().send({to:String(rows[0].email),subject:"Reset your password",text:"Reset your password: " + url});
     }
     return Response.json({ok:true});
-  } catch {
+  } catch(error) {
+    if(error instanceof TurnstileError)return Response.json({error:"Security verification failed. Please complete the challenge and try again."},{status:error.code==="TURNSTILE_UNAVAILABLE"||error.code==="TURNSTILE_CONFIGURATION_ERROR"?503:403});
     return Response.json({ok:true});
   }
 }
