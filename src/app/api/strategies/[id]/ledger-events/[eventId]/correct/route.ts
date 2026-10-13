@@ -6,7 +6,7 @@ import { recalculateAfterMutation } from "@/lib/action-service";
 import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
-import { assertLedgerTimelineNonNegative, invalidateValuationsFrom } from "@/lib/ledger-timeline";
+import { assertLedgerTimelineNonNegative, assertNoSplitAfter, invalidateValuationsFrom } from "@/lib/ledger-timeline";
 
 const schema=z.object({reason:z.string().min(1).max(240)});
 
@@ -31,6 +31,9 @@ export async function POST(request:Request,context:{params:Promise<{id:string;ev
       if(String(original.event_type)==="CORRECTION")throw new Error("CORRECTION_CANNOT_BE_REVERSED");
       const existing=await tx.unsafe("SELECT id FROM ledger_events WHERE correction_of_event_id=$1 LIMIT 1",[eventId]);
       if(existing[0])throw new Error("LEDGER_EVENT_ALREADY_CORRECTED");
+
+      if(original.instrument_id&&String(original.event_type)!=="SPLIT")
+        await assertNoSplitAfter(tx,id,original.account_id?String(original.account_id):null,String(original.instrument_id),new Date(original.occurred_at));
 
       const inserted=await tx.unsafe(
         "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,unit_price,fee_amount,provenance,confidence,correction_of_event_id,metadata,created_by)"+
@@ -69,6 +72,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string;ev
       CORRECTION_CANNOT_BE_REVERSED:"A correction entry cannot itself be reversed. Correct the original replacement entry instead.",
       LEDGER_EVENT_ALREADY_CORRECTED:"This ledger event has already been reversed.",
       LEDGER_WOULD_OVERDRAW_CASH:"Reversing this entry would leave cash negative on a later date. Reverse the later trades that depend on it first.",
+      SPLIT_AFTER_ENTRY_DATE:"Reverse the later stock split first before correcting an older trade.",
       LEDGER_WOULD_OVERSELL:"Reversing this entry would leave a later sale without the units it sold. Reverse the later sale first."
     };
     return Response.json({error:messages[code]??"Could not correct the ledger event."},{status:code.includes("NOT_FOUND")?404:409});
