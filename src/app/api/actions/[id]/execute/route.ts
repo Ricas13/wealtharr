@@ -11,6 +11,9 @@ const schema = z.object({
   price: positive.optional(),
   quantity: positive.optional(),
   fee: nonNegative.optional(),
+  considerationAmount: positive.optional(),
+  acceptPriceOutsideBand: z.boolean().optional(),
+  priceBandReason: z.string().trim().min(8).max(240).optional(),
   partial: z.boolean().optional(),
   executedAt:z.string().datetime({offset:true}).optional()
 });
@@ -29,8 +32,13 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const code=error instanceof Error?error.message:"FAILED";
     const messages:Record<string,string>={
       EXECUTION_DETAILS_REQUIRED:"Confirm the execution price before marking this trade complete.",
-      EXECUTION_PRECISION_UNSUPPORTED:"These fill values exceed ledger precision (12 quantity, 10 price and 8 cash/fee decimal places). Check your broker confirmation; the fill has not been rounded or saved.",
+      EXECUTION_PRECISION_UNSUPPORTED:"These fill values exceed supported ledger precision. Include the broker's cash consideration excluding fees when quantity × price needs more than eight decimal places.",
       EXECUTION_AMOUNT_TOO_LARGE:"These fill values exceed the supported ledger amount. Check your broker confirmation.",
+      INVALID_CONSIDERATION:"Enter a positive broker cash consideration amount excluding fees.",
+      EXECUTION_CONSIDERATION_MISMATCH:"Broker consideration must match quantity × price within half a penny.",
+      EXECUTION_PRICE_OUT_OF_BAND:"The filled price differs materially from the sizing quote. Verify its units and recalculate.",
+      EXECUTION_QUANTITY_MISMATCH:"The filled quantity differs from the instruction. Mark a smaller fill as partial or recalculate.",
+      PRICE_BAND_REASON_REQUIRED:"State why the execution price is outside the normal band (minimum 8 characters).",
       ACTION_STALE_LEDGER_MUTATION:"Your portfolio changed after this instruction was calculated. Refresh and recalculate before recording a trade or completing the review.",
       ACTION_STALE_INPUTS:"This instruction no longer matches current prices or strategy settings. Recalculate first. If you already traded, record the actual broker fill using historical transaction import or reconciliation.",
       REBALANCE_TRADES_REQUIRED:"Record the individual rebalance trades before completing this action.",
