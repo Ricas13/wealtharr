@@ -41,6 +41,8 @@ Checks that exist but are **not** proof of tradability: the code states that EXA
 
 ## 3. Verified EXACT mappings required (owner)
 
+Pointer: how to choose and evidence an exact GB / ISA listing is in [uk-instrument-selection-methodology.md](uk-instrument-selection-methodology.md); the operator template is [instrument-verification-checklist.md](instrument-verification-checklist.md).
+
 For every row, the owner must verify product, ISIN, listing/exchange, trading currency (must be GBP for the enable gate), fund currency and that the product's exposure and leverage match the registry definition, against the issuer factsheet and KID/KIID. Do not use a product with a different leverage, duration or index "because it is similar": the resolver and the card rules reject substitution (HFEA card: "Do not substitute TQQQ for UPRO or a 3x 10-year Treasury instrument for TMF").
 
 | Exposure id | Leverage | Direction | Used by | Registry definition |
