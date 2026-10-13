@@ -28,10 +28,9 @@ export function TurnstileAdminTest({siteKey,secretConfigured}:{siteKey:string;se
   return <div className="stack">
     <h4>Test your saved configuration</h4>
     <p className="help">First save both Cloudflare keys above. Then complete this real challenge and select Test connection. You can leave protection off until the test succeeds. The private key is never shown here.</p>
-    {!ready?<p className="help" role="status">Save the site key and secret key to unlock the test.</p>:<>
-      <TurnstileChallenge enabled siteKey={siteKey} action="admin-test" onTokenChange={setToken} resetCounter={epoch}/>
-      <div className="inline"><button type="button" className="button" disabled={!token||busy} onClick={test}>{busy?"Testing…":"Test connection"}</button></div>
-    </>}
+    {!ready?<p className="help" role="status">Save the site key and secret key to unlock the test.</p>:
+      <TurnstileChallenge enabled siteKey={siteKey} action="admin-test" onTokenChange={setToken} resetCounter={epoch}/>}
+    <div className="inline"><button type="button" className="button" disabled={!ready||!token||busy} onClick={test}>{busy?"Testing…":"Test connection"}</button></div>
     {message&&<p role="status" className="help">{message}</p>}
   </div>;
 }
