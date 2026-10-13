@@ -69,10 +69,18 @@ const PRE_REFACTOR_PROFILES: readonly StrategyProfile[] = [
     research:["https://www.bogleheads.org/wiki/Three-fund_portfolio"],risks:["Home bias","Bond duration and currency"]
   },
   {
-    key:"60-40",name:"60/40 Portfolio",engine:"FIXED_ALLOCATION",launchState:"DRAFT_REQUIRES_VERIFICATION",
-    config:fixed([["BROAD_EQUITY","0.60"],["AGGREGATE_BONDS","0.40"]],"ANNUAL"),
-    rules:"Fixed 60% diversified equities and 40% bonds; annual calendar review. Alternative rebalancing thresholds are separately versioned models.",
-    research:["https://www.bogleheads.org/wiki/Asset_allocation"],risks:["Stock-bond correlations can change"]
+    // Deliberately re-specified from the pre-refactor text as the named Wealtharr 60/40 model
+    // (precise exposures, accurate rules and risks); the weights, frequency and threshold are unchanged.
+    key:"60-40",name:"Global 60/40 (GBP) model",engine:"FIXED_ALLOCATION",launchState:"DRAFT_REQUIRES_VERIFICATION",
+    config:fixed([["GLOBAL_EQUITY_ALL_CAP_UNHEDGED","0.60"],["GLOBAL_AGGREGATE_BONDS_GBP_HEDGED","0.40"]],"ANNUAL"),
+    rules:"Wealtharr model: 60% global all-capitalisation equities (unhedged) and 40% global investment-grade aggregate bonds (hedged to sterling), reviewed once a year. At each review the portfolio is rebalanced back to 60/40 whatever the drift (rebalance threshold 0). Cash added to the strategy is used to buy the underweight leg before anything is sold. The 60/40 split is the commonly cited weighting; the annual review, the zero threshold and the exact exposure definitions are Wealtharr model conventions, not rules of a single author. Other splits, thresholds or schedules are separate named models.",
+    research:["https://www.bogleheads.org/wiki/Asset_allocation"],
+    risks:[
+      "Stock and bond prices can fall together; stock-bond correlations can change",
+      "Between annual reviews the portfolio can drift well away from 60/40",
+      "The equity leg is unhedged and the bond leg is sterling-hedged: currency moves and hedging costs affect returns",
+      "Fund fees, tracking differences and availability depend on the listed products verified for your account type"
+    ]
   },
   {
     key:"80-20",name:"80/20 Portfolio",engine:"FIXED_ALLOCATION",launchState:"DRAFT_REQUIRES_VERIFICATION",
@@ -204,7 +212,7 @@ const ENGINE_AND_CONFIG:Record<string,{engine:string;config?:Record<string,unkno
     ["BROAD_EQUITY","0.30"],["LONG_TREASURY","0.40"],["INTERMEDIATE_TREASURY","0.15"],["GOLD","0.075"],["BROAD_COMMODITIES","0.075"]])}},
   "three-fund":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([
     ["DOMESTIC_EQUITY","0.40"],["INTERNATIONAL_EQUITY","0.40"],["AGGREGATE_BONDS","0.20"]])}},
-  "60-40":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["BROAD_EQUITY","0.60"],["AGGREGATE_BONDS","0.40"]])}},
+  "60-40":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["GLOBAL_EQUITY_ALL_CAP_UNHEDGED","0.60"],["GLOBAL_AGGREGATE_BONDS_GBP_HEDGED","0.40"]])}},
   "80-20":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["BROAD_EQUITY","0.80"],["AGGREGATE_BONDS","0.20"]])}},
   "buffett-90-10":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["US_LARGE_CAP","0.90"],["SHORT_TREASURY","0.10"]])}},
   coffeehouse:{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([
@@ -249,7 +257,7 @@ const SEED_DEFINITIONS:Record<string,SeedPin>={
   hfea:{name:"HFEA",family:"FIXED_ALLOCATION",description:"Leveraged fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "golden-butterfly":{name:"Golden Butterfly",family:"FIXED_ALLOCATION",description:"Diversified fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "three-fund":{name:"Three-Fund Portfolio — 40/40/20 model",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
-  "60-40":{name:"60/40 Portfolio",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
+  "60-40":{name:"Global 60/40 (GBP) model",family:"FIXED_ALLOCATION",description:"Wealtharr model: 60% global equity, 40% global aggregate bonds, annual rebalance",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "80-20":{name:"80/20 Portfolio",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "permanent-portfolio":{name:"Permanent Portfolio",family:"FIXED_ALLOCATION",description:"Four equal asset sleeves",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "all-weather":{name:"All Weather (reference)",family:"FIXED_ALLOCATION",description:"Published unlevered reference approximation",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
