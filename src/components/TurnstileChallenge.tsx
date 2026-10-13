@@ -21,7 +21,7 @@ export function TurnstileChallenge({enabled,siteKey,action,resetCounter=0,onToke
 }){
   const container=useRef<HTMLDivElement>(null);
   const callbackRef=useRef(onTokenChange);
-  callbackRef.current=onTokenChange;
+  useEffect(()=>{callbackRef.current=onTokenChange;},[onTokenChange]);
   const [loaded,setLoaded]=useState(false);
   useEffect(()=>{
     if(!enabled||!siteKey||!loaded||!container.current||!window.turnstile)return;
