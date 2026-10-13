@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
-import { assertLedgerEvent, foldLedger } from "@/domain/ledger";
+import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
@@ -65,13 +65,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const accountCurrencies=new Set(accounts.map((account)=>String(account.currency).toUpperCase()));
   const primaryAccountId=String(instance.account_id);
   const ledgerRows=await db.unsafe("SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity,occurred_at,created_at FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",[strategyInstanceId]);
-  const asLedgerEvent=(r:any)=>({eventType:String(r.event_type),currency:String(r.currency),cashAmount:String(r.cash_amount),feeAmount:String(r.fee_amount),instrumentId:r.instrument_id?String(r.instrument_id):null,quantity:String(r.quantity)});
-  const folded=foldLedger(ledgerRows.map(asLedgerEvent),baseCurrency);
+  const folded=foldLedger(ledgerRows.map(ledgerRowToEvent),baseCurrency);
   const accountPositions=new Map<string,ReturnType<typeof foldLedger>>();
   for(const account of accounts){
     const accountId=String(account.id);
-    const ownRows=ledgerRows.filter((row)=>row.account_id?String(row.account_id)===accountId:accountId===primaryAccountId);
-    accountPositions.set(accountId,foldLedger(ownRows.map(asLedgerEvent),String(account.currency)));
+    // All consumers use the same legacy-null-account attribution as chronology guards.
+    accountPositions.set(accountId,foldAccountLedger(ledgerRows,accountId,primaryAccountId,String(account.currency)));
   }
   const effectiveCash=folded.cash.plus(new Decimal(scenario?.cashDelta??0));
   const calculationDefinitionId=scenario?.versionOverride?.strategyDefinitionId??String(instance.strategy_definition_id);
