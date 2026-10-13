@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
-import {selectConfirmedStrategyLots,trading212ReadHistory,trading212ReadPage,trading212SafeReadUrl} from "@/domain/brokerage/trading212-readonly";
+import {selectConfirmedStrategyLots,trading212ReadAccountIdentity,trading212ReadHistory,trading212ReadPage,trading212SafeReadUrl} from "@/domain/brokerage/trading212-readonly";
 
 describe("Trading212 read-only transport boundary",()=>{
  it("only allows documented GET data endpoints on fixed provider hosts",()=>{
@@ -38,6 +38,28 @@ describe("Trading212 read-only transport boundary",()=>{
    await expect(trading212ReadPage({mode:"demo",resource:"orders",credentials:{key:"a",secret:"b"},fetcher:invalid})).rejects.toThrow("BROKER_PATH_UNSUPPORTED");
    const denied=vi.fn(async()=>({ok:false,status:401})) as unknown as typeof fetch;
    await expect(trading212ReadPage({mode:"live",resource:"positions",credentials:{key:"a",secret:"b"},fetcher:denied})).rejects.toThrow("BROKER_AUTH_FAILED");
+ });
+});
+
+describe("Trading 212 provider-verified account identity",()=>{
+ it("uses only documented read-only account-summary GET and drops all unrelated balances",async()=>{
+   const fetcher=vi.fn(async(url:RequestInfo|URL,options?:RequestInit)=>{
+     expect(String(url)).toBe("https://live.trading212.com/api/v0/equity/account/summary");
+     expect(options?.method).toBe("GET");
+     expect(options?.redirect).toBe("error");
+     return {ok:true,json:async()=>({id:123456,currency:"GBP",cash:{availableToTrade:9999},investments:{currentValue:999999}})} as Response;
+   }) as unknown as typeof fetch;
+   const result=await trading212ReadAccountIdentity({mode:"live",credentials:{key:"key",secret:"secret"},fetcher});
+   expect(result).toEqual({id:"123456",currency:"GBP"});
+   expect(JSON.stringify(result)).not.toMatch(/availableToTrade|currentValue/);
+ });
+ it("rejects an arbitrary account label, malformed currency, missing credentials and redirects",async()=>{
+   expect(()=>trading212SafeReadUrl("live","summary","/api/v0/equity/account/summary?redirect=other")).toThrow("BROKER_QUERY_UNSUPPORTED");
+   const bad=vi.fn(async()=>({ok:true,json:async()=>({id:"MY-ACCOUNT",currency:"GBP"})})) as unknown as typeof fetch;
+   await expect(trading212ReadAccountIdentity({mode:"live",credentials:{key:"a",secret:"b"},fetcher:bad})).rejects.toThrow("BROKER_ACCOUNT_ID_INVALID");
+   const wrongCurrency=vi.fn(async()=>({ok:true,json:async()=>({id:123,currency:"UKXW"})})) as unknown as typeof fetch;
+   await expect(trading212ReadAccountIdentity({mode:"live",credentials:{key:"a",secret:"b"},fetcher:wrongCurrency})).rejects.toThrow("BROKER_ACCOUNT_ID_INVALID");
+   await expect(trading212ReadAccountIdentity({mode:"live",credentials:{key:"",secret:"x"}})).rejects.toThrow("BROKER_CREDENTIALS_REQUIRED");
  });
 });
 
