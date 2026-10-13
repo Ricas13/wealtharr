@@ -70,7 +70,7 @@ export async function trading212ReadHistory<T>(args:{
   for(let page=0;page<maxPages&&next;page++){
     if(visited.has(next))throw new Error("BROKER_CURSOR_LOOP");
     visited.add(next);
-    const response=await trading212ReadPage<T>({...args,nextPagePath:next});
+    const response:BrokerPage<T>=await trading212ReadPage<T>({...args,nextPagePath:next});
     result.push(...response.items);
     next=response.nextPagePath;
     if(!next)return result;
