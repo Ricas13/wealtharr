@@ -257,7 +257,7 @@ const SEED_DEFINITIONS:Record<string,SeedPin>={
   hfea:{name:"HFEA",family:"FIXED_ALLOCATION",description:"Leveraged fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "golden-butterfly":{name:"Golden Butterfly",family:"FIXED_ALLOCATION",description:"Diversified fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "three-fund":{name:"Three-Fund Portfolio — 40/40/20 model",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
-  "60-40":{name:"Global 60/40 (GBP) model",family:"FIXED_ALLOCATION",description:"Wealtharr model: 60% global equity, 40% global aggregate bonds, annual rebalance",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
+  "60-40":{name:"Global 60/40 (GBP) model",family:"FIXED_ALLOCATION",description:"Wealtharr model: 60% global equity, 40% global aggregate bonds, annual rebalance",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"PUBLISHED",realign:false},
   "80-20":{name:"80/20 Portfolio",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "permanent-portfolio":{name:"Permanent Portfolio",family:"FIXED_ALLOCATION",description:"Four equal asset sleeves",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "all-weather":{name:"All Weather (reference)",family:"FIXED_ALLOCATION",description:"Published unlevered reference approximation",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
@@ -355,11 +355,11 @@ describe("seed definitions derived from the registry equal what the seed script 
     }
   });
 
-  it("9Sig is the only proprietary, the only enabled-by-default and the only published-on-seed strategy",()=>{
+  it("9Sig is the only proprietary and enabled-by-default strategy; only 9Sig and the complete 60/40 model are published-on-seed",()=>{
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","60-40"]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 

@@ -26,8 +26,13 @@ export const plugin:StrategyPlugin={
     description:"Wealtharr model: 60% global equity, 40% global aggregate bonds, annual rebalance",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"DRAFT",realignsResearchOnlyDefinition:false
+    // The seed inserts version 1.0 as PUBLISHED but the definition DISABLED. Customers see it only
+    // after an administrator enables it and a complete EXACT market exists for their account.
+    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false
   },
   specCard:"docs/strategy-specs/60-40.md",
-  goldenTests:"tests/strategy-reference-golden.test.ts"
+  goldenTests:"tests/strategy-golden-60-40.test.ts",
+  // Complete as a METHOD: precise exposures, spec card with the model sections, engine-level
+  // golden cases. Not a statement that any product exists to buy; that needs a verified mapping.
+  releaseStatus:"COMPLETE"
 };
