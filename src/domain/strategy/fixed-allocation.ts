@@ -174,7 +174,7 @@ export const fixedAllocationEngine: StrategyEngine = {
       };
     }
 
-    const overweight=[...rows].filter((row)=>row.delta.lte(SMALLEST_TRADE_UNIT.neg())).sort((a,b)=>a.delta.cmp(b.delta))[0];
+    const overweight=[...rows].filter((row)=>row.delta.lte(SMALLEST_TRADE_UNIT.neg())&&!(ctx.unsellableExposures??[]).includes(row.exposure)).sort((a,b)=>a.delta.cmp(b.delta))[0];
     if(overweight){
       const amount=overweight.delta.abs();
       return {

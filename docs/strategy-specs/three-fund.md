@@ -28,4 +28,4 @@ Independently computed (spreadsheet or hand) expected trades for at least: on-ta
 ## Sign-off
 Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______
 
-**Execution convention (Wealtharr implementation, not part of this strategy):** when whole shares, a minimum trade or a cash buffer leave residue that no practical order can remove, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".
+**Execution convention (Wealtharr implementation, not part of this strategy):** when order sizing (whole shares, minimum trade size) leaves residual drift for which no order of a permitted size exists, and no preference such as disabled selling or a cash buffer is what blocks it, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".

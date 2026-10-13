@@ -87,14 +87,17 @@ describe("fixed allocation with residual cash that cannot buy a share", () => {
     });
     expect(total.toFixed(2)).toBe("300.00");
     const shares = { A: new Decimal("100"), B: new Decimal("100"), C: new Decimal("100") };
-    const assessment = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), wholeShareValues: shares });
+    // Whole shares, no minimum, buffer or fee, selling allowed: granularity = 100 per leg; deviations 50 / 30 / 20 are
+    // all below it, and there is no overweight leg, so no permitted order exists.
+    const whole = { fractionalShares: false, minimumTradeAmount: new Decimal(0), cashBufferAmount: new Decimal(0), flatFee: new Decimal(0), allowSelling: true };
+    const assessment = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), cash: new Decimal("100"), constraints: whole, wholeShareValues: shares });
     expect(assessment.closes).toBe(true);
     const hold = residueHoldProposal(result, assessment, { state: {}, now: new Date("2026-10-07T12:00:00Z"), cash: new Decimal("100"), currency: "GBP", reason: "NO_PRACTICAL_STEP" });
     expect(hold.actionType).toBe("HOLD");
     expect(hold.explanation.find((row) => row.label === "Residual cash")?.value).toBe("100.00");
     // A share worth 10 per leg makes A (excess 35) and B (excess 15) material: the review stays open.
     const tiny = { A: new Decimal("10"), B: new Decimal("10"), C: new Decimal("10") };
-    const material = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), wholeShareValues: tiny });
+    const material = assessExecutionResidue({ legs, total, threshold: new Decimal("0.05"), cash: new Decimal("100"), constraints: whole, wholeShareValues: tiny });
     expect(material.closes).toBe(false);
     expect(material.code).toBe("MATERIAL_DRIFT");
     // Unblocked, the largest underweight leg is bought with the cash: min(50, 100) = 50.

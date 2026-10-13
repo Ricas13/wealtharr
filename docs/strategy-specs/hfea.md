@@ -16,4 +16,4 @@ Arithmetic independently from 55/45:
 
 Reviewer: PENDING; independent approval: NO.
 
-**Execution convention (Wealtharr implementation, not part of this strategy):** when whole shares, a minimum trade or a cash buffer leave residue that no practical order can remove, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".
+**Execution convention (Wealtharr implementation, not part of this strategy):** when order sizing (whole shares, minimum trade size) leaves residual drift for which no order of a permitted size exists, and no preference such as disabled selling or a cash buffer is what blocks it, the review closes with a HOLD that records the residual drift and cash. See docs/strategy-engines.md, "Execution-residue closure".
