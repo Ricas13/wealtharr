@@ -80,7 +80,7 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
   // Records a split exactly as the splits route stores it (quantity delta, ratio metadata).
   const recordSplit = async (holder: { accountId: string; instanceId: string }, fixture: Fixture, to: number, from: number, delta: string) => {
     const row = await sql!.unsafe(
-      "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,fee_amount,provenance,confidence,metadata) VALUES ($1,$2,now(),'SPLIT','GBP',0,$3,$4,0,'USER_ENTERED','VERIFIED',$5::jsonb) RETURNING id",
+      "INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,fee_amount,provenance,confidence,metadata) VALUES ($1,$2,now(),'SPLIT','GBP',0,$3,$4,0,'USER_ENTERED','VERIFIED',$5::text::jsonb) RETURNING id",
       [holder.instanceId, holder.accountId, fixture.instrumentId, delta, JSON.stringify({ ratio: `${to}:${from}`, to, from })]
     );
     return String(row[0].id);
@@ -91,6 +91,11 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
       [holder.instanceId, holder.accountId, fixture.instrumentId, String(-Number(delta)), eventId]
     );
   };
+  // Latest worker run details, attached to assertion messages so a CI failure shows why.
+  const runInfo = async () =>
+    JSON.stringify((await sql!.unsafe("SELECT details FROM worker_runs WHERE worker_key='market-data-refresh' ORDER BY started_at DESC LIMIT 1"))[0]?.details);
+  const splitRows = async (f: Fixture) =>
+    JSON.stringify(await sql!.unsafe("SELECT occurred_at,metadata FROM ledger_events WHERE instrument_id=$1 AND event_type='SPLIT'", [f.instrumentId]));
   const observations = async (f: Fixture) =>
     (await sql!.unsafe("SELECT price FROM market_data_observations WHERE trading_line_id=$1 ORDER BY observed_at", [f.lineId])).map((r) => Number(r.price));
   const rejection = async (f: Fixture) => sql!.unsafe("SELECT reason FROM market_data_rejections WHERE trading_line_id=$1", [f.lineId]);
@@ -117,8 +122,9 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
     // The holder records the split; the next refresh of the same quote is explained and accepted.
     await recordSplit(holder, f, 2, 1, "10");
     const result = await refresh();
-    expect(result.refreshed).toBeGreaterThanOrEqual(1);
-    expect(await observations(f)).toEqual([100, 50]);
+    const why = async () => `run=${await runInfo()} splits=${await splitRows(f)}`;
+    expect(result.refreshed, await why()).toBeGreaterThanOrEqual(1);
+    expect(await observations(f), await why()).toEqual([100, 50]);
     expect(await rejection(f)).toHaveLength(0);
     expect((await marker(f)).corporate_action_split_at).not.toBeNull();
     const note = (await sql!.unsafe("SELECT details FROM worker_runs WHERE worker_key='market-data-refresh' ORDER BY started_at DESC LIMIT 1"))[0];
@@ -139,7 +145,7 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
     feed.prices[f.symbol] = "50";
     await recordSplit(recorder, f, 2, 1, "10");
     await refresh();
-    expect(await observations(f)).toEqual([100, 50]);
+    expect(await observations(f), `run=${await runInfo()} splits=${await splitRows(f)}`).toEqual([100, 50]);
 
     expect(String((await decide(recorder.instanceId)).action_type)).not.toBe("DATA_REQUIRED");
     const blocked = await decide(bystander.instanceId);
@@ -164,7 +170,7 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
     feed.prices[f.symbol] = "50";
     await recordSplit(holder, f, 1, 10, "-9");
     await refresh();
-    expect(await observations(f)).toEqual([5, 50]);
+    expect(await observations(f), `run=${await runInfo()} splits=${await splitRows(f)}`).toEqual([5, 50]);
     expect(await rejection(f)).toHaveLength(0);
   });
 
