@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
         { key: "X-Frame-Options", value: "DENY" },
         { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-        { key: "Content-Security-Policy", value: "base-uri 'self'; frame-ancestors 'none'; object-src 'none'" }
+        { key: "Content-Security-Policy", value: "base-uri 'self'; frame-ancestors 'none'; object-src 'none'; frame-src https://challenges.cloudflare.com" }
       ]
     }];
   }
