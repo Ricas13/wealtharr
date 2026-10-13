@@ -16,7 +16,7 @@ vi.mock("@/lib/session",()=>({
 const url=process.env.DATABASE_URL;
 const sql=url?postgres(url,{max:3,prepare:false}):null;
 const ORIGIN="http://127.0.0.1:3000";
-const KEYS=["EMAIL_FROM","STRIPE_SECRET_KEY","CRON_CONCURRENCY","NEXT_PUBLIC_BRAND_NAME","ADMIN_MFA_REQUIRED","NEXT_PUBLIC_APP_URL"];
+const KEYS=["EMAIL_FROM","STRIPE_SECRET_KEY","CRON_CONCURRENCY","NEXT_PUBLIC_BRAND_NAME","ADMIN_MFA_REQUIRED","NEXT_PUBLIC_APP_URL","TURNSTILE_ENABLED","TURNSTILE_SITE_KEY","TURNSTILE_SECRET_KEY"];
 
 describe.skipIf(!url)("admin settings",()=>{
   const run=Math.random().toString(36).slice(2,10);
@@ -140,4 +140,27 @@ describe.skipIf(!url)("admin settings",()=>{
     expect(process.env.CRON_MAX_INSTANCES).toBeUndefined();
     expect(process.env.EMAIL_FROM).toBe("support@example.test");
   });
+  it("configures Turnstile wholly in Admin with encrypted keys and prevents half-updated credentials",async()=>{
+    const site="0x4AAAAAAAAdminTestSiteKey",secret="0x4AAAAAAAAdminPrivateSecret";
+    const missing=await put([{key:"TURNSTILE_ENABLED",value:"true"}]);
+    expect(missing.status).toBe(400);
+    expect(missing.json.errors?.TURNSTILE_ENABLED).toContain("site key");
+    const partial=await put([{key:"TURNSTILE_SITE_KEY",value:site}]);
+    expect(partial.status).toBe(400);
+    expect(partial.json.errors?.TURNSTILE_SITE_KEY).toContain("together");
+    const saved=await put([{key:"TURNSTILE_SITE_KEY",value:site},{key:"TURNSTILE_SECRET_KEY",value:secret}]);
+    expect(saved.status).toBe(200);
+    expect(saved.json.settings?.find(s=>s.key==="TURNSTILE_SITE_KEY")).toMatchObject({source:"database",value:site});
+    expect(saved.json.settings?.find(s=>s.key==="TURNSTILE_SECRET_KEY")).toMatchObject({source:"database",value:null});
+    const stored=await sql!.unsafe("SELECT value_encrypted FROM app_settings WHERE key='TURNSTILE_SECRET_KEY'");
+    expect(String(stored[0].value_encrypted)).not.toContain(secret);
+    expect((await get()).text).not.toContain(secret);
+    expect((await put([{key:"TURNSTILE_ENABLED",value:"true"}])).status).toBe(200);
+    const rotate=await put([{key:"TURNSTILE_SITE_KEY",value:site+"New"},{key:"TURNSTILE_SECRET_KEY",value:secret+"New"}]);
+    expect(rotate.status).toBe(400);
+    expect(rotate.json.errors?.TURNSTILE_ENABLED).toContain("Turn off");
+    expect((await put([{key:"TURNSTILE_ENABLED",value:"false"}])).status).toBe(200);
+    expect((await put([{key:"TURNSTILE_SITE_KEY",value:site+"New"},{key:"TURNSTILE_SECRET_KEY",value:secret+"New"}])).status).toBe(200);
+  });
+
 });
