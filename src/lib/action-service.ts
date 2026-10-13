@@ -8,7 +8,7 @@ import { assertLedgerEvent, foldLedger } from "@/domain/ledger";
 import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
-import { assertExecutionCurrencyMatch, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
+import { assertExecutionCurrencyMatch, executionPriceBand, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
 import { nextReviewDueAt } from "@/domain/schedule";
 import { classifyFreshness } from "@/domain/market-freshness";
 import { parseInputSchema, validateInstanceSettings } from "@/domain/strategy/config";
@@ -214,6 +214,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
   const resolveProposal=async(unaffordableCashBuys:Record<string,Decimal>)=>{
   let blockedCashBuyExposure:string|null=null;
+  let sizingPrice:Decimal|null=null;
+  let instructedQuantity:Decimal|null=null;
+  let sizingBand:Decimal|null=null;
   let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage},unaffordableCashBuys});
 
   let tradingLineId:string|null=null;
@@ -293,7 +296,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
 
     if(tradingLineId&&["BUY","SELL"].includes(proposal.actionType)&&proposal.amount){
       const quoteRows=await db.unsafe(
-        "SELECT tl.ticker,tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
+        "SELECT tl.ticker,tl.instrument_id,tl.currency,i.leverage AS instrument_leverage,o.price,o.observed_at,o.currency AS observation_currency FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
         [tradingLineId]
       );
       const quote=quoteRows[0];
@@ -342,6 +345,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
             blockedCashBuyExposure=proposal.economicExposure??null;
           proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
         }else{
+          sizingPrice=effectivePrice;
+          instructedQuantity=practical.quantity;
+          sizingBand=executionPriceBand({
+            leverage:quote.instrument_leverage==null?null:String(quote.instrument_leverage),
+            quoteAgeMs:priceObservedAt?Date.now()-new Date(priceObservedAt).getTime():null
+          });
           const quantityText=practical.quantity.toDecimalPlaces(6,Decimal.ROUND_DOWN).toString();
           const amountText=practical.amount.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
           proposal={
@@ -371,9 +380,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       ...skippedBuys.map(exposure=>({label:"Cash purchase of "+exposure+" skipped",value:"Below one whole share, your minimum trade, or spendable cash",kind:"text" as const}))
     ]};
   }
-  return {proposal,tradingLineId,executionTicker,executionAccountId,blockedCashBuyExposure};
+  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand,blockedCashBuyExposure};
   };
-  const {proposal,tradingLineId,executionTicker,executionAccountId}=
+  const {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand}=
     await settleCashBuyFallback(resolveProposal,effectiveCash);
 
   const stableHoldings=accounts.flatMap((account)=>{
@@ -415,7 +424,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // the engine recalculates. A HOLD acknowledgement can then close the review.
   const nextState=postActionReviewState(proposal,state,new Date());
   const totalValue=exposurePositions.reduce((sum,p)=>sum.plus(p.value),effectiveCash);
-  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker};
+  return {instance,proposal,totalValue,dataStatus,fingerprint,reviewKey,nextState,tradingLineId,executionAccountId,executionTicker,sizingPrice,instructedQuantity,sizingBand};
 }
 
 export async function previewCashScenario(
@@ -742,7 +751,7 @@ export async function recalculateAfterMutation(
 export async function executeAction(
   userId:string,
   actionId:string,
-  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string}
+  execution?:{price?:string;quantity?:string;fee?:string;partial?:boolean;executedAt?:string;considerationAmount?:string;acceptPriceOutsideBand?:boolean;priceBandReason?:string}
 ){
   const result=await sql.begin(async(tx)=>{
     const ownership=await tx.unsafe(
@@ -821,6 +830,8 @@ export async function executeAction(
       if(actionType==="SELL"&&!constraints.allowSelling)throw new Error("SELLING_DISABLED");
       if(!constraints.fractionalShares&&!new Decimal(execution.quantity).isInteger())throw new Error("FRACTIONAL_SHARES_DISABLED");
       const spendableCash=Decimal.max(position.cash.minus(constraints.cashBufferAmount),0);
+      const priceBandReason=typeof execution.priceBandReason==="string"?execution.priceBandReason.trim():"";
+      if(execution.acceptPriceOutsideBand===true&&priceBandReason.length<8)throw new Error("PRICE_BAND_REASON_REQUIRED");
       const validated=validateExecution({
         side:actionType as "BUY"|"SELL",
         proposedAmount:String(action.amount),
@@ -829,7 +840,12 @@ export async function executeAction(
         fee:execution.fee??"0",
         availableCash:spendableCash,
         heldQuantity:held,
-        allowPartial:Boolean(execution.partial)
+        allowPartial:Boolean(execution.partial),
+        considerationAmount:execution.considerationAmount??null,
+        sizingPrice:current.sizingPrice,
+        instructedQuantity:current.instructedQuantity,
+        maxPriceDeviation:current.sizingBand??undefined,
+        allowOutsideBand:execution.acceptPriceOutsideBand===true
       });
       if(!constraints.fractionalShares&&!validated.quantity.isInteger())throw new Error("FRACTIONAL_SHARES_DISABLED");
       if(validated.grossNotional.lt(constraints.minimumTradeAmount))throw new Error("BELOW_MINIMUM_TRADE");
@@ -852,6 +868,8 @@ export async function executeAction(
             actionId,
             proposedAmount:String(action.amount),
             actualNotional:validated.grossNotional.toString(),
+            considerationSupplied:execution.considerationAmount!=null,
+            priceBandOverride:execution.acceptPriceOutsideBand===true?{reason:priceBandReason}:null,
             partial:Boolean(execution.partial),
             executedAt:brokerExecutedAt.toISOString()
           }),
