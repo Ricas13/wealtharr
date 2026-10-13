@@ -1,4 +1,5 @@
 import {curatedRelease,getStrategyPlugin} from "./catalog";
+import {isMethodComplete} from "./method-complete";
 
 export {CANONICAL_9SIG_CONFIG} from "./catalog/9sig";
 
@@ -25,11 +26,11 @@ export function syntheticCatalogueFixtureAllowed(){
 
 /** Production boundary: research/DRAFT reference material is not an executable customer release.
  *  Existing immutable versions remain stored but cannot be newly activated from incomplete code.
+ *  The predicate is `isMethodComplete` (see method-complete.ts for the documented checklist).
  */
 export function assertReleaseMethodComplete(strategyKey:string){
   if(syntheticCatalogueFixtureAllowed()||process.env.NODE_ENV==="test")return;
-  const p=getStrategyPlugin(strategyKey);
-  if(!p||p.seedDefinition?.initialVersion!=="PUBLISHED"||!p.specCard||!p.goldenTests)
+  if(!isMethodComplete(getStrategyPlugin(strategyKey)))
     throw new Error("STRATEGY_METHOD_NOT_COMPLETE");
 }
 

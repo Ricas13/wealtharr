@@ -41,6 +41,9 @@ const patchSchema=z.discriminatedUnion("action",[
   z.object({action:z.literal("TOGGLE_DEFINITION"),strategyKey:z.string().min(1),enabled:z.boolean()})
 ]);
 
+const METHOD_NOT_COMPLETE_CODE="STRATEGY_METHOD_NOT_COMPLETE";
+const METHOD_NOT_COMPLETE_MESSAGE="This strategy's method is not complete (finished rules, specification card and golden tests are required), so it cannot be released.";
+
 function assertEngine(key:string){
   if(!supportedEngineKeys().includes(key))throw new Error("UNSUPPORTED_ENGINE");
 }
@@ -104,6 +107,8 @@ export async function POST(request:Request){
   }catch(error){const denied=authFailure(error);if(denied)return denied;
     if(error instanceof z.ZodError)return Response.json({error:"Invalid strategy version."},{status:400});
     const message=error instanceof Error?error.message:"FAILED";
+    // An incomplete method (no finished rules, spec card or golden tests) is a state conflict, not a server fault.
+    if(message===METHOD_NOT_COMPLETE_CODE)return Response.json({error:METHOD_NOT_COMPLETE_MESSAGE},{status:409});
     // A validation failure is the caller's to fix (400); anything else is a server fault (500).
     if(message.startsWith("INVALID_")||message.includes("REQUIRES")||message.includes("WEIGHTS")||message==="ENGINE_NOT_CUSTOMER_VERIFIED")
       return Response.json({error:"Strategy configuration failed validation."},{status:400});
@@ -146,7 +151,9 @@ export async function PATCH(request:Request){
             assertCustomerPublishableEngine(String(release.engine_key));
             assertCuratedRules(p.strategyKey,String(release.engine_key),
               release.config,release.input_schema);
-          }catch{
+          }catch(reason){
+            if(reason instanceof Error&&reason.message===METHOD_NOT_COMPLETE_CODE)
+              throw new LifecycleConflict(METHOD_NOT_COMPLETE_MESSAGE,409);
             throw new LifecycleConflict("The release does not match the built-in reviewed strategy method.",409);
           }
           const market=assessStrategyMarket(String(release.engine_key),
@@ -263,6 +270,7 @@ export async function PATCH(request:Request){
     // The partial unique index is the last line of defence against two published versions with the same date.
     if((error as {code?:string})?.code==="23505")return Response.json({error:"Another published version already has that effective date."},{status:409});
     const message=error instanceof Error?error.message:"FAILED";
+    if(message===METHOD_NOT_COMPLETE_CODE)return Response.json({error:METHOD_NOT_COMPLETE_MESSAGE},{status:409});
     // The database trigger that makes published versions immutable (migration 0014) is a state conflict.
     if((error as {code?:string})?.code==="23514")return Response.json({error:"Published strategy versions are immutable. Create a new version instead."},{status:409});
     // A validation failure is the caller's to fix (400); anything else is a server fault (500).
