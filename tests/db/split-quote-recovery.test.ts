@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 
 // A real split halves the quoted price. The worker must accept that post-split quote ONLY when a
@@ -21,6 +21,11 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
   const fixtures: Fixture[] = [];
   let counter = 0;
 
+  // Several EXACT mappings for the same exposure/country/wrapper make market resolution ambiguous
+  // (DATA_REQUIRED for unrelated reasons), so a finished case retires its mapping.
+  afterEach(async () => {
+    for (const f of fixtures) await sql!.unsafe("UPDATE regional_instrument_mappings SET enabled=false WHERE trading_line_id=$1", [f.lineId]);
+  });
   beforeAll(() => {
     process.env.MARKET_DATA_PROVIDER = "mock";
   });
@@ -147,7 +152,8 @@ describe.skipIf(!url)("split-explained quote recovery through the market worker"
     await refresh();
     expect(await observations(f), `run=${await runInfo()} splits=${await splitRows(f)}`).toEqual([100, 50]);
 
-    expect(String((await decide(recorder.instanceId)).action_type)).not.toBe("DATA_REQUIRED");
+    const recorderAction = await decide(recorder.instanceId);
+    expect(String(recorderAction.action_type), String(recorderAction.instruction)).not.toBe("DATA_REQUIRED");
     const blocked = await decide(bystander.instanceId);
     expect(blocked.action_type).toBe("DATA_REQUIRED");
     expect(String(blocked.instruction)).toContain("has not recorded it");
