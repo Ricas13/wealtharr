@@ -112,14 +112,17 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     for(const [instrumentId,quantity] of position.quantities.entries()){
       if(quantity.eq(0))continue;
       const market=await db.unsafe(
-        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id "+
+        "SELECT i.economic_exposure,q.price,q.observed_at,q.observation_currency,q.trading_currency,q.trading_line_id, "+
+        "(SELECT max(s.occurred_at) FROM ledger_events s WHERE s.strategy_instance_id=$3 AND s.instrument_id=i.id "+
+        "AND s.event_type='SPLIT' AND (s.account_id=$4 OR (s.account_id IS NULL AND $4=$5)) "+
+        "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) AS split_at "+
         "FROM instruments i LEFT JOIN LATERAL ("+
         " SELECT tl.id AS trading_line_id,tl.currency AS trading_currency,o.price,o.observed_at,o.currency AS observation_currency"+
         " FROM trading_lines tl LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true"+
         " WHERE tl.instrument_id=i.id AND upper(tl.currency)=upper($2) AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date)"+
         " ORDER BY o.observed_at DESC NULLS LAST,tl.id LIMIT 1"+
         ") q ON true WHERE i.id=$1 LIMIT 1",
-        [instrumentId,accountCurrency]
+        [instrumentId,accountCurrency,strategyInstanceId,accountId,primaryAccountId]
       );
       const m=market[0];
       const priceOverride=await db.unsafe("SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[strategyInstanceId,"market_price:"+instrumentId]);
@@ -130,6 +133,17 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         continue;
       }
       const manualPrice=priceOverride[0]?.manual_value==null?null:validatedEffectivePrice(priceOverride[0].manual_value);
+      // A split changes the unit basis: never value post-split units using older prices or overrides.
+      if(m?.split_at){
+        const sourceTime=manualPrice?priceOverride[0]?.observed_at:m?.observed_at;
+        const splitAt=new Date(m.split_at);
+        const observed=sourceTime?new Date(sourceTime):null;
+        if(!observed||!Number.isFinite(observed.getTime())||observed<=splitAt){
+          dataStatus="MISSING";
+          dataMessage="A stock split was recorded after the latest price. Refresh the quote or enter a verified post-split price before recalculating.";
+          continue;
+        }
+      }
       if(manualPrice){
         if(!m?.economic_exposure||!m?.trading_line_id){dataStatus="MISSING";dataMessage="A valid trading line is required for a manually priced holding.";continue;}
         exposurePositions.push({economicExposure:String(m.economic_exposure),value:quantity.mul(manualPrice),tradingLineId:String(m.trading_line_id),accountId,accountName});
