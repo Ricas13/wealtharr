@@ -26,7 +26,7 @@ export type SettingDefinition = {
 };
 
 export const SETTING_GROUPS = [
-  "General", "Billing (Stripe)", "Email", "Messaging (Telegram)", "Notifications", "Market data", "Sign-in providers", "Mobile apps", "Mobile app purchases", "Monitoring", "Security", "Launch sign-offs", "Background worker"
+  "General", "Billing (Stripe)", "Email", "Messaging (Telegram)", "Notifications", "Market data", "Sign-in providers", "Mobile apps", "Mobile app purchases", "Monitoring", "Security", "Cloudflare Turnstile", "Launch sign-offs", "Background worker"
 ] as const;
 
 const bool = (key: string, label: string, group: string, help: string): SettingDefinition => ({ key, label, group, kind: "boolean", help });
@@ -83,6 +83,10 @@ export const SETTINGS: readonly SettingDefinition[] = [
   { key: "OPS_ALERT_EXTRA_EMAIL", label: "Also send alerts to", group: "Monitoring", kind: "text", pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, patternMessage: "Enter one email address.", help: "Optional extra recipient, for example a shared on-call mailbox. Administrators always receive alerts." },
 
   bool("ADMIN_MFA_REQUIRED", "Require two-step sign-in for admins", "Security", "Turn on once every admin has enabled two-step sign-in under Settings. Admins without it are kept out of admin tools."),
+  bool("TURNSTILE_ENABLED","Enable Cloudflare Turnstile","Cloudflare Turnstile","Protect registration, password sign-in and password-reset requests. Save and test both Cloudflare keys first. Changes apply without redeploying."),
+  {key:"TURNSTILE_SITE_KEY",label:"Cloudflare site key",group:"Cloudflare Turnstile",kind:"text",pattern:/^[A-Za-z0-9_-]{15,100}$/,patternMessage:"Paste the site key from Cloudflare Turnstile.",help:"Public widget key from Cloudflare. The test below confirms this key matches the site and secret."},
+  {key:"TURNSTILE_SECRET_KEY",label:"Cloudflare secret key",group:"Cloudflare Turnstile",kind:"secret",pattern:/^[A-Za-z0-9_-]{15,100}$/,patternMessage:"Paste the matching private secret from Cloudflare Turnstile.",help:"Private Siteverify secret. Stored encrypted, never displayed again or sent to the browser."},
+
 
   bool("BACKUPS_RESTORE_VERIFIED", "A backup restore has been tested", "Launch sign-offs", "Confirm only after running the restore drill and keeping its report."),
   bool("UK_REGULATORY_SIGNOFF_VERIFIED", "Legal and regulatory review done", "Launch sign-offs", "Confirm only with documented advice for where you operate."),

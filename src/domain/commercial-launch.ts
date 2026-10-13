@@ -23,6 +23,11 @@ export function checkCommercialLaunch(env:Environment):LaunchCheck[]{
  {key:"stripe_webhook",passed:!!webhook&&webhook.startsWith("whsec_")&&webhook.length>=20,reason:"Stripe webhook signing secret is required."},
  {key:"email",passed:env.EMAIL_PROVIDER==="http"&&validHttps(env.EMAIL_HTTP_ENDPOINT)&&enough(env.EMAIL_HTTP_TOKEN,12)&&!!env.EMAIL_FROM&&!env.EMAIL_FROM.endsWith("@example.com"),reason:"Configure live transactional email with HTTPS credentials."},
  {key:"market_data_mode",passed:env.MARKET_DATA_PROVIDER==="http"&&validHttps(env.MARKET_DATA_HTTP_BASE_URL)&&enough(env.MARKET_DATA_HTTP_TOKEN,12),reason:env.MARKET_DATA_PROVIDER==="yahoo"?YAHOO_LAUNCH_WARNING:"Configure an authenticated historical/intraday and current-price service that permits your commercial use."},
+ {key:"turnstile",passed:env.TURNSTILE_ENABLED==="true"&&!!env.TURNSTILE_SITE_KEY&&env.TURNSTILE_SITE_KEY.length>=20&&
+    !!env.TURNSTILE_SECRET_KEY&&env.TURNSTILE_SECRET_KEY.length>=20&&
+    !/^[123]x0000000000000000000/.test(env.TURNSTILE_SITE_KEY)&&
+    !/^[123]x0000000000000000000/.test(env.TURNSTILE_SECRET_KEY),
+    reason:"Enable Cloudflare Turnstile and configure real site and server-secret keys for the live hostname (no test credentials)."},
  {key:"admin_mfa",passed:env.ADMIN_MFA_REQUIRED==="true",reason:"Require two-step sign-in for administrators (ADMIN_MFA_REQUIRED=true) once every admin has enrolled."},
  {key:"backup_operator_attestation",passed:env.BACKUPS_RESTORE_VERIFIED==="true",reason:"Operator must verify a successful backup restore."},
  {key:"regulatory_signoff",passed:env.UK_REGULATORY_SIGNOFF_VERIFIED==="true",reason:"Obtain documented UK legal/regulatory review before charging customers."},

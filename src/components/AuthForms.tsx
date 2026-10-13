@@ -1,53 +1,58 @@
 "use client";
 import { Field } from "@/components/Field";
+import { TurnstileChallenge } from "@/components/TurnstileChallenge";
 import { InlineMessage, MessageView, useMessage } from "@/components/InlineMessage";
 import { postJson } from "@/lib/http";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
-export function LoginForm({next="/app"}:{next?:string}) {
+export function LoginForm({next="/app",turnstileEnabled=false,turnstileSiteKey=""}:{next?:string;turnstileEnabled?:boolean;turnstileSiteKey?:string}) {
   const router=useRouter(); const [error,setError]=useState(""); const [busy,setBusy]=useState(false);
+  const [challenge,setChallenge]=useState("");const [challengeEpoch,setChallengeEpoch]=useState(0);
   return <form className="stack" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);setError("");const f=new FormData(e.currentTarget);
     try{
-      const result=await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),totp:String(f.get("totp")??""),redirect:false});
+      const result=await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),totp:String(f.get("totp")??""),turnstileToken:challenge,redirect:false});
       if(result?.error)setError("Email, password or authentication code is incorrect, or the email is not verified.");
       else router.push(next);
     }catch{
       setError("Could not reach the server. Check your connection and try again.");
     }finally{
-      setBusy(false);
+      setBusy(false);setChallenge("");setChallengeEpoch(n=>n+1);
     }
   }}>
     <Field label="Email"><input id="login-email" name="email" type="email" autoComplete="email" required/></Field>
     <Field label="Password"><input id="login-password" name="password" type="password" autoComplete="current-password" required/></Field>
     <Field label="Authentication code" help="Only if you turned on two-step sign-in. A recovery code also works."><input id="login-totp" name="totp" inputMode="text" autoComplete="one-time-code" maxLength={16}/></Field>
-    {error&&<InlineMessage tone="error">{error}</InlineMessage>}<button className="button primary" disabled={busy}>Sign in</button>
+    <TurnstileChallenge enabled={turnstileEnabled} siteKey={turnstileSiteKey} action="login" resetCounter={challengeEpoch} onTokenChange={setChallenge}/>
+    {error&&<InlineMessage tone="error">{error}</InlineMessage>}<button className="button primary" disabled={busy||(turnstileEnabled&&!challenge)}>Sign in</button>
   </form>;
 }
 
-export function RegisterForm() {
+export function RegisterForm({turnstileEnabled=false,turnstileSiteKey=""}:{turnstileEnabled?:boolean;turnstileSiteKey?:string}) {
   const router=useRouter(); const status=useMessage(); const [busy,setBusy]=useState(false);
+  const [challenge,setChallenge]=useState("");const [challengeEpoch,setChallengeEpoch]=useState(0);
   return <form className="stack" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);status.clear();const f=new FormData(e.currentTarget);
     try{
-      const result=await postJson("/api/register",{email:f.get("email"),password:f.get("password"),country:f.get("country"),baseCurrency:f.get("currency")},{fallbackError:"Could not register."});
+      const result=await postJson("/api/register",{email:f.get("email"),password:f.get("password"),country:f.get("country"),baseCurrency:f.get("currency"),turnstileToken:challenge},{fallbackError:"Could not register."});
       if(!result.ok){status.error(result.errorText);return;}
       if(result.data.verificationDelivery==="unavailable"){status.warning("Account created, but email delivery is not configured. An administrator must configure the email provider.");return;}
-      if(process.env.NODE_ENV!=="production") { await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),redirect:false}); router.push("/app"); }
+      if(process.env.NODE_ENV!=="production"&&!turnstileEnabled) { await signIn("credentials",{email:String(f.get("email")),password:String(f.get("password")),redirect:false}); router.push("/app"); }
       else router.push("/login?registered=1");
     }catch{
       status.error("Could not complete sign-in. Please try again.");
     }finally{
-      setBusy(false);
+      setBusy(false);setChallenge("");setChallengeEpoch(n=>n+1);
     }
   }}>
     <Field label="Email"><input id="register-email" name="email" type="email" autoComplete="email" required/></Field>
     <Field label="Password" help="At least 12 characters."><input id="register-password" name="password" type="password" autoComplete="new-password" minLength={12} required/></Field>
     <div className="form-grid"><Field label="Country"><select id="register-country" name="country" defaultValue="GB"><option value="GB">United Kingdom</option><option value="US">United States</option><option value="IE">Ireland</option><option value="PT">Portugal</option></select></Field>
     <Field label="Base currency"><select id="register-currency" name="currency" defaultValue="GBP"><option>GBP</option><option>USD</option><option>EUR</option></select></Field></div>
-    <MessageView message={status.message}/><button className="button primary" disabled={busy}>Create account</button>
+    <TurnstileChallenge enabled={turnstileEnabled} siteKey={turnstileSiteKey} action="register" resetCounter={challengeEpoch} onTokenChange={setChallenge}/>
+    <MessageView message={status.message}/><button className="button primary" disabled={busy||(turnstileEnabled&&!challenge)}>Create account</button>
   </form>;
 }
 
@@ -65,19 +70,20 @@ export function VerifyForm({token}:{token:string}) {
   }}>Verify email</button><MessageView message={status.message}/></div>;
 }
 
-export function ResetPasswordForm({token}:{token?:string}) {
+export function ResetPasswordForm({token,turnstileEnabled=false,turnstileSiteKey=""}:{token?:string;turnstileEnabled?:boolean;turnstileSiteKey?:string}) {
   const status=useMessage(); const [busy,setBusy]=useState(false);
+  const [challenge,setChallenge]=useState("");const [challengeEpoch,setChallengeEpoch]=useState(0);
   if(!token) return <form className="stack" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);status.clear();const f=new FormData(e.currentTarget);
     try{
-      const result=await postJson("/api/password-reset/request",{email:f.get("email")},{fallbackError:"Could not send the reset link. Please try again."});
+      const result=await postJson("/api/password-reset/request",{email:f.get("email"),turnstileToken:challenge},{fallbackError:"Could not send the reset link. Please try again."});
       // The server answers the same way whether or not the account exists, so success never reveals which.
       if(result.ok)status.success("If that account exists, a reset link has been sent.");
       else status.error(result.errorText);
     }finally{
-      setBusy(false);
+      setBusy(false);setChallenge("");setChallengeEpoch(n=>n+1);
     }
-  }}><Field label="Email"><input name="email" type="email" autoComplete="email" required/></Field><button className="button primary" disabled={busy}>Send reset link</button><MessageView message={status.message}/></form>;
+  }}><Field label="Email"><input name="email" type="email" autoComplete="email" required/></Field><TurnstileChallenge enabled={turnstileEnabled} siteKey={turnstileSiteKey} action="reset" resetCounter={challengeEpoch} onTokenChange={setChallenge}/><button className="button primary" disabled={busy||(turnstileEnabled&&!challenge)}>Send reset link</button><MessageView message={status.message}/></form>;
   return <form className="stack" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);status.clear();const f=new FormData(e.currentTarget);
     try{

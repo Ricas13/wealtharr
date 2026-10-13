@@ -14,8 +14,9 @@ import { getAppleClientSecret } from "@/lib/apple-client-secret";
 import { ensureSettings } from "@/lib/settings";
 import { recordSignIn } from "@/lib/sign-in-devices";
 import { headers as requestHeaders } from "next/headers";
+import { requireTurnstile } from "@/domain/turnstile";
 
-const credentials = z.object({ email: z.string().email(), password: z.string().min(8).max(128), totp: z.string().max(32).optional() });
+const credentials = z.object({ email: z.string().email(), password: z.string().min(8).max(128), totp: z.string().max(32).optional(), turnstileToken:z.string().max(2048).optional() });
 
 // Provider credentials come from the admin screen (or the environment), so the provider list is
 // built per request rather than once at start-up: changing them takes effect without a restart.
@@ -48,7 +49,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
   providers: [
     ...(await oauthProviders()),
     Credentials({
-      credentials: { email: {}, password: {}, totp: {} },
+      credentials: { email: {}, password: {}, totp: {}, turnstileToken: {} },
       async authorize(raw, request) {
         const parsed = credentials.safeParse(raw);
         if (!parsed.success) return null;
@@ -57,6 +58,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
         } catch {
           return null;
         }
+        try { await requireTurnstile({action:"login",token:parsed.data.turnstileToken,env:process.env}); }
+        catch { return null; }
         const rows = await sql.unsafe(
           "SELECT id,email,password_hash,email_verified_at,role,session_version,mfa_enabled_at FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL LIMIT 1",
           [parsed.data.email]

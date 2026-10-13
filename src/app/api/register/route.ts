@@ -5,12 +5,14 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { assertSameOrigin, consumeRateLimit, hashToken, newToken } from "@/lib/security";
 import { getEmailProvider } from "@/lib/email";
+import { requireTurnstile, TurnstileError } from "@/domain/turnstile";
 
 const schema = z.object({
   email:z.string().email().max(254),
   password:z.string().min(12).max(128),
   country:z.string().length(2).default("GB"),
-  baseCurrency:z.string().length(3).default("GBP")
+  baseCurrency:z.string().length(3).default("GBP"),
+  turnstileToken:z.string().max(2048).optional()
 });
 
 export async function POST(request: Request) {
@@ -20,6 +22,7 @@ export async function POST(request: Request) {
     const ip = requestIp(request);
     await consumeRateLimit("register:" + ip, 8, 3600);
     const parsed = schema.parse(await request.json());
+    await requireTurnstile({action:"register",token:parsed.turnstileToken,env:process.env});
     // Stored lowercase: the database enforces uniqueness on lower(email).
     const input = { ...parsed, email: parsed.email.trim().toLowerCase() };
     const passwordHash = await bcrypt.hash(input.password, 12);
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof z.ZodError) return Response.json({error:"Check your registration details."},{status:400});
     const message = error instanceof Error ? error.message : "REGISTER_FAILED";
+    if(error instanceof TurnstileError)return Response.json({error:"Security verification failed. Please complete the challenge and try again."},{status:error.code==="TURNSTILE_UNAVAILABLE"||error.code==="TURNSTILE_CONFIGURATION_ERROR"?503:403});
     if (message === "RATE_LIMITED") return Response.json({error:"Too many attempts."},{status:429});
     if (message === "EMAIL_IN_USE") return Response.json({error:"An account already exists for that email."},{status:409});
     return Response.json({error:"Could not create account."},{status:500});

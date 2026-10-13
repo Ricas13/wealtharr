@@ -39,6 +39,10 @@ test("an admin manages settings in the browser; secrets are write-only",async({p
     await page.goto("/admin/settings");
     await expect(page.getByRole("heading",{name:"Settings",exact:true})).toBeVisible();
     await expect(page.getByText("Still in the server environment")).toBeVisible();
+    await expect(page.getByRole("heading",{name:"Cloudflare Turnstile"})).toBeVisible();
+    await expect(page.getByLabel("Cloudflare site key")).toBeVisible();
+    await expect(page.getByLabel("Cloudflare secret key")).toHaveAttribute("type","password");
+    await expect(page.getByRole("button",{name:"Test connection"})).toBeVisible();
 
     // An ordinary setting: saved, shown back, and applied to the public site without a restart.
     await page.getByLabel(/Google Search Console token/).fill("e2e-verification-token");
