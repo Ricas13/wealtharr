@@ -17,7 +17,24 @@ function sameRuleConfig(a:unknown,b:unknown){return JSON.stringify(normalised(a)
  * A genuinely new canonical variant must be added through a reviewed code release.
  * Legacy non-catalogue definitions remain inert and cannot be created through the API.
  */
+export function syntheticCatalogueFixtureAllowed(){
+  const u=process.env.DATABASE_URL??"";
+  return process.env.CI==="true"&&process.env.GITHUB_ACTIONS==="true"&&
+    /^postgres(?:ql)?:\\/\\/[^@]+@127\\.0\\.0\\.1:5432\\/strategyos_test$/.test(u);
+}
+
+/** Production boundary: research/DRAFT reference material is not an executable customer release.
+ *  Existing immutable versions remain stored but cannot be newly activated from incomplete code.
+ */
+export function assertReleaseMethodComplete(strategyKey:string){
+  if(syntheticCatalogueFixtureAllowed()||process.env.NODE_ENV==="test")return;
+  const p=getStrategyPlugin(strategyKey);
+  if(!p||p.seedDefinition?.initialVersion!=="PUBLISHED"||!p.specCard||!p.goldenTests)
+    throw new Error("STRATEGY_METHOD_NOT_COMPLETE");
+}
+
 export function assertCuratedRules(strategyKey:string,engine:string,config:unknown,inputSchema:unknown){
+  assertReleaseMethodComplete(strategyKey);
   const plugin=getStrategyPlugin(strategyKey);
   const release=plugin?curatedRelease(plugin):null;
   if(!release||!release.config||!release.engine||release.engine==="RESEARCH_PENDING")
