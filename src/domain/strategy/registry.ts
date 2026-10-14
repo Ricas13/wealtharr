@@ -2,11 +2,13 @@ import type { StrategyEngine } from "./types";
 import { valueTargetEngine } from "./value-target";
 import { fixedAllocationEngine } from "./fixed-allocation";
 import { momentumRotationEngine } from "./momentum-rotation";
+import { tacticalAllocationEngine } from "./tactical-engine";
 
 const engines = new Map<string, StrategyEngine>([
   [valueTargetEngine.key, valueTargetEngine],
   [fixedAllocationEngine.key, fixedAllocationEngine],
-  [momentumRotationEngine.key, momentumRotationEngine]
+  [momentumRotationEngine.key, momentumRotationEngine],
+  [tacticalAllocationEngine.key,tacticalAllocationEngine]
 ]);
 
 export function getStrategyEngine(key: string) {
