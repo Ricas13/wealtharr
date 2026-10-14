@@ -147,7 +147,10 @@ jobs:
             --env EMAIL_PROVIDER --env MARKET_DATA_PROVIDER wealtharr-ci:${{ github.sha }}
           trap 'docker logs wealtharr-runtime-smoke; docker rm -f wealtharr-runtime-smoke' EXIT
           for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:3000/api/health; then exit 0; fi
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then
+              node scripts/release-acceptance.mjs --url http://127.0.0.1:3000 --allow-local
+              exit 0
+            fi
             sleep 2
           done
           exit 1
