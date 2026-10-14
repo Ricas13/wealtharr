@@ -36,7 +36,7 @@ describe("isMethodComplete: the real catalogue",()=>{
   it("marks the released 60/40 and 80/20 GBP models complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
     expect(complete()).toEqual(["60-40","80-20"]);
-    expect(complete(realFiles)).toEqual(["60-40"]);
+    expect(complete(realFiles)).toEqual(["60-40","80-20"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){
