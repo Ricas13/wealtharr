@@ -1,7 +1,8 @@
 "use client";
 import {useRef,useState,type FormEvent} from "react";
+import Link from "next/link";
 
-type Customer={email:string;country:string;role:string;plan:string;status:string};
+type Customer={id:string;email:string;country:string;role:string;plan:string;status:string};
 type LookupResult={total:number;page:number;totalPages:number;customers:Customer[];error?:string};
 
 export function AdminCustomerLookup(){
@@ -63,11 +64,11 @@ export function AdminCustomerLookup(){
   </div>
   {result&&result.customers.length>0&&<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="All-customer lookup results">
    <table className="admin-studio-table"><thead><tr>
-    <th scope="col">CUSTOMER</th><th scope="col">PLAN</th><th scope="col">SUBSCRIPTION STATUS</th>
+    <th scope="col">CUSTOMER</th><th scope="col">PLAN</th><th scope="col">SUBSCRIPTION STATUS</th><th scope="col">ACCOUNT</th>
    </tr></thead>
    <tbody>{result.customers.map(row=><tr key={row.email}>
     <td><strong>{row.email}</strong><small>{row.country} · {row.role}</small></td>
-    <td>{row.plan}</td><td>{row.status}</td>
+    <td>{row.plan}</td><td>{row.status}</td><td><Link className="admin-panel-footer-link" href={"/admin/users/"+row.id} aria-label={"Manage "+row.email}>Manage</Link></td>
    </tr>)}</tbody></table>
   </div>}
   {result&&result.total===0&&<p className="admin-data-caveat">No matching registered customers were found.</p>}
