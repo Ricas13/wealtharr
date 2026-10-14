@@ -38,5 +38,5 @@ jobs:
                               form=cell.find("x:f",ns)
                               val=cell.find("x:v",ns)
                               if form is not None or i in (1,2,56):
-                                  print(addr,"FORMULA",form.text or "", "cached", val.text if val is not None else "")
+                                  print(addr,"FORMULA",(form.text if form is not None else "") or "", "cached", val.text if val is not None else "")
           PY
