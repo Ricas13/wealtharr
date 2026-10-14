@@ -287,12 +287,12 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&key!=="hfea"&&p.key!=="hfea")).toEqual(PRE_REFACTOR_PROFILES.filter(p=>p.key!=="merriman-ultimate"&&key!=="hfea"&&p.key!=="hfea"));
+    expect(RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&p.key!=="hfea")).toEqual(PRE_REFACTOR_PROFILES.filter(p=>p.key!=="merriman-ultimate"&&p.key!=="hfea"));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
     expect(Object.keys(ENGINE_AND_CONFIG)).toEqual(RESEARCH_STRATEGIES.map(p=>p.key));
-    for(const profile of RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&key!=="hfea"&&p.key!=="hfea")){
+    for(const profile of RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&p.key!=="hfea")){
       const pin=ENGINE_AND_CONFIG[profile.key];
       expect(profile.engine,profile.key).toBe(pin.engine);
       if(pin.config===undefined)expect(profile.config,profile.key).toBeUndefined();
