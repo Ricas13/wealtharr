@@ -147,3 +147,11 @@ Use independently computed expected values for Example A Q1–Q2 and Example B Q
 
 ## Sign-off
 Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______
+
+
+## Material live dispute found 2026-10-14 — defensive price benchmark
+- March 30 2026 r/KellyLetter participants explicitly quote a **TQQQ** quarterly closing trigger (April 2 2026 TQQQ threshold $36.90, next two sells skipped): https://www.reddit.com/r/KellyLetter/comments/1s8473h/30_down_rule_price_point/ . The price is a dated signal, **not** a reusable live threshold.
+- Jason Kelly's **2020** primary article describes the *SPY* 8-quarter-close reference and says that 6Sig/9Sig then skipped **one** sell, not four: https://jasonkelly.com/2020/04/the-30-down-rule/ . Jason's **2023** primary article confirms 9Sig by then skipped **two** sell signals and reset to 60/40 afterward: https://jasonkelly.com/2023/02/tqqq-and-volatility-decay/ . Neither establishes the benchmark underlying **2026** subscriber calculations by itself.
+- BestFolio's independently published **Oct 13 2026** methodology update *claims* 6Sig/9Sig use **SPY**, and acknowledges that its model used the plan ETF previously: https://bestfolio.app/changelog . This directly conflicts with community reports about 2026 subscriber TQQQ-trigger prices. A third-party platform is not authoritative for Jason Kelly. Version/date/source evidence must resolve this before activation.
+- Jan 2026 r/KellyLetter commenters describe base reset to 60/40 **after two skipped sells, at the next qualifying sell**, with buys between skips not resetting the count: https://www.reddit.com/r/KellyLetter/comments/1q7e2v9/query_on_30_down_rule/ . This is stronger than a blanket rule to reset immediately when protection expires but is still community testimony.
+- Forum participants note Kelly Letter quarter boundaries need not equal calendar quarter ends; June 26 2026 is identified as a subscriber Q2 close, not June 30: https://www.reddit.com/r/KellyLetter/comments/1vh8b1z/9sig_and_done/ . A normal calendar-quarter scheduler is **not** a verified replacement for the letter's trading schedule.
