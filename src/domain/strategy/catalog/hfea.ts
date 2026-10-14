@@ -20,8 +20,9 @@ export const plugin:StrategyPlugin={
     name:"HFEA",family:"FIXED_ALLOCATION",description:"Leveraged fixed-allocation strategy",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"DRAFT",realignsResearchOnlyDefinition:false
+    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false
   },
   specCard:"docs/strategy-specs/group-2-hfea.md",
-  goldenTests:"tests/strategy-group-2-golden.test.ts"
+  goldenTests:"tests/strategy-group-2-golden.test.ts",
+releaseStatus:"COMPLETE"
 };
