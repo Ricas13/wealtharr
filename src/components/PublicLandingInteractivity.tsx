@@ -2,6 +2,7 @@
 
 import {useEffect,useRef,useState} from "react";
 import Link from "next/link";
+import {formatMinorCurrency} from "@/domain/currency-money";
 
 export type PublicStrategyCard={
   key:string;name:string;description:string;category:string;
@@ -13,7 +14,9 @@ export type PublicPlanCard={
   features:string[];channels:string[];highlights:string[];
 };
 function priceLabel(amount:number,currency:string){
-  return new Intl.NumberFormat("en-GB",{style:"currency",currency,minimumFractionDigits:amount===0?0:2}).format(amount/100);
+  // The Free card deliberately reads £0 rather than £0.00.
+  if(amount===0)return new Intl.NumberFormat("en-GB",{style:"currency",currency,minimumFractionDigits:0,maximumFractionDigits:0}).format(0);
+  return formatMinorCurrency(amount,currency);
 }
 export function PublicStrategyRail({cards}:{cards:PublicStrategyCard[]}){
   const rail=useRef<HTMLDivElement>(null);

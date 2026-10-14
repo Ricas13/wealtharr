@@ -43,8 +43,8 @@ export default async function AdminSecurityPage(){
   <section className="admin-design-panel admin-audit-panel" aria-labelledby="admin-audit-title">
    <header className="admin-design-panel-header"><div><h2 id="admin-audit-title">Latest audit events</h2><p>Recorded administrative and financial changes · most recent 15</p></div><ScrollText size={19} aria-hidden="true"/></header>
    {audit.length?<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Recent audit events"><table className="admin-studio-table">
-    <thead><tr><th scope="col">Action</th><th scope="col">Record type</th><th scope="col">When (server time)</th></tr></thead>
-    <tbody>{audit.map((row,i)=><tr key={i}><td><strong>{String(row.action)}</strong></td><td>{String(row.entity_type)}</td><td>{new Date(row.occurred_at).toLocaleString("en-GB")}</td></tr>)}</tbody>
+    <thead><tr><th scope="col">Action</th><th scope="col">Record type</th><th scope="col">When (UTC)</th></tr></thead>
+    <tbody>{audit.map((row,i)=><tr key={i}><td><strong>{String(row.action)}</strong></td><td>{String(row.entity_type)}</td><td>{new Date(row.occurred_at).toLocaleString("en-GB",{timeZone:"UTC"})+" UTC"}</td></tr>)}</tbody>
    </table></div>:<p className="admin-setup-help">No audit events have been recorded yet.</p>}
    <p className="admin-data-caveat">This view intentionally excludes credentials, detailed customer holdings and audit metadata containing sensitive values.</p>
    <Link href="/admin/security/audit" className="admin-panel-footer-link">Browse full audit history <ArrowRight size={15}/></Link>

@@ -7,7 +7,7 @@ export type SetupSignal = {
   status: "configured" | "needs-setup" | "requires-verification";
 };
 export type MasterSetupInputs = {
-  publicUrl: boolean; brand: boolean; mfa: boolean; stripe: boolean;
+  publicUrl: boolean; brand: boolean; mfa: boolean; turnstileConfigured: boolean; stripe: boolean;
   email: boolean; market: boolean; notifications: boolean;
   indexing: boolean; plans: number; publishedStrategies: number;
   approvedMappings: number; lastCronAt: Date | null;
@@ -23,6 +23,8 @@ export function masterSetupSignals(input: MasterSetupInputs): SetupSignal[] {
       detail:"Set the public URL, product name and indexing preference.",href:"/admin/settings#settings-general"},
     {id:"security",title:"Administrator security",status:status(input.mfa),
       detail:"Require two-step sign-in and keep bootstrap secrets in Docker Compose.",href:"/admin/settings#settings-security"},
+    {id:"turnstile",title:"Cloudflare Turnstile protection",status:input.turnstileConfigured?"requires-verification":"needs-setup",
+      detail:"Save both site and secret keys in Admin Settings, enable protection, and complete a real live challenge on the public hostname. Saved keys and an enabled toggle do not verify an actual challenge.",href:"/admin/settings#settings-cloudflare-turnstile"},
     {id:"stripe",title:"Stripe payments",status:status(input.stripe),
       detail:"Configure encrypted keys and webhook secret, then test a real checkout in staging.",href:"/admin/settings#settings-billing-stripe-"},
     {id:"email",title:"Transactional email",status:status(input.email),

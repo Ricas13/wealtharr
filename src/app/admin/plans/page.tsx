@@ -6,11 +6,12 @@ import {StripePriceSync} from "@/components/StripePriceSync";
 import {SimplePlanEditor} from "@/components/SimplePlanEditor";
 import {CreditCard,UsersRound,Layers3} from "lucide-react";
 import {subscriptionWatchReason} from "@/domain/admin-subscription-watch";
+import {invoiceAmountMinor} from "@/domain/admin-stripe-invoices";
 
 export const dynamic="force-dynamic";
 export default async function PlansAdmin(){
  await requireAdminPage();
- const [rows,definitions,prices,active,lifecycle,webhookFailures,webhookStates,watchSummary,watchRows]=await Promise.all([
+ const [rows,definitions,prices,active,lifecycle,webhookFailures,webhookStates,watchSummary,watchRows,comparisonSummary]=await Promise.all([
   sql.unsafe("SELECT slug,display_name,monthly_price_minor,annual_price_minor,annual_discount_bps,billing_currency,supported_billing_currencies,max_active_strategies,trial_days,visible,archived,entitlements,description,homepage_highlights,available_strategy_keys,sort_order,stripe_monthly_price_id,stripe_annual_price_id FROM plans ORDER BY sort_order"),
   sql.unsafe("SELECT key,name,enabled FROM strategy_definitions ORDER BY name"),
   sql.unsafe("SELECT p.slug,pp.currency,pp.cadence,pp.amount_minor,pp.stripe_price_id,pp.apple_product_id,pp.google_product_id,pp.active FROM plan_prices pp JOIN plans p ON p.id=pp.plan_id ORDER BY p.sort_order,pp.currency,pp.cadence"),
@@ -19,7 +20,8 @@ export default async function PlansAdmin(){
   sql.unsafe("SELECT count(*)::int AS c FROM billing_webhook_events WHERE status='FAILED' AND created_at>=now()-interval '24 hours'"),
   sql.unsafe("SELECT status,count(*)::int AS c,max(created_at) AS last_received FROM billing_webhook_events WHERE created_at>=now()-interval '24 hours' GROUP BY status ORDER BY status"),
   sql.unsafe("SELECT count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING') AND s.cancel_at_period_end=true)::int AS ending, count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING') AND s.current_period_end<now())::int AS overdue, count(*) FILTER (WHERE s.status IN ('PAST_DUE','UNPAID'))::int AS payment_attention, count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING','PAST_DUE','UNPAID') AND s.billing_check_error IS NOT NULL)::int AS sync_errors, count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING') AND s.cancel_at_period_end=false AND s.current_period_end>=now() AND s.current_period_end<now()+interval '7 days')::int AS approaching FROM subscriptions s JOIN users u ON u.id=s.user_id WHERE u.deleted_at IS NULL"),
-  sql.unsafe("SELECT u.id AS user_id,u.email,p.display_name AS plan,s.status,s.source,s.cancel_at_period_end,s.current_period_end,(s.billing_check_error IS NOT NULL) AS sync_error FROM subscriptions s JOIN users u ON u.id=s.user_id JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL AND (s.status IN ('PAST_DUE','UNPAID') OR (s.status IN ('ACTIVE','TRIALING') AND (s.billing_check_error IS NOT NULL OR s.cancel_at_period_end=true OR s.current_period_end<now()))) ORDER BY CASE WHEN s.billing_check_error IS NOT NULL THEN 0 WHEN s.status IN ('PAST_DUE','UNPAID') THEN 1 WHEN s.current_period_end<now() THEN 2 ELSE 3 END,s.current_period_end ASC NULLS LAST LIMIT 50")
+  sql.unsafe("SELECT u.id AS user_id,u.email,p.display_name AS plan,s.status,s.source,s.cancel_at_period_end,s.current_period_end,(s.billing_check_error IS NOT NULL) AS sync_error FROM subscriptions s JOIN users u ON u.id=s.user_id JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL AND (s.status IN ('PAST_DUE','UNPAID') OR (s.status IN ('ACTIVE','TRIALING') AND (s.billing_check_error IS NOT NULL OR s.cancel_at_period_end=true OR s.current_period_end<now()))) ORDER BY CASE WHEN s.billing_check_error IS NOT NULL THEN 0 WHEN s.status IN ('PAST_DUE','UNPAID') THEN 1 WHEN s.current_period_end<now() THEN 2 ELSE 3 END,s.current_period_end ASC NULLS LAST LIMIT 50"),
+  sql.unsafe("SELECT metadata->>'outcome' AS outcome,count(*)::int AS c,max(occurred_at) AS latest FROM audit_events WHERE action='billing.subscription-compared' AND occurred_at>=now()-interval '7 days' AND metadata->>'outcome' IN ('MATCH','REVIEW','UNVERIFIED','PROVIDER_UNAVAILABLE','CHECK_UNAVAILABLE') GROUP BY outcome ORDER BY outcome")
  ]);
  const summary=[
   {label:"Published plans",count:rows.filter(p=>p.visible&&!p.archived).length,Icon:Layers3,detail:"Visible and not archived"},
@@ -47,6 +49,22 @@ export default async function PlansAdmin(){
     <p className="admin-data-caveat">No Stripe webhook events recorded in the last 24 hours. This does not prove webhook delivery is working.</p>}
    <p className="admin-data-caveat">A failed webhook may mean a plan change was not applied. Check Operations for recorded failures and use Stripe for payment verification.</p>
    <a href="/admin/operations" className="admin-panel-footer-link">Inspect billing delivery and operational alerts →</a>
+  </section>
+  <section className="admin-design-panel" aria-labelledby="commerce-verification-summary">
+   <header className="admin-design-panel-header"><div>
+    <h2 id="commerce-verification-summary">Stripe consistency checks · last 7 days</h2>
+    <p>Admin-triggered customer checks only. This is not a full subscriber audit, payment ledger or provider delivery monitor.</p>
+   </div></header>
+   {comparisonSummary.length?<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Recent Stripe consistency check outcomes">
+    <table className="admin-studio-table"><thead><tr>
+     <th scope="col">OUTCOME</th><th scope="col">CHECKS</th><th scope="col">LATEST CHECK (UTC)</th>
+    </tr></thead><tbody>{comparisonSummary.map(row=><tr key={String(row.outcome)}>
+     <td><strong>{String(row.outcome)}</strong></td><td>{Number(row.c)}</td>
+     <td>{row.latest?new Date(row.latest).toLocaleString("en-GB",{timeZone:"UTC"})+" UTC":"—"}</td>
+    </tr>)}</tbody></table></div>:
+    <p className="admin-data-caveat">No customer-specific Stripe comparison attempts recorded in the last seven days.</p>}
+   <p className="admin-data-caveat">A MATCH means recorded fields were consistent at that moment, not that any invoice was paid. REVIEW and UNVERIFIED require provider investigation. Counts reflect operator-triggered attempts, not unique customers.</p>
+   <Link href="/admin/security/audit?action=billing.subscription-compared&days=7&page=1" className="admin-panel-footer-link">Inspect comparison audit events →</Link>
   </section>
   <section className="admin-design-panel" aria-labelledby="commerce-subscription-watch">
    <header className="admin-design-panel-header"><div><h2 id="commerce-subscription-watch">Subscription watch</h2>
@@ -77,8 +95,8 @@ export default async function PlansAdmin(){
    <table className="admin-studio-table"><thead><tr><th scope="col">PLAN</th><th scope="col">MONTHLY</th><th scope="col">ANNUAL</th><th scope="col">STRATEGIES</th><th scope="col">VISIBILITY</th></tr></thead>
     <tbody>{rows.map(p=><tr key={String(p.slug)}>
       <td><strong>{String(p.display_name)}</strong><small>{String(p.description??"")}</small></td>
-      <td>{String(p.billing_currency)} {(Number(p.monthly_price_minor)/100).toFixed(2)}</td>
-      <td>{String(p.billing_currency)} {(Number(p.annual_price_minor)/100).toFixed(2)}<small>{(Number(p.annual_discount_bps)/100).toFixed(2)}% configured discount</small></td>
+      <td>{invoiceAmountMinor(Number(p.monthly_price_minor),String(p.billing_currency))}</td>
+      <td>{invoiceAmountMinor(Number(p.annual_price_minor),String(p.billing_currency))}<small>{(Number(p.annual_discount_bps)/100).toFixed(2)}% configured discount</small></td>
       <td>{p.max_active_strategies??"Unlimited"}</td>
       <td>{p.visible&&!p.archived?<span className="admin-studio-release-state is-live">Visible</span>:<span className="admin-studio-release-state is-review">Hidden</span>}</td>
     </tr>)}</tbody></table></div>
@@ -90,7 +108,7 @@ export default async function PlansAdmin(){
    <table className="admin-studio-table"><thead><tr><th>PLAN</th><th>CURRENCY</th><th>CADENCE</th><th>AMOUNT</th><th>PROVIDER PRICE</th><th>APPS</th><th>SETUP</th></tr></thead>
     <tbody>{prices.map(p=><tr key={String(p.slug)+String(p.currency)+String(p.cadence)}>
      <td><strong>{String(p.slug)}</strong><small>{p.active?"Active":"Inactive"}</small></td>
-     <td>{String(p.currency)}</td><td>{String(p.cadence)}</td><td>{(Number(p.amount_minor)/100).toFixed(2)}</td>
+     <td>{String(p.currency)}</td><td>{String(p.cadence)}</td><td>{invoiceAmountMinor(Number(p.amount_minor),String(p.currency))}</td>
      <td>{String(p.stripe_price_id??"Not configured")}</td>
      <td><small>Apple: {String(p.apple_product_id??"—")}</small><small>Google: {String(p.google_product_id??"—")}</small></td>
      <td><StripePriceSync slug={String(p.slug)} currency={String(p.currency)} cadence={String(p.cadence)} active={Boolean(p.active)} amountMinor={Number(p.amount_minor)}/></td>
