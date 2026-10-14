@@ -17,13 +17,14 @@ describe("binary production strategy release policy",()=>{
     expect(()=>assertReleaseMethodComplete("three-fund")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     expect(()=>assertReleaseMethodComplete("unknown-strategy")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
-  it("accepts only the complete Global 60/40 (GBP) method on a live host, and still fails closed for the rest",()=>{
+  it("accepts the complete Global 60/40 and 80/20 methods on a live host, and still fails closed for the rest",()=>{
     vi.stubEnv("NODE_ENV","production");
     vi.stubEnv("CI","false");
     vi.stubEnv("GITHUB_ACTIONS","false");
     vi.stubEnv("DATABASE_URL","postgresql://production@private-db:5432/wealtharr");
     expect(()=>assertReleaseMethodComplete("60-40")).not.toThrow();
-    for(const key of ["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","80-20",
+    expect(()=>assertReleaseMethodComplete("80-20")).not.toThrow();
+    for(const key of ["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund",
       "buffett-90-10","coffeehouse","core-four","swensen","dual-momentum","paa","vaa","3sig","6sig","nope"])
       expect(()=>assertReleaseMethodComplete(key),key).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
