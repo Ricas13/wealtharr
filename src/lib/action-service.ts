@@ -8,6 +8,7 @@ import type { Sql } from "postgres";
 import { assessCorporateActions, corporateActionMessage } from "@/lib/corporate-action-guard";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
+import {twoFundsAllocations} from "@/domain/strategy/two-funds-engine";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
@@ -510,10 +511,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // EXECUTION account's cash and holdings. It returns the next order, a residue HOLD (every leg within half a
   // unit of target) or a DATA_REQUIRED that names why nothing can be traded.
   let override:SizingOverride|undefined;
-  if(calculationEngineKey==="FIXED_ALLOCATION"&&dataStatus==="CURRENT"){
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
     const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
     const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
-    const allocations=effectiveAllocations(config,settings);
+    const allocations=calculationEngineKey==="TWO_FUNDS_MODERATE"
+      ?twoFundsAllocations(config,new Date()).map(a=>({...a}))
+      :effectiveAllocations(config,settings);
     if(needsTrade&&allocations){
       const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
       const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});
