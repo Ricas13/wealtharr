@@ -72,9 +72,11 @@ untradable. Code: `src/domain/strategy/execution-residue.ts` (`sizeNextTrade`), 
 (a fee is never burnt on a trade worth less than ten fees). The minimum trade size and the cash buffer are
 *preferences*, not part of the unit. `0.005` (the smallest order) assumes a 2-decimal currency.
 
-**At target (band).** `|deviation| <= threshold x total`, or `|deviation| <= u/2 + max(legs x flat fee, 0.1 x u)`
-(inclusive). The `0.1 x u` term is hysteresis so a price move between fills cannot turn a just-traded leg into a
-trade in the other direction; `legs x fee` absorbs the fee-driven drift of the targets.
+**At target (band).** `|deviation| <= threshold x total`, or
+`|deviation| <= max(u/2 + max(legs x flat fee, 0.1 x u), 0.0025 x total)` (inclusive). The `0.1 x u` term is
+hysteresis so a price move between fills cannot turn a just-traded leg into a trade in the other direction;
+`legs x fee` absorbs the fee-driven drift of the targets; `0.25% of the portfolio` stops another leg's small price
+moves from starting a sale/purchase cycle (larger moves are handled by the funding-sale rule below).
 
 **Sizing, one trade per recalculation.** Every leg outside its band is traded to the nearest unit (ties round
 down, at least one unit):
@@ -86,21 +88,32 @@ down, at least one unit):
    nearest affordable count is used.
 3. Funding sale: a held overweight leg (inside its band or not) with at least one unit, whose one-unit sale leaves
    it within its band and frees enough cash, *in the same account as the buyer*, for one unit of an underweight leg
-   that is at least one unit short.
+   that is at least one unit short, and only if the worst leg's distance from target after the sale and the
+   purchases it funds is not larger than before (a sale that would make another leg the worst is not made).
 
 **Decision order** (for a review the engine says has to trade):
 1. an unpriced leg: `DATA_REQUIRED` (UNPRICED);
 2. every leg within the threshold: HOLD;
-3. every leg within the threshold or its band: HOLD ("within half a unit");
-4. a whole-share leg outside its band whose unit exceeds its target: TOO_SMALL (minimum investable shown);
+3. a whole-share leg outside the threshold whose unit exceeds its target and which holds less than 50% of that
+   target (including nothing): TOO_SMALL (unit cost and minimum investable shown). A leg holding one unit worth a
+   little more than its target is a balanced portfolio and stays a HOLD;
+4. every leg within the threshold or its band: HOLD ("within half a unit");
+   (a leg outside its band whose unit exceeds its target, otherwise: TOO_SMALL);
 5. a permitted nearest-unit trade, or funding sale: BUY / SELL;
 6. a preference that blocks (selling disabled / cash buffer / minimum trade size, each alone then together,
    evaluated on the execution account, including the funding sale): `DATA_REQUIRED` naming it;
 7. whole shares, every underweight leg less than one unit short, no unit affordable and nothing outside its band to
    sell: HOLD ("within one unit"): "Every holding is within one trading unit of its target. Your cash is less than
    the cost of one more unit of X; add about Z to buy it, or keep this allocation";
-8. cash needed (CASH_SHORTFALL, with the amount) or nothing to sell (NOTHING_TO_SELL, only when no unit of an
+8. fractional mode only: every leg inside its band except underweight gaps that the in-band overweight excess
+   fully covers (selling that excess would burn fees below the band): HOLD ("within half a unit");
+9. cash needed (CASH_SHORTFALL, with the amount) or nothing to sell (NOTHING_TO_SELL, only when no unit of an
    overweight leg is held).
+
+**Drift bounds (whole shares).** A leg can end up to about `0.6 x unit price + legs x fee` from target and still be
+"at target", i.e. up to `0.6 x price / portfolio value` of the portfolio per leg: a 500 CSPX share on a 2,000
+portfolio can leave 15%. The HOLD message states the residual drift as a percentage of the portfolio and the cash
+that would close it; fractional shares remove the effect.
 
 **Termination.** An overweight leg is only sold and an underweight leg only bought; a trade to the nearest unit
 leaves the leg within `u/2`, inside its band, so it is not traded again. A funding sale leaves its leg inside its

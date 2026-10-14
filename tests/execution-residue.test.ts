@@ -588,12 +588,14 @@ describe("one-unit exception and small details", () => {
   });
 
   it("fractional mode never uses the one-unit exception", () => {
-    // The headline end state in fractional mode trades the exact gap: EQUITY 23.70 over is sold first.
+    // The headline end state in fractional mode: EQUITY 23.70 over is inside the 0.25%-of-portfolio band (25.00),
+    // BONDS 38.50 under is outside it and is bought with the 14.80 of cash.
     const out = size(two("6023.70", "3961.50"), "14.80", "0", { fractionalShares: true });
     expect(out.kind).toBe("TRADE");
     if (out.kind === "TRADE") {
-      expect(out.trade.side).toBe("SELL");
-      expect(out.trade.amount.toFixed(2)).toBe("23.70");
+      expect(out.trade.side).toBe("BUY");
+      expect(out.trade.exposure).toBe("BONDS");
+      expect(out.trade.amount.toFixed(2)).toBe("14.80");
     }
   });
 
@@ -628,6 +630,92 @@ describe("one-unit exception and small details", () => {
     sizing[0] = { ...sizing[0], price: null };
     const out = sizeNextTrade({ legs: sizing, total, threshold: new Decimal("0.05"), constraints: constraintsOf({}) });
     expect(out.kind).toBe("UNPRICED");
+  });
+
+  it("N1: an unheld whole-share leg whose unit exceeds its target is TOO_SMALL, not 'within half a unit'", () => {
+    // 50/50 total 1000: A costs 900 and none is held (target 500), B 1 x 500, cash 500, threshold 5%.
+    // A: 0 < 50% of 500, 900 > 500 -> TOO_SMALL, unit 900, minimum investable 900 x 1000 / 500 = 1800.
+    const a: Spec[] = [
+      { exposure: "A", weight: "0.5", value: "0", price: "900" },
+      { exposure: "B", weight: "0.5", value: "500", price: "500" }
+    ];
+    const first = size(a, "500", "0.05");
+    expect(first.kind).toBe("TOO_SMALL");
+    if (first.kind === "TOO_SMALL") {
+      expect(first.exposure).toBe("A");
+      expect(first.unitPrice.toFixed(2)).toBe("900.00");
+      expect(first.minimumInvestable.toFixed(2)).toBe("1800.00");
+      expect(openOutcomeNote(first, "GBP").instruction).toContain("one unit costs 900.00 GBP");
+    }
+    // Golden-butterfly-like: total 2000, a 20% leg (target 400) costs 700 and nothing is held; Y holds its 1600.
+    const b: Spec[] = [
+      { exposure: "X", weight: "0.2", value: "0", price: "700" },
+      { exposure: "Y", weight: "0.8", value: "1600", price: "100" }
+    ];
+    const second = size(b, "400", "0.05");
+    expect(second.kind).toBe("TOO_SMALL");
+    if (second.kind === "TOO_SMALL") expect(second.minimumInvestable.toFixed(2)).toBe("3500.00");
+  });
+
+  it("N3: a funding sale that would worsen the worst leg is not made", () => {
+    // total 10000, cash 400: A and B 2400 @600 (600 under each), D 4800 @1900 (2 held, 800 over), threshold 5%.
+    // Selling one D share (1900) leaves D 1100 under and buying A leaves B 600 under: worst 800 -> 1100.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.3", value: "2400", price: "600" },
+      { exposure: "B", weight: "0.3", value: "2400", price: "600" },
+      { exposure: "D", weight: "0.4", value: "4800", price: "1900", held: "2" }
+    ];
+    const out = size(specs, "400", "0.05");
+    expect(out.kind).toBe("CASH_SHORTFALL");
+    if (out.kind === "CASH_SHORTFALL") {
+      expect(out.exposure).toBe("A");
+      expect(out.needed.toFixed(2)).toBe("600.00");
+    }
+  });
+
+  it("N2: fractional with a fee and several legs: in-band overweight covers the underweight gap, HOLD", () => {
+    // 4 x 25% at 10000, cash 0: A, B, C 33 / 33 / 34 over, D 100 under; fee 5, unit 50, band 45 (> 0.25% = 25).
+    const mk = (exposure: string, current: number, held: number): SizingLeg => ({
+      exposure, current: new Decimal(current), target: new Decimal(2500), price: new Decimal(100), buyCash: new Decimal(0), heldUnits: new Decimal(held)
+    });
+    const out = sizeNextTrade({
+      legs: [mk("A", 2533, 25), mk("B", 2533, 25), mk("C", 2534, 25), mk("D", 2400, 24)],
+      total: new Decimal(10000), threshold: new Decimal(0),
+      constraints: constraintsOf({ fractionalShares: true, flatFee: "5" })
+    });
+    expect(out.kind).toBe("HOLD");
+    if (out.kind === "HOLD") expect(out.reason).toBe("WITHIN_HALF_UNIT");
+  });
+
+  it("N4: another leg's +/-2% price moves between reviews do not start a sale/purchase cycle", () => {
+    // 55/45, E at 100 / 102 alternating, B at 10, whole shares, threshold 0, cash 10000.
+    // 1. BUY E 55 = 5500. 2. E 102: E 5610, total 10110; B target 4549.50: floor purchase 450 units = 4500.
+    // 3. E 100: on target: HOLD. 4. E 102 again: E 49.50 over (inside 61.20), B 49.50 under (outside 25.28), cash
+    //    0; selling one E share (102) to buy 5 B would leave E 52.50 off target (> 49.50): not allowed. No trade.
+    let unitsE = new Decimal(0);
+    let unitsB = new Decimal(0);
+    let cash = new Decimal(10000);
+    const trades: Array<[string, string, string]> = [];
+    const kinds: string[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const pE = new Decimal(i % 2 === 0 ? "100" : "102");
+      const specs: Spec[] = [
+        { exposure: "E", weight: "0.55", value: unitsE.mul(pE).toString(), price: pE.toString(), held: unitsE.toString() },
+        { exposure: "B", weight: "0.45", value: unitsB.mul(10).toString(), price: "10", held: unitsB.toString() }
+      ];
+      const out = size(specs, cash.toString(), "0");
+      kinds.push(out.kind);
+      if (out.kind !== "TRADE") continue;
+      const t = out.trade;
+      const signed = t.side === "BUY" ? t.amount : t.amount.neg();
+      const units = t.amount.div(t.exposure === "E" ? pE : new Decimal(10));
+      if (t.exposure === "E") unitsE = unitsE.plus(t.side === "BUY" ? units : units.neg());
+      else unitsB = unitsB.plus(t.side === "BUY" ? units : units.neg());
+      cash = cash.minus(signed);
+      trades.push([t.side, t.exposure, t.amount.toFixed(2)]);
+    }
+    expect(trades).toEqual([["BUY", "E", "5500.00"], ["BUY", "B", "4500.00"]]);
+    expect(kinds.slice(2)).toEqual(["HOLD", "CASH_SHORTFALL", "HOLD", "CASH_SHORTFALL", "HOLD", "CASH_SHORTFALL"]);
   });
 
   it("never plans an order that rounds to 0.00", () => {

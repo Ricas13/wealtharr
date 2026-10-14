@@ -93,7 +93,7 @@ export type SizingOutcome =
     }
   | { kind: "TRADE"; trade: SizedTrade }
   | { kind: "UNPRICED"; exposures: string[] }
-  | { kind: "TOO_SMALL"; exposure: string; minimumInvestable: Decimal }
+  | { kind: "TOO_SMALL"; exposure: string; minimumInvestable: Decimal; unitPrice: Decimal }
   | { kind: "PREFERENCE_BLOCKED"; blockers: PreferenceBlocker[]; trade: SizedTrade }
   | { kind: "NOTHING_TO_SELL"; exposure: string }
   | { kind: "CASH_SHORTFALL"; exposure: string; needed: Decimal; spendable: Decimal };
@@ -102,6 +102,9 @@ const UNIT = SMALLEST_TRADE_UNIT;
 const ZERO = new Decimal(0);
 const FRACTIONAL_UNIT = new Decimal("0.01");
 const TENTH = new Decimal("0.1");
+const HALF = new Decimal("0.5");
+/** Fraction of the portfolio below which a leg is never traded (documented in docs/strategy-engines.md). */
+const PORTFOLIO_BAND = new Decimal("0.0025");
 
 function money(v: Decimal) {
   return v.toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toFixed(2);
@@ -208,9 +211,22 @@ function selectTrade(rows: Row[], c: SizingConstraints, floorBuys: boolean): Siz
       const price = priced(s.leg);
       if (!price || s.leg.heldUnits.floor().lt(1) || price.lt(minAmount)) continue;
       if (price.minus(s.deviation).abs().gt(s.band)) continue;
+      // The planned sequence (this sale, then the nearest affordable units of the funded leg) must not leave
+      // the worst leg further from target than it is now.
+      const worstBefore = rows.reduce((max, r) => Decimal.max(max, r.deviation), ZERO);
       const funds = needy.some((u) => {
         const sameAccount = !u.leg.buyAccountId || !s.leg.sellAccountId || u.leg.buyAccountId === s.leg.sellAccountId;
-        return sameAccount && spendableOf(u, c).plus(price).minus(c.flatFee).gte(priced(u.leg) as Decimal);
+        const uPrice = priced(u.leg) as Decimal;
+        const cash = spendableOf(u, c).plus(price).minus(c.flatFee);
+        if (!sameAccount || cash.lt(uPrice)) return false;
+        const units = Decimal.min(Decimal.max(1, roundHalfDown(u.deviation.div(uPrice))), cash.div(uPrice).floor());
+        const worstAfter = rows.reduce((max, r) => {
+          let current = r.leg.current;
+          if (r === s) current = current.minus(price);
+          if (r === u) current = current.plus(units.mul(uPrice));
+          return Decimal.max(max, r.leg.target.minus(current).abs());
+        }, ZERO);
+        return worstAfter.lte(worstBefore);
       });
       if (funds) return { side: "SELL", exposure: s.leg.exposure, amount: price, units: new Decimal(1), gap: s.deviation, unit: s.unit };
     }
@@ -252,20 +268,32 @@ export function sizeNextTrade(input: {
     const deviation = delta.abs();
     const price = priced(leg);
     const unit = c.fractionalShares || !price ? Decimal.max(FRACTIONAL_UNIT, c.flatFee.mul(10)) : price;
-    const band = unit.div(2).plus(Decimal.max(feeHeadroom, unit.mul(TENTH)));
+    // Band: half a unit, plus the larger of the fee headroom and 10% of a unit (hysteresis), and never less than
+    // 0.25% of the portfolio, so price moves of other legs between fills cannot start a sale/purchase cycle.
+    const band = Decimal.max(unit.div(2).plus(Decimal.max(feeHeadroom, unit.mul(TENTH))), total.mul(PORTFOLIO_BAND));
     return { leg, delta, deviation, unit, band, withinThreshold: deviation.lte(tolerance) || deviation.lt(UNIT), withinBand: deviation.lte(band) };
   });
   const residuals: LegResidual[] = rows.map((r) => ({ exposure: r.leg.exposure, delta: r.delta, unit: r.unit }));
 
   if (rows.every((r) => r.withinThreshold)) return { kind: "HOLD", reason: "WITHIN_THRESHOLD", residuals, total };
+  // A whole-share leg that is outside its threshold, whose unit costs more than its whole target and that holds
+  // less than half of that target (including nothing at all) is not "within half a unit": it was never funded.
+  // (A leg holding one unit worth slightly more than its target is a balanced portfolio, not this case.)
+  const tooSmall = (r: Row) =>
+    !c.fractionalShares && !r.withinThreshold && r.leg.target.gt(0) && r.leg.price !== null && r.leg.price.gt(r.leg.target);
+  const unfunded = rows.find((r) => tooSmall(r) && r.leg.current.lt(r.leg.target.mul(HALF)));
+  if (unfunded) {
+    const price = unfunded.leg.price as Decimal;
+    return { kind: "TOO_SMALL", exposure: unfunded.leg.exposure, minimumInvestable: price.mul(total).div(unfunded.leg.target), unitPrice: price };
+  }
+
   if (rows.every((r) => r.withinThreshold || r.withinBand)) return { kind: "HOLD", reason: "WITHIN_HALF_UNIT", residuals, total };
 
   // A leg that is outside its band and whose unit costs more than its whole target cannot be held.
-  if (!c.fractionalShares) {
-    const small = rows.find((r) => !r.withinThreshold && !r.withinBand && r.leg.target.gt(0) && r.leg.price && r.leg.price.gt(r.leg.target));
-    if (small) {
-      return { kind: "TOO_SMALL", exposure: small.leg.exposure, minimumInvestable: (small.leg.price as Decimal).mul(total).div(small.leg.target) };
-    }
+  const small = rows.find((r) => tooSmall(r) && !r.withinBand);
+  if (small) {
+    const price = small.leg.price as Decimal;
+    return { kind: "TOO_SMALL", exposure: small.leg.exposure, minimumInvestable: price.mul(total).div(small.leg.target), unitPrice: price };
   }
 
   const trade = pickTrade(rows, c);
@@ -306,6 +334,14 @@ export function sizeNextTrade(input: {
         shortfall: { exposure: first.leg.exposure, unitPrice: priced(first.leg) as Decimal, spendable: spendableOf(first, c) }
       };
     }
+  }
+
+  // Fractional: every leg is inside its band except underweight gaps that the (in-band, fee-protected)
+  // overweight excess fully covers. Trading the excess would burn fees for a drift below the band.
+  if (c.fractionalShares && under.length && over.length === 0) {
+    const gaps = under.reduce((sum, r) => sum.plus(r.deviation), ZERO);
+    const excess = rows.filter((r) => r.delta.lt(0)).reduce((sum, r) => sum.plus(r.deviation), ZERO);
+    if (gaps.lte(excess)) return { kind: "HOLD", reason: "WITHIN_HALF_UNIT", residuals, total };
   }
 
   if (under.length) {
@@ -409,7 +445,7 @@ export function openOutcomeNote(outcome: Exclude<SizingOutcome, { kind: "HOLD" }
         rows: [{ label: "Price unavailable", value: outcome.exposures.join(", "), kind: "text" }]
       };
     case "TOO_SMALL": {
-      const text = "Portfolio too small to fund one unit of " + outcome.exposure + " (minimum investable about " + money(outcome.minimumInvestable) + " " + currency + ")";
+      const text = "Portfolio too small to fund one unit of " + outcome.exposure + " (one unit costs " + money(outcome.unitPrice) + " " + currency + "; minimum investable about " + money(outcome.minimumInvestable) + " " + currency + ")";
       return { title: "Portfolio too small", instruction: text + ". Add money or choose a strategy with fewer or cheaper legs.", rows: [{ label: "Portfolio too small", value: text, kind: "text" }] };
     }
     case "PREFERENCE_BLOCKED": {
