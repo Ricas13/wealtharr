@@ -16,7 +16,7 @@ export type TrinitySignal={riskWeights:ReadonlyArray<{exposure:string;weight:str
   ranked:ReadonlyArray<{exposure:string;momentum:string;aboveTrend:boolean}>};
 export function trinityGlobalTrendSignal(series:readonly TrustedHistoricalSeries[], reviewClose:Date):TrinitySignal{
   if(!Number.isFinite(reviewClose.getTime())||series.length!==10||
-    new Set(series.map(s=>s.exposure)).size!==10)throw new Error("TRINITY_UNIVERSE_INCOMPLETE");
+    new Set(series.map(s=>s.exposure)).size!==10||new Set(series.map(s=>s.currency)).size!==1)throw new Error("TRINITY_UNIVERSE_INCOMPLETE");
   const scored=series.map(s=>{
     if(!s.exposure||!s.source||!s.currency||s.points.length<13)throw new Error("TRINITY_HISTORY_INCOMPLETE");
     const sorted=[...s.points].sort((a,b)=>a.at.getTime()-b.at.getTime());
@@ -25,7 +25,7 @@ export function trinityGlobalTrendSignal(series:readonly TrustedHistoricalSeries
       (i>0&&(p.at.getTime()<=sorted[i-1].at.getTime()||
       p.at.getUTCFullYear()===sorted[i-1].at.getUTCFullYear()&&p.at.getUTCMonth()===sorted[i-1].at.getUTCMonth()))))
       throw new Error("TRINITY_HISTORY_INVALID");
-    const end=sorted.at(-1)!;
+    const end=sorted[sorted.length-1];
     // Observations supplied must be consecutive end-of-month total-return snapshots.
     const last12=sorted.slice(-13);
     for(let i=1;i<last12.length;i++){
