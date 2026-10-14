@@ -33,10 +33,10 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
   evaluateMethodCompleteness(plugin,files).checks.filter(c=>!c.ok).map(c=>c.id);
 
 describe("isMethodComplete: the real catalogue",()=>{
-  it("marks exactly the Global 60/40 (GBP) model complete, with and without file evidence",()=>{
+  it("marks the currently source-verified fixed allocation methods complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["60-40"]);
-    expect(complete(realFiles)).toEqual(["60-40"]);
+    expect(complete()).toEqual(["60-40","bernstein-no-brainer","larry-portfolio","pinwheel"]);
+    expect(complete(realFiles)).toEqual(["60-40","bernstein-no-brainer","larry-portfolio","pinwheel"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){
