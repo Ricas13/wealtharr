@@ -22,6 +22,6 @@ export const plugin:StrategyPlugin={
     supportedRegions:[],supportedWrappers:[],
     initialVersion:"DRAFT",realignsResearchOnlyDefinition:false
   },
-  specCard:"docs/strategy-specs/hfea.md",
-  goldenTests:"tests/strategy-reference-golden.test.ts"
+  specCard:"docs/strategy-specs/group-2-hfea.md",
+  goldenTests:"tests/strategy-group-2-golden.test.ts"
 };
