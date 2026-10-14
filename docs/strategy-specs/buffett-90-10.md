@@ -9,3 +9,5 @@ Code profile `buffett-90-10`: fixed 90/10; **annual calendar rebalance is a Weal
 Open: independent source/rebalancing review, goldens, trading line eligibility, brand/likeness and financial regulatory sign-off. No Buffett endorsement or release permission implied.
 
 Reviewer: PENDING; independent approval: NO.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".

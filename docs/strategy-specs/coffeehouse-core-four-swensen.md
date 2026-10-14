@@ -37,3 +37,5 @@ Reference: https://www.bogleheads.org/blog/2021/01/02/david-swensens-portfolio-f
 ## Release blockers
 
 The amounts in `tests/strategy-reference-golden.test.ts` are independently worked arithmetic examples for the **chosen platform reference splits**, NOT independent author-endorsed strategy backtests. Before publication, verify the exact historical methodology, identify broker-eligible real securities for each sleeve, settle currency and calendar conventions, check source rights, attest the reviewed version and pass real full-journey staging tests. Do not populate mappings with superficially similar ETFs just to enable a portfolio.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".

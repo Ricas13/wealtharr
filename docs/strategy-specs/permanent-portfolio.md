@@ -9,3 +9,5 @@ The code's annual 0% threshold is a **Wealtharr variant convention**. Do not imp
 Initial £10,000: £2,500 per sleeve. UK/other wrapper fidelity, independent golden tests, authored rebalance policy, market data and reviewer sign-off are outstanding. Research alone does not enable customer trading.
 
 Reviewer: PENDING; independent approval: NO.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".

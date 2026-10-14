@@ -15,3 +15,5 @@ Arithmetic independently from 55/45:
 **Release blockers**: original-author calendar and update-version sign-off; independently run golden cases; actual broker/country/account-wrapper eligibility (including UK ISA); licensed provider/FX and risk disclosure; legal and branding review. Source research **does not** enable this strategy.
 
 Reviewer: PENDING; independent approval: NO.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".
