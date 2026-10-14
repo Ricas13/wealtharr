@@ -2,7 +2,7 @@
  * This operates only on rows supplied by the server (currently the newest 250).
  */
 export type AdminCustomerRow={
- email:string;country:string;role:string;plan:string;status:string;active:number;attention:number;
+ id?:string;email:string;country:string;role:string;plan:string;status:string;active:number;attention:number;
 };
 export type CustomerQuickFilter="ALL"|"SUBSCRIBED"|"STRATEGY_ATTENTION"|"BILLING_ATTENTION";
 export const BILLING_ATTENTION_STATUSES=new Set(["PAST_DUE","UNPAID","INCOMPLETE","INCOMPLETE_EXPIRED"]);
