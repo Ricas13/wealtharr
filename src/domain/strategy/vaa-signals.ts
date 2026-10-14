@@ -13,7 +13,7 @@ export function weighted13612(prices:readonly Decimal[]):Decimal{
  return cur.div(prices[11]).minus(1).mul(12)
    .plus(cur.div(prices[9]).minus(1).mul(4))
    .plus(cur.div(prices[6]).minus(1).mul(2))
-   .plus(cur.div(prices[0]).minus(1)).div(4);
+   .plus(cur.div(prices[0]).minus(1));
 }
 function seriesPrices(series:TrustedHistoricalSeries,reviewMonth:string):Decimal[]{
  if(!series.source||series.points.length!==13)throw new Error("VAA_HISTORY_REQUIRED");
@@ -39,7 +39,7 @@ export function vaaAllocation(args:{
  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(args.reviewMonth))throw new Error("VAA_INVALID_MONTH");
  const rule=VARIANTS[args.variant];
  if(!rule)throw new Error("VAA_UNKNOWN_VARIANT");
- if(args.offensive.length<(rule.top)||args.defensive.length<1||
+ if(args.offensive.length!==(args.variant==="VAA_G4"?4:12)||args.defensive.length!==3||
   [...args.offensive,...args.defensive].some(x=>!x)||new Set(args.offensive).size!==args.offensive.length||
   new Set(args.defensive).size!==args.defensive.length)throw new Error("VAA_INVALID_UNIVERSE");
  const score=(exposure:string)=>{
