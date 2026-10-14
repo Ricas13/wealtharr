@@ -31,12 +31,12 @@ jobs:
                       root=ET.fromstring(archive.read(filename))
                       for row in root.findall(".//x:sheetData/x:row",ns):
                           i=int(row.get("r","0"))
-                          if i not in (2,3,4,5,35):continue
+                          if i not in (1,2,3,4,56):continue
                           print("ROW",i)
                           for cell in row.findall("x:c",ns):
                               addr=cell.get("r","")
                               form=cell.find("x:f",ns)
                               val=cell.find("x:v",ns)
-                              if form is not None:
+                              if form is not None or i in (1,2,56):
                                   print(addr,"FORMULA",form.text or "", "cached", val.text if val is not None else "")
           PY
