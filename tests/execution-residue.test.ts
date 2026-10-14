@@ -687,6 +687,37 @@ describe("one-unit exception and small details", () => {
     if (out.kind === "HOLD") expect(out.reason).toBe("WITHIN_HALF_UNIT");
   });
 
+  it("P1: fractional, no fee: in-band excess is sold to fund the short leg (no free HOLD at 13% short)", () => {
+    // All Weather 30/40/15/7.5/7.5, total 100000, fractional, fee 0, cash 0, threshold 0, band 0.25% = 250.
+    // A, B, C and E are +240 each (inside the band), gold D is 960 short (6540 vs 7500).
+    // Cash 0 < 960 - 250 = 710: SELL A 240, SELL B 240, SELL C 240 (cash 720 >= 710), then BUY D 720 (gap 240 <=
+    // 250); E +240 and D -240 are inside the band: HOLD. Worst deviation 960 -> 720 -> 480 -> 240 each time.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.3", value: "30240", price: "100" },
+      { exposure: "B", weight: "0.4", value: "40240", price: "100" },
+      { exposure: "C", weight: "0.15", value: "15240", price: "100" },
+      { exposure: "D", weight: "0.075", value: "6540", price: "100" },
+      { exposure: "E", weight: "0.075", value: "7740", price: "100" }
+    ];
+    const result = run(specs, "0", "0", { fractionalShares: true });
+    expect(result.trades).toEqual([["SELL", "A", "240.00"], ["SELL", "B", "240.00"], ["SELL", "C", "240.00"], ["BUY", "D", "720.00"]]);
+    expect(result.out?.kind).toBe("HOLD");
+    expect(result.cash.toFixed(2)).toBe("0.00");
+  });
+
+  it("P1 with selling disabled names the preference instead of closing", () => {
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.3", value: "30240", price: "100" },
+      { exposure: "B", weight: "0.4", value: "40240", price: "100" },
+      { exposure: "C", weight: "0.15", value: "15240", price: "100" },
+      { exposure: "D", weight: "0.075", value: "6540", price: "100" },
+      { exposure: "E", weight: "0.075", value: "7740", price: "100" }
+    ];
+    const out = size(specs, "0", "0", { fractionalShares: true, allowSelling: false });
+    expect(out.kind).toBe("PREFERENCE_BLOCKED");
+    if (out.kind === "PREFERENCE_BLOCKED") expect(out.blockers).toEqual(["SELLING_DISABLED"]);
+  });
+
   it("N4: another leg's +/-2% price moves between reviews do not start a sale/purchase cycle", () => {
     // 55/45, E at 100 / 102 alternating, B at 10, whole shares, threshold 0, cash 10000.
     // 1. BUY E 55 = 5500. 2. E 102: E 5610, total 10110; B target 4549.50: floor purchase 450 units = 4500.

@@ -153,6 +153,23 @@ function spendableOf(r: Row, c: SizingConstraints): Decimal {
 
 const byDeviation = (a: Row, b: Row) => b.deviation.cmp(a.deviation);
 
+/**
+ * Fractional fee cover: a flat fee exists, no overweight leg is outside its band, every overweight leg's excess is
+ * worth less than ten fees (a sale of it would burn a material share of itself) and the in-band excess together
+ * covers the underweight gaps. Then the review closes instead of selling.
+ */
+function feeCoverApplies(rows: Row[], c: SizingConstraints): boolean {
+  if (!c.fractionalShares || !c.flatFee.gt(0)) return false;
+  const outsideUnder = rows.filter((r) => !r.withinBand && r.delta.gt(0));
+  const overs = rows.filter((r) => r.delta.lt(0));
+  if (!outsideUnder.length || rows.some((r) => !r.withinBand && r.delta.lt(0))) return false;
+  const tenFees = c.flatFee.mul(10);
+  if (!overs.every((r) => r.deviation.lt(tenFees))) return false;
+  const gaps = outsideUnder.reduce((sum, r) => sum.plus(r.deviation), ZERO);
+  const excess = overs.reduce((sum, r) => sum.plus(r.deviation), ZERO);
+  return gaps.lte(excess);
+}
+
 function selectTrade(rows: Row[], c: SizingConstraints, floorBuys: boolean): SizedTrade | null {
   const minAmount = Decimal.max(c.minimumTradeAmount, UNIT);
   const outside = rows.filter((r) => !r.withinBand);
@@ -178,6 +195,39 @@ function selectTrade(rows: Row[], c: SizingConstraints, floorBuys: boolean): Siz
         units = amount.div(price);
       }
       if (amount.gte(minAmount)) return { side: "SELL", exposure: r.leg.exposure, amount, units, gap: r.deviation, unit: r.unit };
+    }
+  }
+
+  // Fractional funding sale: an underweight leg cannot reach its band with the cash on hand, so the largest
+  // in-band overweight excess is sold (to its target) to fund it, unless fee cover applies (below) or the
+  // sequence would leave the worst leg further from target than it is now.
+  if (c.allowSelling && c.fractionalShares && under.length && !feeCoverApplies(rows, c)) {
+    const needy = under.filter((r) => spendableOf(r, c).lt(r.deviation.minus(r.band)));
+    if (needy.length) {
+      const u = needy[0];
+      const worstBefore = rows.reduce((max, r) => Decimal.max(max, r.deviation), ZERO);
+      for (const s of rows.filter((r) => r.delta.lt(0) && r.withinBand).sort(byDeviation)) {
+        const price = priced(s.leg);
+        if (!price) continue;
+        const amount = Decimal.min(
+          s.deviation.toDecimalPlaces(2, Decimal.ROUND_HALF_DOWN),
+          s.leg.heldUnits.mul(price).toDecimalPlaces(2, Decimal.ROUND_DOWN)
+        );
+        if (amount.lt(minAmount)) continue;
+        const sameAccount = !u.leg.buyAccountId || !s.leg.sellAccountId || u.leg.buyAccountId === s.leg.sellAccountId;
+        if (!sameAccount) continue;
+        const cashAfter = Decimal.max(spendableOf(u, c).plus(amount).minus(c.flatFee), 0);
+        const buy = Decimal.min(u.deviation, cashAfter);
+        const worstAfter = rows.reduce((max, r) => {
+          let current = r.leg.current;
+          if (r === s) current = current.minus(amount);
+          if (r === u) current = current.plus(buy);
+          return Decimal.max(max, r.leg.target.minus(current).abs());
+        }, ZERO);
+        if (worstAfter.lte(worstBefore)) {
+          return { side: "SELL", exposure: s.leg.exposure, amount, units: amount.div(price), gap: s.deviation, unit: s.unit };
+        }
+      }
     }
   }
 
@@ -269,7 +319,9 @@ export function sizeNextTrade(input: {
     const price = priced(leg);
     const unit = c.fractionalShares || !price ? Decimal.max(FRACTIONAL_UNIT, c.flatFee.mul(10)) : price;
     // Band: half a unit, plus the larger of the fee headroom and 10% of a unit (hysteresis), and never less than
-    // 0.25% of the portfolio, so price moves of other legs between fills cannot start a sale/purchase cycle.
+    // 0.25% of the portfolio. That absorbs only other-leg price moves smaller than about 0.25% of the portfolio
+    // between fills; a larger move may cause trades that are each correct at the then-current prices. At
+    // unchanged prices the trades end in a same-day HOLD (see the termination argument above).
     const band = Decimal.max(unit.div(2).plus(Decimal.max(feeHeadroom, unit.mul(TENTH))), total.mul(PORTFOLIO_BAND));
     return { leg, delta, deviation, unit, band, withinThreshold: deviation.lte(tolerance) || deviation.lt(UNIT), withinBand: deviation.lte(band) };
   });
@@ -336,13 +388,10 @@ export function sizeNextTrade(input: {
     }
   }
 
-  // Fractional: every leg is inside its band except underweight gaps that the (in-band, fee-protected)
-  // overweight excess fully covers. Trading the excess would burn fees for a drift below the band.
-  if (c.fractionalShares && under.length && over.length === 0) {
-    const gaps = under.reduce((sum, r) => sum.plus(r.deviation), ZERO);
-    const excess = rows.filter((r) => r.delta.lt(0)).reduce((sum, r) => sum.plus(r.deviation), ZERO);
-    if (gaps.lte(excess)) return { kind: "HOLD", reason: "WITHIN_HALF_UNIT", residuals, total };
-  }
+  // Fractional with a fee: every leg is inside its band except underweight gaps that the in-band overweight
+  // excess fully covers, and each sale needed is worth less than ten fees. Trading it would burn fees for a drift
+  // below the band. With no fee (or larger sales) the gap is closed by a funding sale instead (selectTrade).
+  if (feeCoverApplies(rows, c) && under.length && over.length === 0) return { kind: "HOLD", reason: "WITHIN_HALF_UNIT", residuals, total };
 
   if (under.length) {
     const first = under[0];

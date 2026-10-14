@@ -75,8 +75,10 @@ untradable. Code: `src/domain/strategy/execution-residue.ts` (`sizeNextTrade`), 
 **At target (band).** `|deviation| <= threshold x total`, or
 `|deviation| <= max(u/2 + max(legs x flat fee, 0.1 x u), 0.0025 x total)` (inclusive). The `0.1 x u` term is
 hysteresis so a price move between fills cannot turn a just-traded leg into a trade in the other direction;
-`legs x fee` absorbs the fee-driven drift of the targets; `0.25% of the portfolio` stops another leg's small price
-moves from starting a sale/purchase cycle (larger moves are handled by the funding-sale rule below).
+`legs x fee` absorbs the fee-driven drift of the targets; `0.25% of the portfolio` only absorbs other-leg price moves
+smaller than about 0.25% of the portfolio between fills. Larger moves between fills may cause trades that are each
+correct at the then-current prices (and the funding sale must not worsen the worst leg); trades at unchanged
+prices end in a same-day HOLD.
 
 **Sizing, one trade per recalculation.** Every leg outside its band is traded to the nearest unit (ties round
 down, at least one unit):
@@ -105,8 +107,10 @@ down, at least one unit):
 7. whole shares, every underweight leg less than one unit short, no unit affordable and nothing outside its band to
    sell: HOLD ("within one unit"): "Every holding is within one trading unit of its target. Your cash is less than
    the cost of one more unit of X; add about Z to buy it, or keep this allocation";
-8. fractional mode only: every leg inside its band except underweight gaps that the in-band overweight excess
-   fully covers (selling that excess would burn fees below the band): HOLD ("within half a unit");
+8. fractional mode only, flat fee > 0: every leg inside its band except underweight gaps that the in-band
+   overweight excess fully covers and each sale needed is worth less than ten fees: HOLD ("within half a unit").
+   With no fee (or larger sales) the in-band excess is sold instead (fractional funding sale, subject to the
+   worst-leg rule), largest first, until the underweight leg can reach its band;
 9. cash needed (CASH_SHORTFALL, with the amount) or nothing to sell (NOTHING_TO_SELL, only when no unit of an
    overweight leg is held).
 
