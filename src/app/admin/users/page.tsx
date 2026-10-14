@@ -26,7 +26,7 @@ export default async function UsersAdmin(){
     <span className="admin-design-kpi-detail">Current database records</span></div>)}</div>
   <AdminCustomerLookup/>
   <div style={{marginTop:20}}><AdminCustomersTable rows={rows.map(u=>({
-   email:String(u.email),country:String(u.country??"—"),role:String(u.role??"USER"),plan:String(u.plan??"No subscription"),status:String(u.status??"Unassigned"),
+   id:String(u.id),email:String(u.email),country:String(u.country??"—"),role:String(u.role??"USER"),plan:String(u.plan??"No subscription"),status:String(u.status??"Unassigned"),
    active:Number(u.active_strategies??0),attention:Number(u.unhealthy??0)
   }))}/></div>
   <div style={{marginTop:24}}><UserStrategyAccessEditor
