@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import Decimal from "decimal.js";
 const D=(n:number|string)=>new Decimal(n);
 import {vaaAllocation,weighted13612} from "../src/domain/strategy/vaa-signals";
-describe("vaa G4 canonical golden",()=>{
+describe("vaa",()=>{
  it("raw 13612 sum uses exact published numerical weighting",()=>{
  const prices=Array.from({length:13},(_,i)=>D(100+i));
  const expected=D(112).div(111).minus(1).mul(12)
