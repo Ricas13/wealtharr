@@ -36,6 +36,6 @@ export const plugin:StrategyPlugin={
     supportedRegions:[],supportedWrappers:[],initialVersion:"DRAFT",
     realignsResearchOnlyDefinition:false
   },
-  specCard:"docs/strategy-specs/merriman-ultimate.md",
+  specCard:"docs/strategy-specs/group-2-merriman-ultimate.md",
   goldenTests:"tests/strategy-group-2-golden.test.ts"
 };
