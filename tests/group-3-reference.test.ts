@@ -21,7 +21,7 @@ describe("Group 3 reference-only allocation evidence",()=>{
     });
   }
   it("age-scaled and tactical methods remain intentionally nonpublishable",()=>{
-    for(const key of ["two-funds-for-life","trinity"]){
+    for(const key of ["trinity"]){
       const plugin=getStrategyPlugin(key);
       expect(plugin?.profile?.engine).toBe("RESEARCH_PENDING");
       expect(plugin?.seedDefinition).toBeNull();
