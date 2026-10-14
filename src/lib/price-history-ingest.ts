@@ -25,8 +25,10 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
     "SELECT DISTINCT tl.id,tl.provider_symbol,tl.currency FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id " +
     "WHERE tl.provider_symbol IS NOT NULL AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) " +
     "AND i.economic_exposure IN (" +
-    " SELECT e FROM strategy_versions v, jsonb_array_elements_text(v.config->'riskAssets') e WHERE v.engine_key='MOMENTUM_ROTATION' AND jsonb_typeof(v.config->'riskAssets')='array'" +
-    " UNION SELECT v.config->>'defensiveAsset' FROM strategy_versions v WHERE v.engine_key='MOMENTUM_ROTATION' AND v.config ? 'defensiveAsset')"
+    " SELECT e FROM strategy_versions v, jsonb_array_elements_text(v.config->'riskAssets') e WHERE v.engine_key IN ('MOMENTUM_ROTATION','TACTICAL_ALLOCATION') AND jsonb_typeof(v.config->'riskAssets')='array'" +
+    " UNION SELECT v.config->>'defensiveAsset' FROM strategy_versions v WHERE v.engine_key='MOMENTUM_ROTATION' AND v.config ? 'defensiveAsset'"+
+    " UNION SELECT d FROM strategy_versions v, jsonb_array_elements_text(v.config->'defensiveAssets') d "+
+    "WHERE v.engine_key='TACTICAL_ALLOCATION' AND jsonb_typeof(v.config->'defensiveAssets')='array')"
   );
   let stored = 0;
   let rejected = 0;
