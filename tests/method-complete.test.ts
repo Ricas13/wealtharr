@@ -33,9 +33,9 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
   evaluateMethodCompleteness(plugin,files).checks.filter(c=>!c.ok).map(c=>c.id);
 
 describe("isMethodComplete: the real catalogue",()=>{
-  it("marks exactly the Global 60/40 (GBP) model complete, with and without file evidence",()=>{
+  it("marks the released 60/40 and 80/20 GBP models complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["60-40"]);
+    expect(complete()).toEqual(["60-40","80-20"]);
     expect(complete(realFiles)).toEqual(["60-40"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
@@ -52,7 +52,7 @@ describe("isMethodComplete: the real catalogue",()=>{
     }
   });
   it("keeps 9Sig, HFEA and the other fixed allocations incomplete",()=>{
-    for(const key of ["9sig","hfea","three-fund","80-20","all-weather","dual-momentum"])
+    for(const key of ["9sig","hfea","three-fund","all-weather","dual-momentum"])
       expect(isMethodComplete(getStrategyPlugin(key)),key).toBe(false);
     expect(isMethodComplete(undefined)).toBe(false);
   });
