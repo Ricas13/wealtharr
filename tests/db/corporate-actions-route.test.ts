@@ -32,7 +32,7 @@ describe.skipIf(!url)("admin corporate-actions route", () => {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (origin) headers.origin = origin;
     const response = await mod.POST(new Request(`${ORIGIN}/api/admin/corporate-actions`, { method: "POST", headers, body: JSON.stringify(body) }));
-    return { status: response.status, json: await response.json() as { ok?: boolean; id?: string; error?: string } };
+    return { status: response.status, json: await response.json() as { ok?: boolean; id?: string; error?: string; status?: string } };
   };
   const valid = (instrumentId: string, overrides: Record<string, unknown> = {}) => ({
     action: "create", instrumentId, ratioTo: 2, ratioFrom: 1, effectiveDate: TODAY,
