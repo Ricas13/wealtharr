@@ -20,6 +20,7 @@ import { EXECUTABLE_ACTION_STATUS_SQL, actionRecalculationDisposition, isExecuta
 import { actionFingerprintMaterial } from "@/domain/action-fingerprint";
 import { validatedEffectivePrice } from "@/domain/manual-override";
 import { loadTrustedHistory } from "@/lib/trusted-history-loader";
+import {loadTacticalCertifiedHistory} from "@/lib/tactical-history-loader";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { nextCalendarQuarterDueAt } from "@/domain/schedule";
@@ -245,7 +246,15 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // Momentum research engines read licensed price history; every other engine ignores it.
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
-  const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
+  const tacticalUniverse=calculationEngineKey==="TACTICAL_ALLOCATION"&&
+    Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)
+    ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String))]:null;
+  const tacticalReviewMonth=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)).toISOString().slice(0,7);
+  const trustedHistory=tacticalUniverse
+    ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,new Date(),db)
+    :momentumUniverse
+      ?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db)
+      :undefined;
   const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
     const mappingRows=await db.unsafe(
       "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
