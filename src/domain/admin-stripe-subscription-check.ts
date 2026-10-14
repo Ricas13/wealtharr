@@ -6,7 +6,7 @@ export type SubscriptionObservation={
  status:string;cadence:string;periodEnd:number|null;cancelAtPeriodEnd:boolean;
 };
 export type StripeObservation={
- subscriptionId:string;customerId:string;metadataUserId:string|null;planId:string|null;
+ subscriptionId:string;customerId:string;metadataUserId:string|null;planId:string|null;itemCount:number;
  status:string;cadence:string|null;periodEnd:number|null;cancelAtPeriodEnd:boolean;
 };
 export type ReconciliationCheck={field:"status"|"plan"|"cadence"|"period"|"cancellation";matched:boolean};
@@ -29,7 +29,7 @@ export function compareSubscriptionObservations(
  }
  const checks:ReconciliationCheck[]=[
   {field:"status",matched:local.status===canonicalStripeStatus(remote.status)},
-  {field:"plan",matched:remote.planId!==null&&local.planId===remote.planId},
+  {field:"plan",matched:remote.itemCount===1&&remote.planId!==null&&local.planId===remote.planId},
   {field:"cadence",matched:remote.cadence!==null&&local.cadence===remote.cadence},
   {field:"period",matched:
    (!["active","trialing"].includes(remote.status)||local.periodEnd!==null&&remote.periodEnd!==null)&&
