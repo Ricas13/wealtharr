@@ -47,7 +47,7 @@ export const tacticalAllocationEngine:StrategyEngine={
     calendarCertified:true,totalReturnCertified:true
    });
    if(weights.some(w=>!new Decimal(w.weight).isFinite()||new Decimal(w.weight).lt(0))||
-      !weights.reduce((sum,w)=>sum.plus(w.weight),new Decimal(0)).eq(1))
+      weights.reduce((sum,w)=>sum.plus(w.weight),new Decimal(0)).minus(1).abs().gt("0.000000000001"))
       return dataRequired(ctx,"Signal target weights do not sum to one.");
    // Incorporate every potential exposure, including now-zero signal sleeves, so
    // the common engine can sell obsolete assets after a regime change.
@@ -74,7 +74,8 @@ export const tacticalAllocationEngine:StrategyEngine={
      explanation,nextState:reviewState,confidence:"HIGH",dueAt:ctx.now,completesReview:false};
    }
    if(buys.length&&ctx.cash.gt("0.005")){
-    const p=buys[0],amount=Decimal.min(ctx.cash,p.delta).toDecimalPlaces(2);
+    const p=buys[0],amount=Decimal.min(ctx.cash,p.delta).toDecimalPlaces(2,Decimal.ROUND_DOWN);
+    if(amount.lte(0))return dataRequired(ctx,"Remaining cash is below a safely rounded execution amount.");
     return {actionType:"BUY",title:"Tactical allocation: buy "+p.exposure,
      instruction:"Buy from available reconciled cash, confirm the execution, then recalculate.",
      amount,economicExposure:p.exposure,currency:ctx.baseCurrency,explanation,nextState:reviewState,
