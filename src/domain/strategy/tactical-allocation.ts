@@ -21,7 +21,7 @@ export function calculateTacticalAllocation(req:TacticalRequest):TacticalAllocat
  if(!req.calendarCertified||!req.totalReturnCertified)throw new Error("TACTICAL_SOURCE_CERTIFICATION_REQUIRED");
  if(!req.currency||!Number.isFinite(req.asOf.getTime())||!/^\d{4}-(0[1-9]|1[0-2])$/.test(req.reviewMonth))throw new Error("TACTICAL_INVALID_REQUEST");
  const risk=[...req.riskAssets],def=[...req.defensiveAssets],all=[...risk,...def];
- if(!risk.length||!def.length||all.some(x=>!x)||new Set(risk).size!==risk.length||new Set(def).size!==def.length||
+ if(!risk.length||(req.variant!=="RISK_PARITY_ERC_252"&&!def.length)||all.some(x=>!x)||new Set(risk).size!==risk.length||new Set(def).size!==def.length||
     (!(req.variant==="VAA_G4"||req.variant==="VAA_G12")&&new Set(all).size!==all.length))throw new Error("TACTICAL_INVALID_UNIVERSE");
  const series=(id:string)=>{
   const matches=req.history.filter(s=>s.exposure===id&&s.currency===req.currency&&Boolean(s.source));
@@ -81,8 +81,7 @@ export function calculateTacticalAllocation(req:TacticalRequest):TacticalAllocat
    return vaaAllocation({variant:req.variant as BreadthVariant,offensive:risk,defensive:def,history:allHistory,currency:req.currency,reviewMonth:req.reviewMonth});
   }
   case "RISK_PARITY_ERC_252":{
-   if(risk.length<2||def.length!==1)throw new Error("RP_INVALID_UNIVERSE");
-   monthly(def[0],13);
+   if(risk.length<2||def.length!==0)throw new Error("RP_INVALID_UNIVERSE");
    const estimate=estimateDailyRiskParity(risk.map(id=>({exposure:id,points:series(id).points.slice(-253)})),req.asOf,252);
    return risk.map((exposure,i)=>({exposure,weight:estimate.weights[i]}));
   }
