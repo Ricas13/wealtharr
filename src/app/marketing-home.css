@@ -86,7 +86,7 @@
 .wm-strategy-section{background:linear-gradient(180deg,#0c1418,#111c20 60%,#0a1115);border-block:1px solid #1b2b31;overflow:hidden}
 .wm-strategy-section>.wm-shell:first-child{margin-bottom:34px}
 .wm-rail-block{position:relative}
-.wm-rail-controls{position:absolute;top:-73px;right:max(32px,calc((100vw - 1210px)/2));display:flex;gap:8px}
+ .wm-rail-controls{position:absolute;top:-58px;right:max(32px,calc((100vw - 1210px)/2));display:flex;gap:8px}
 .wm-rail-controls button{width:41px;height:41px;border-radius:50%;background:#203039;border:1px solid #4a6063;color:#dbe9e4;font-size:20px}
 .wm-rail-controls button:hover{background:#2a4742}
 .wm-rail{overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:8px max(32px,calc((100vw - 1210px)/2)) 10px}
@@ -117,12 +117,23 @@
 .wm-review-event>span{font-size:24px;color:#b3e8bd}
 .wm-review-event strong{font-size:14px}
 .wm-review-event p{font-size:12px;line-height:1.7;color:#b6cbbd}
-.wm-trust{background:#0b1215}
-.wm-trust-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:42px}
-.wm-trust-card{padding:26px;border-radius:14px;background:#111c20;border:1px solid #2c3c40}
-.wm-trust-card>span{color:var(--wm-mint);font-size:26px}
-.wm-trust-card h3{font-size:18px;margin:21px 0 8px;letter-spacing:-.4px}
-.wm-trust-card p{color:var(--wm-muted);font-size:12px;line-height:1.8}
+
+/* The carousel is always present directly under the hero. Educational method
+   examples are distinguished from admin-enabled strategies in their card badges. */
+.wm-strategy-section{padding-top:68px;padding-bottom:54px}
+.wm-strategy-section>.wm-shell:first-child{margin-bottom:23px}
+.wm-strategy-section h2{font-size:clamp(30px,3.4vw,45px);max-width:850px}
+.wm-strategy-section .wm-section-intro{max-width:830px;margin:0}
+.wm-strategy-card{transition:transform .22s ease,border-color .22s ease}
+.wm-strategy-card:hover{transform:translateY(-3px);border-color:#8ab7a7}
+.wm-preview-kpis strong.wm-counter{font-variant-numeric:tabular-nums;letter-spacing:-.65px}
+.wm-chart svg{overflow:visible}
+.wm-currency-choice{display:flex;justify-content:center;gap:5px;margin:0 auto 25px}
+.wm-currency-choice button{border:1px solid #304548;background:transparent;color:#a7bcb7;padding:7px 12px;border-radius:8px;font-size:12px}
+.wm-currency-choice button.selected{color:#112219;background:#b7f5cc;border-color:#b7f5cc;font-weight:800}
+.wm-currency-choice button:hover:not(.selected){border-color:#78948c;color:#e8f8f0}
+.wm-plan-currency-note{font-size:10px;line-height:1.5;color:#e1c69d;min-height:28px;margin:6px 0 0}
+
 .wm-pricing-section{background:linear-gradient(#0c1518,#0b1114)}
 .wm-centered{text-align:center}.wm-centered h2,.wm-centered p{margin-inline:auto}
 .wm-billing{display:flex;gap:4px;width:max-content;margin:32px auto;padding:4px;border:1px solid #3c5052;border-radius:9px;background:#152327}
@@ -180,10 +191,10 @@
  .wm-strip span:last-child{border:0}
  .wm-section{padding-top:75px;padding-bottom:75px}
  .wm-section h2{letter-spacing:-1.7px}
- .wm-step-grid,.wm-trust-grid{grid-template-columns:1fr;gap:11px}
+ .wm-step-grid{grid-template-columns:1fr;gap:11px}
  .wm-step{min-height:190px}.wm-step h3{margin-top:28px}
- .wm-rail-controls{right:16px;top:-56px}
- .wm-strategy-section>.wm-shell:first-child{margin-bottom:70px}
+ .wm-rail-controls{right:16px;top:-53px}
+ .wm-strategy-section>.wm-shell:first-child{margin-bottom:58px}
  .wm-rail{padding-left:15px;padding-right:15px}
  .wm-strategy-card{width:245px}
  .wm-review{padding:20px}

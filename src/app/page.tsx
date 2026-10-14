@@ -1,4 +1,7 @@
 import Link from "next/link";
+import {headers} from "next/headers";
+import {currencyForVisitorCountry,type LandingCurrency} from "@/domain/visitor-currency";
+import {HeroStrategyPreview} from "@/components/HeroStrategyPreview";
 import {sql} from "@/lib/db";
 import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
 import {exactPriceString} from "@/domain/currency-money";
@@ -8,12 +11,11 @@ import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
 import {assertCuratedRules} from "@/domain/strategy/curated-release";
 import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-market-mappings";
 import {cardDescription,isOfferableForUser,summariseRules} from "@/domain/explore-catalogue";
-import {PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStrategyCard} from "@/components/PublicLandingInteractivity";
-import {MarketingHeroChart} from "@/components/MarketingHeroChart";
+import {LandingCurrencyProvider,PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStrategyCard} from "@/components/PublicLandingInteractivity";
 import "./marketing-home.css";
 
 export const dynamic="force-dynamic";
-type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;homepage_highlights:unknown;monthly_price_minor:number|null;annual_price_minor:number|null};
+type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;homepage_highlights:unknown;monthly_price_minor:number|null;annual_price_minor:number|null;prices:unknown};
 type ReleaseRow={key:string;engine_key:string;config:Record<string,unknown>;input_schema:unknown;supported_regions:unknown;supported_wrappers:unknown};
 function decodeEntitlements(raw:unknown):{features:string[];notificationChannels:string[]}{
   let parsed=raw;
@@ -23,11 +25,28 @@ function decodeEntitlements(raw:unknown):{features:string[];notificationChannels
   return {features:Array.isArray(obj.features)?obj.features.filter((x):x is string=>typeof x==="string"):[],
     notificationChannels:Array.isArray(obj.notificationChannels)?obj.notificationChannels.filter((x):x is string=>typeof x==="string"):[]};
 }
+function planCurrencyPrices(raw:unknown):PublicPlanCard["prices"]{
+ const currencies:PublicPlanCard["prices"]={};
+ if(!Array.isArray(raw))return currencies;
+ for(const item of raw){
+  if(!item||typeof item!=="object")continue;
+  const price=item as {currency?:unknown;cadence?:unknown;amountMinor?:unknown};
+  if(price.currency!=="GBP"&&price.currency!=="EUR"&&price.currency!=="USD")continue;
+  const amount=Number(price.amountMinor);
+  if(!Number.isSafeInteger(amount)||amount<0)continue;
+  const unit:LandingCurrency=price.currency;
+  const previous=currencies[unit]??{monthly:null,annual:null};
+  if(price.cadence==="MONTHLY")currencies[unit]={...previous,monthly:amount};
+  if(price.cadence==="ANNUAL")currencies[unit]={...previous,annual:amount};
+ }
+ return currencies;
+}
 async function loadPublicPlans():Promise<PublicPlanCard[]>{
   let rows:PlanRow[]=[];
   try{
     rows=await sql.unsafe(
       "SELECT p.slug,p.display_name,p.description,p.billing_currency,p.max_active_strategies,p.entitlements,p.homepage_highlights,"+
+      "(SELECT jsonb_agg(jsonb_build_object('currency',pp.currency,'cadence',pp.cadence,'amountMinor',pp.amount_minor)) FROM plan_prices pp WHERE pp.plan_id=p.id AND pp.active=true AND pp.currency IN ('GBP','EUR','USD')) AS prices,"+
       "CASE WHEN p.slug='free' THEN 0 ELSE mo.amount_minor END AS monthly_price_minor,"+
       "CASE WHEN p.slug='free' THEN 0 ELSE yr.amount_minor END AS annual_price_minor "+
       "FROM plans p "+
@@ -46,7 +65,8 @@ async function loadPublicPlans():Promise<PublicPlanCard[]>{
         annualMinor:row.annual_price_minor===null?null:Number(row.annual_price_minor),
         maxActive:row.max_active_strategies===null?null:Number(row.max_active_strategies),
         features:ent.features,channels:ent.notificationChannels,
-        highlights:Array.isArray(row.homepage_highlights)?row.homepage_highlights.filter((v):v is string=>typeof v==="string"):[]};
+        highlights:Array.isArray(row.homepage_highlights)?row.homepage_highlights.filter((v):v is string=>typeof v==="string"):[],
+        prices:planCurrencyPrices(row.prices)};
     });
 }
 async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
@@ -89,9 +109,23 @@ async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
     }).slice(0,12);
   }catch{return [];}
 }
+// These are explicitly educational cards, not executable strategy releases.
+// They never bypass the separately enforced registration/market eligibility gates.
+const EDUCATIONAL_EXAMPLES:PublicStrategyCard[]=[
+ {key:"example-60-40",name:"Global 60/40",category:"Educational strategy example",description:"A familiar stock-and-bond mix, reviewed periodically to restore target weights.",allocations:[{label:"Equities",percent:"60"},{label:"Bonds",percent:"40"}]},
+ {key:"example-all-weather",name:"All Weather",category:"Educational strategy example",description:"Diversification across assets intended to behave differently through economic cycles.",allocations:[]},
+ {key:"example-golden-butterfly",name:"Golden Butterfly",category:"Educational strategy example",description:"A five-part reference mix spanning stocks, government bonds and gold.",allocations:[{label:"Large equities",percent:"20"},{label:"Small-cap value",percent:"20"},{label:"Long bonds",percent:"20"},{label:"Short bonds",percent:"20"},{label:"Gold",percent:"20"}]},
+ {key:"example-permanent-portfolio",name:"Permanent Portfolio",category:"Educational strategy example",description:"Four equal allocations to stocks, long bonds, cash and gold.",allocations:[{label:"Stocks",percent:"25"},{label:"Long bonds",percent:"25"},{label:"Cash",percent:"25"},{label:"Gold",percent:"25"}]},
+ {key:"example-three-fund",name:"Three-Fund Portfolio",category:"Educational strategy example",description:"A straightforward three-sleeve structure across domestic equity, international equity and bonds.",allocations:[]}
+];
 export default async function HomePage(){
   await ensureSettings(); // Public schema launch state follows encrypted Admin Settings.
   const [plans,strategies]=await Promise.all([loadPublicPlans(),loadPublicStrategies()]);
+  // Cloudflare injects the origin visitor country behind the existing public proxy.
+  // The country controls only the preferred display unit, never an FX conversion.
+  const geoHeaders=await headers();
+  const visitorCurrency=currencyForVisitorCountry(geoHeaders.get("cf-ipcountry")??geoHeaders.get("x-vercel-ip-country"));
+  const carouselCards=[...strategies,...EDUCATIONAL_EXAMPLES.filter(example=>!strategies.some(released=>"example-"+released.key===example.key))];
   const brand=process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr";
   const origin=siteOrigin(process.env.NEXT_PUBLIC_APP_URL).toString();
   const offered=canAdvertisePaidOffer(process.env)?plans.find(plan=>plan.monthlyMinor!==null&&plan.monthlyMinor>0):undefined;
@@ -102,7 +136,7 @@ export default async function HomePage(){
       operatingSystem:"Web",url:origin,
       description:"Track the allocations and review rules of published investment strategies. Wealtharr does not execute trades.",...offer}
   ]};
-  return <main className="wealtharr-marketing" id="top">
+  return <LandingCurrencyProvider initialCurrency={visitorCurrency}><main className="wealtharr-marketing" id="top">
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:safeJsonLd(schema)}}/>
     <header className="wm-header"><nav className="wm-shell wm-nav" aria-label="Primary navigation">
       <Link href="/" className="wm-brand"><span className="wm-mark" aria-hidden="true">⌁</span>{brand.toLowerCase()}<span className="wm-brand-dot">.</span></Link>
@@ -120,24 +154,18 @@ export default async function HomePage(){
           <div className="wm-actions"><Link href="/register" className="wm-button main">Explore your options ↗</Link><a href="#preview" className="wm-button outline">See how it works ↗</a></div>
           <div className="wm-benefits"><span>No brokerage link required</span><span>No trades placed</span><span>Every rule explained</span></div>
         </div>
-        <div className="wm-preview" aria-label="Illustrative Wealtharr member-dashboard preview">
-          <div className="wm-preview-header"><strong>◈ &nbsp; Overview <span>/ Strategy review</span></strong><small>ILLUSTRATIVE DATA</small></div>
-          <div className="wm-preview-body"><div className="wm-preview-title"><div><small>STRATEGY SNAPSHOT</small><h2>Follow a strategy. See the progress.</h2></div><span>Example only</span></div>
-            <div className="wm-preview-cols"><div className="wm-chart">
-              <MarketingHeroChart/>
-            </div><div className="wm-allocation">
-              <div className="wm-panel-title">Allocation drift <span>Actual / Target</span></div>
-              {[["Equities",29,30],["Bonds",52,55],["Gold",9,8],["Commodities",10,7]].map(([label,actual,target])=><div className="wm-allocation-row" key={label}>
-                <div><span>{label}</span><span>{actual}% / {target}%</span></div>
-                <div className="wm-track"><i style={{width:actual+"%"}}/><b style={{left:target+"%"}}/></div>
-              </div>)}
-            </div></div>
-            <div className="wm-sample-notice"><span aria-hidden="true">↗</span><div><strong>Know your next move</strong><p>Understand suggested adjustments at the next scheduled review. You decide whether to trade.</p></div></div>
-          </div>
-        </div>
+        <HeroStrategyPreview/>
       </section>
     </div>
     <div className="wm-strip"><div className="wm-shell"><span><b>Established methods.</b> Your choice.</span><span><b>Clear review calculations.</b> Not just charts.</span><span><b>Your broker stays yours.</b> No trading access.</span></div></div>
+    <section className="wm-section wm-strategy-section" id="strategies">
+      <div className="wm-shell"><span className="wm-kicker">EXPLORE THE METHODS</span>
+        <h2>Established approaches. <em>One place to follow them.</em></h2>
+        <p className="wm-section-intro">Explore recognised investment frameworks. Examples do not imply availability; only released methods with eligible instruments can be started after sign-in.</p>
+      </div>
+      <PublicStrategyRail cards={carouselCards}/>
+      <div className="wm-shell wm-note"><Link href="/strategies">How strategy availability works ↗</Link></div>
+    </section>
     <section className="wm-section wm-shell" id="how">
       <span className="wm-kicker">HOW IT WORKS</span><h2>From finding an approach to <em>staying on course.</em></h2>
       <p className="wm-section-intro">No maze of spreadsheets. No disconnected reminders. Just a clear system for following a published investment method of your choice.</p>
@@ -146,13 +174,6 @@ export default async function HomePage(){
         ["02 / TRACK","Make it yours","Record holdings, cash and contributions against that framework's published rules.","◎"],
         ["03 / ACT","Know your next step","Review drift and transparent calculations when an action is genuinely due.","↗"]
       ].map(([n,title,desc,glyph])=><article className="wm-step" key={n}><span>{n}</span><i aria-hidden="true">{glyph}</i><h3>{title}</h3><p>{desc}</p></article>)}</div>
-    </section>
-    <section className="wm-section wm-strategy-section" id="strategies">
-      <div className="wm-shell"><span className="wm-kicker">THE STRATEGY LIBRARY</span><h2>Explore ideas worth <em>understanding.</em></h2>
-        <p className="wm-section-intro">Only complete, operator-enabled and instrument-verified methods for the example UK ISA market appear below. Eligibility for your own account is checked after sign-in.</p>
-      </div>
-      <PublicStrategyRail cards={strategies}/>
-      <div className="wm-shell wm-note"><Link href="/strategies">How strategy availability works ↗</Link></div>
     </section>
     <section className="wm-section wm-shell wm-two-col" id="preview">
       <div><span className="wm-kicker">THE MOMENT IT CLICKS</span><h2>Don&apos;t just see the drift. <em>Understand the fix.</em></h2>
@@ -167,14 +188,6 @@ export default async function HomePage(){
         <Link href="/demo" className="wm-button outline">Explore the interactive demo ↗</Link>
       </div>
     </section>
-    <section className="wm-section wm-trust"><div className="wm-shell"><span className="wm-kicker">BUILT FOR REAL INVESTORS</span>
-      <h2>Elegant where it matters. <em>Transparent everywhere.</em></h2>
-      <div className="wm-trust-grid">{[
-        ["⌑","You're in control","Wealtharr tracks and calculates. It never places trades or holds your assets."],
-        ["◎","Every rule explained","Understand how a proposed adjustment follows the method you've selected."],
-        ["↗","Account-aware choices","Eligible methods and trading instruments depend on your account, wrapper and region."]
-      ].map(([ico,title,detail])=><div className="wm-trust-card" key={title}><span>{ico}</span><h3>{title}</h3><p>{detail}</p></div>)}</div>
-    </div></section>
     <section className="wm-section wm-pricing-section" id="pricing"><div className="wm-shell"><div className="wm-centered">
       <span className="wm-kicker">PRICING THAT MAKES SENSE</span><h2>Start simple. <em>Go deeper when you need to.</em></h2>
       <p className="wm-section-intro">Every plan, price and included notification channel below comes from live administrator settings—not an invented subscription offer.</p>
@@ -190,5 +203,5 @@ export default async function HomePage(){
       <strong>{brand.toLowerCase()}.</strong><div><Link href="/features">Features</Link><Link href="/strategies">Strategies</Link><Link href="/pricing">Pricing</Link><Link href="/faq">FAQ</Link></div>
       <p>Research and portfolio tracking, not a brokerage or investment adviser. Capital is at risk; past performance is not a guide to future results. Illustrative charts do not represent actual performance.</p>
     </div></footer>
-  </main>;
+  </main></LandingCurrencyProvider>;
 }
