@@ -1,13 +1,28 @@
-# Buffett 90/10 — trustee reference
+# Buffett 90/10 — US reference
 
-**Status: 90/10 allocation corroborated by Buffett's 2013 letter; calendar convention NOT author specified.**
+## Definition
+Frozen reference profile `buffett-90-10`, engine `FIXED_ALLOCATION`. Allocation:
+- `G1_SP500_INDEX`: 90%
+- `G1_US_SHORT_GOVERNMENT`: 10%
 
-Warren Buffett wrote that a trustee for his wife should allocate **90% to a very low-cost S&P 500 index fund, 10% to short-term US government bonds**: https://www.berkshirehathaway.com/letters/2013ltr.pdf . Verifiable text rendering: https://buffett-letters.com/en/02-letters/berkshire/2013-Shareholder-Letter .
+Source: https://www.berkshirehathaway.com/letters/2013ltr.pdf
 
-Code profile `buffett-90-10`: fixed 90/10; **annual calendar rebalance is a Wealtharr implementation convention**, not a claimed Buffett rule. Initial £10,000: £9,000 equities/£1,000 bonds. At review £9,500/£500: sell £500 equities, buy £500 short government bonds.
+The 2013 Berkshire letter specifies 90% very-low-cost S&P 500 index and 10% short-term government bonds for his wife's trustee, but does not prescribe this software's annual/zero-threshold schedule.
 
-Open: independent source/rebalancing review, goldens, trading line eligibility, brand/likeness and financial regulatory sign-off. No Buffett endorsement or release permission implied.
+This profile is not guaranteed equivalent to home-country adaptations. In particular, US Treasury securities remain US government obligations even in a GBP account. No UK ISA, SIPP or GIA product is asserted as eligible or mapped.
 
-Reviewer: PENDING; independent approval: NO.
+## Rebalancing rule
+Wealtharr convention: `reviewFrequency: ANNUAL`; `rebalanceThreshold: 0.00`. When the account has a due review, compute target holding value as total invested positions plus free strategy cash, times the frozen weight. Sell overweight holdings before buying underweight holdings, subject to execution constraints. New contributions become strategy cash and are incorporated at the next permitted review; they do not independently change the method's review cadence. Withdrawals and executed trades enter the immutable account ledger and affect subsequent holdings and cash, without silently altering weights. Fractional vs whole-unit restrictions, available cash, fees, smallest order, half-even monetary rounding and unsettled execution residue are handled by the existing shared planner and documented under `docs/strategy-engines.md`. No rebalancing trade executes without recorded investor action. Stale prices and missing exact market mappings fail closed.
 
-**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".
+## Instrument requirements
+Every sleeve requires one independently verified eligible tradable instrument mapping with the exact named economic exposure, current prices, domicile and fund eligibility for the user's country, broker, trading currency and wrapper (ISA, SIPP or GIA as applicable). An equivalent sounding ticker or alternative asset is not automatically allowed. Listing eligibility is not inferable from strategy weights. Require positive verification of leverage (1x), security instrument type, price currency, hedging policy, tracking scope, maturity or gold backing as appropriate. UK-accessible listings are not assumed to offer US-domiciled assets directly. No symbols or mappings are inserted by this release.
+
+## Owner-decision list
+- The source's allocation and the separately chosen Wealtharr annual, zero-band schedule are explicitly distinguished.
+- This frozen model cannot be modified by user-selected weights; alternative schedules or weights require a new immutable version.
+- A complete method does not waive the exact instrument-mapping / wrapper / account / global / plan / per-user gates.
+- Existing published versions and active customer positions must remain pinned and must not be edited in place.
+- Administrator verification of an actual mapping is an operational precondition, not a request for source-method attestation.
+
+## Golden tests
+`tests/strategy-golden-buffett-90-10.test.ts` independently verifies target allocations, overweight sale, contribution inclusion, review due, stale data and exact mapping omission. Arithmetic assertions use explicit reference weights, not weights read from the code under test.
