@@ -82,14 +82,14 @@ export default async function AdminCustomerDetail({params}:{params:Promise<{id:s
    <div className="admin-design-info-row"><span>Provider source</span><strong>{String(sub?.source??"Unassigned")}</strong></div>
    <div className="admin-design-info-row"><span>Billing cadence</span><strong>{String(sub?.cadence??"Not recorded")}</strong></div>
    <div className="admin-design-info-row"><span>Period end</span><strong>{formatUtc(sub?.current_period_end)}</strong></div>
-   <div className="admin-design-info-row"><span>Scheduled cancellation</span><strong>{sub?.cancel_at_period_end===true?"At period end":"Not recorded"}</strong></div>
+   <div className="admin-design-info-row"><span>Scheduled cancellation</span><strong>{sub?(sub.cancel_at_period_end===true?"At period end":"No"):"Not recorded"}</strong></div>
    <div className="admin-design-info-row"><span>Last billing reconciliation check</span><strong>{formatUtc(sub?.billing_checked_at)}</strong></div>
    <div className="admin-design-info-row"><span>Billing reconciliation warning</span><strong>{sub?.sync_error===true?"Recorded — investigate":"None recorded"}</strong></div>
    {reason&&<p className="admin-data-caveat">Review: {reason}. Verify the billing provider before changing account access.</p>}
    <p className="admin-data-caveat">This page does not collect payments, issue refunds, override billing status or expose Stripe IDs.</p>
   </section>
 
-  <div style={{marginTop:20}}><UserStrategyAccessEditor
+  <div style={{marginTop:20}}><UserStrategyAccessEditor key={String(user.id)}
    users={[{id:String(user.id),email:String(user.email)}]}
    strategies={strategies.map(r=>({key:String(r.key),name:String(r.name)}))}
    initialOverrides={overrides.map(r=>({userId:String(user.id),key:String(r.key),allowed:r.allowed===true}))}
