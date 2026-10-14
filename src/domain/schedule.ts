@@ -159,3 +159,22 @@ export function nextCalendarQuarterDueAt(input:{
   }
   throw new Error("CALENDAR_QUARTER_DATE_UNAVAILABLE");
 }
+
+/** First eligible business morning after a completed calendar month, NOT one month
+ * after subscription or the preceding monthly review date. The source-certified
+ * terminal trading session is independently enforced by tactical-history-loader.
+ * The review cutoff is after prior month-close observations have become final. */
+export function nextCompletedMonthReviewDueAt(input:{
+ lastReviewAt:Date;timeZone:string;cutoffLocal?:string;holidays?:string[];
+}):Date{
+ const date=localDateInZone(input.lastReviewAt,input.timeZone);
+ const {year,month}=parseDate(date);
+ for(let i=0;i<24;i++){
+  const nextMonth=new Date(Date.UTC(year,month+i,1));
+  const candidate=nextMonth.toISOString().slice(0,10);
+  const eligible=rollBusinessDay(candidate,input.holidays??[],"NEXT");
+  const due=zonedLocalDateTimeToUtc(eligible,input.cutoffLocal??"09:00",input.timeZone);
+  if(due.getTime()>input.lastReviewAt.getTime())return due;
+ }
+ throw new Error("TACTICAL_MONTHLY_REVIEW_DATE_UNAVAILABLE");
+}
