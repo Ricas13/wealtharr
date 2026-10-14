@@ -25,3 +25,9 @@ tests/sig-research.test.ts covers source-confirmed rate and contribution arithme
 
 ## Rights and provenance
 Factual public statements are attributed and linked. Wealtharr has not established a licence to reproduce paid subscriber-only rulebooks, source text or the author's brand as an endorsed commercial offering. Do not imply endorsement or label a non-equivalent approximation as 6Sig.
+
+
+## Public-author evidence confirmed October 2026
+Jason Kelly explicitly describes 6Sig as a **2x mid-cap stock fund plus general bond fund** in his 2018 strategy comments, and in a 2016 response identifies its **50/50 target reset allocation** (contrasting with historical 3Sig's 80/20). See https://jasonkelly.com/resources/strategies/ . These are author statements, not Reddit guesses. **Do not** infer that 50/50 is a quarterly weight floor or an unconditional rebalance: his 9Sig explanation confirms dynamic weight drift below the reset base. Exact 6Sig reset thresholds, protection counts, opening version and money-management rules remain to be confirmed by an authoritative guide.
+
+Public r/KellyLetter testimony in March 2026 describes 3Sig/6Sig/9Sig as the same core growth-target signal structure with differing leverage and special exceptions: https://www.reddit.com/r/KellyLetter/comments/1s7t5ve/starting_9sig/ . This is useful corroboration, not a licence to import 9Sig's exceptions into 6Sig.
