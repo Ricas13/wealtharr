@@ -26,8 +26,9 @@ export function requiredPositions(engine: string, config: Record<string, unknown
     const trade=Array.isArray(config.staticAllocations)?config.staticAllocations.map((r:unknown)=>one((r as {exposure?:unknown})?.exposure)):[];
     const scored=Array.isArray(config.signalUniverse)?config.signalUniverse.map(x=>one(x)):[];
     const defensive=one(config.defensiveAsset);
-    const unique=[...new Map([...trade,...scored,defensive].filter((p):p is RequiredPosition=>Boolean(p)).map(p=>[p.economicExposure,p])).values()];
-    return unique;
+    const unique=new Map<string,RequiredPosition>();
+    for(const position of [...trade,...scored,defensive])if(position)unique.set(position.economicExposure,position);
+    return [...unique.values()];
   }
   if (engine === "TWO_FUNDS_MODERATE") {
     const tdf=one(config.targetDateExposure);
