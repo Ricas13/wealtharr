@@ -10,7 +10,12 @@ const err=(ctx:EngineContext,reason:string):ProposedAction=>({
   instruction:reason,explanation:[{label:"Signal",value:"Missing or invalid"}],
   nextState:ctx.state,confidence:"LOW",dueAt:ctx.now
 });
-function same(a:unknown,b:unknown):boolean{return JSON.stringify(a)===JSON.stringify(b);}
+function canonical(v:unknown):unknown{
+  if(Array.isArray(v))return v.map(canonical);
+  if(v&&typeof v==="object")return Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,canonical(x)]));
+  return v;
+}
+function same(a:unknown,b:unknown):boolean{return JSON.stringify(canonical(a))===JSON.stringify(canonical(b));}
 export function validateTrinityConfig(raw:Record<string,unknown>){
   if(!same(raw,TRINITY_CONFIG))throw new Error("TRINITY_CONFIG_NOT_CANONICAL");
 }
