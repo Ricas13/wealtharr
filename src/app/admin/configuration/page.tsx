@@ -3,6 +3,7 @@ import {requireAdminPage} from "@/lib/session";
 import {sql} from "@/lib/db";
 import {ensureSettings} from "@/lib/settings";
 import {masterSetupSignals} from "@/domain/master-setup";
+import {checkCommercialLaunch} from "@/domain/commercial-launch";
 import {CheckCircle2,Circle,ArrowRight,ShieldCheck,LockKeyhole} from "lucide-react";
 
 export const dynamic="force-dynamic";
@@ -17,10 +18,12 @@ export default async function MasterConfigurationPage(){
     sql.unsafe("SELECT started_at FROM worker_runs WHERE worker_key='backup' AND status='SUCCESS' ORDER BY started_at DESC LIMIT 1")
   ]);
   const configured=(...names:string[])=>names.every(key=>Boolean(process.env[key]));
+  const turnstileConfigured=checkCommercialLaunch(process.env).some(check=>check.key==="turnstile"&&check.passed);
   const signals=masterSetupSignals({
     publicUrl:Boolean(process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://")),
     brand:configured("NEXT_PUBLIC_BRAND_NAME"),
     mfa:process.env.ADMIN_MFA_REQUIRED==="true",
+    turnstileConfigured,
     stripe:configured("STRIPE_SECRET_KEY","STRIPE_WEBHOOK_SECRET"),
     email:process.env.EMAIL_PROVIDER==="http"&&configured("EMAIL_HTTP_ENDPOINT","EMAIL_HTTP_TOKEN","EMAIL_FROM"),
     market:process.env.MARKET_DATA_MODE!=="MANUAL"&&process.env.MARKET_DATA_PROVIDER==="http"&&
@@ -40,6 +43,7 @@ export default async function MasterConfigurationPage(){
 
  const steps=[
   {name:"Create Master Admin and secure MFA",keys:["security"],href:"/app/settings#security"},
+  {name:"Configure and test Cloudflare Turnstile",keys:["turnstile"],href:"/admin/settings#settings-cloudflare-turnstile"},
   {name:"Set platform identity, region and currency",keys:["site"],href:"/admin/settings#settings-general"},
   {name:"Configure market data and brokerage providers",keys:["market"],href:"/admin/integrations"},
   {name:"Configure subscription plans and payments",keys:["plans","stripe"],href:"/admin/plans"},
@@ -63,7 +67,7 @@ export default async function MasterConfigurationPage(){
    <div className="admin-setup-header"><div><h2 id="admin-setup-title">Platform setup</h2>
     <p>Follow each step to configure and verify the production environment.</p></div>
     <span className="admin-setup-fraction">{finished} of {steps.length} configured</span></div>
-   <div className="admin-setup-progress" role="progressbar" aria-valuenow={finished} aria-valuemin={0} aria-valuemax={steps.length} aria-label="Verified configuration progress">
+   <div className="admin-setup-progress" role="progressbar" aria-valuenow={finished} aria-valuemin={0} aria-valuemax={steps.length} aria-label="Configuration progress">
     <div style={{width:(100*finished/steps.length)+"%"}}/></div>
    <ol className="admin-setup-steps">
     {progress.map((step,i)=><li key={step.name}>
