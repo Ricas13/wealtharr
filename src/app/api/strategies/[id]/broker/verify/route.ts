@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {invalidPathId} from "@/lib/route-params";
 import {requireUser} from "@/lib/session";
 import {getStrategyForUser} from "@/lib/strategy-service";
 import {assertSameOrigin,consumeRateLimit} from "@/lib/security";
@@ -21,15 +22,15 @@ const input=z.object({
  * logged; the full account history is filtered before returning any data.
  * No provider order/position write endpoint is reachable through this route.
  */
-export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){
+export async function POST(request:Request,context:{params:Promise<{id:string}>}){
  try{
   assertSameOrigin(request);
   const user=await requireUser();
   // Protect the provider's shared per-account API quotas.
   await consumeRateLimit("broker-readonly-check:"+user.id,1,10);
-  const {id}=await params;
-  if(!z.string().uuid().safeParse(id).success)
-   return Response.json({error:"Strategy not found."},{status:404,headers});
+  const {id}=await context.params;
+  const badId=invalidPathId(id);
+  if(badId)return badId;
   const strategy=await getStrategyForUser(user.id,id);
   if(!strategy)return Response.json({error:"Strategy not found."},{status:404,headers});
   const data=input.parse(await request.json());
@@ -37,9 +38,9 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
   // A manually assigned account reference is not proof of provider identity.
   // Verify it against the actual account summary before reading order history.
   const rows=await sql.unsafe(
-   "SELECT external_trade_id FROM broker_trade_links WHERE user_id=$1::uuid "+
-   "AND strategy_instance_id=$2::uuid AND provider='TRADING212' "+
-   "AND external_account_ref=$3 ORDER BY external_trade_id LIMIT 501",
+   "SELECT b.external_trade_id FROM broker_trade_links b WHERE b.user_id=$1::uuid "+
+   "AND b.strategy_instance_id=$2::uuid AND b.provider='TRADING212' "+
+   "AND b.external_account_ref=$3 ORDER BY b.external_trade_id LIMIT 501",
    [user.id,id,data.brokerAccountId]
   );
   if(!rows.length)return Response.json({error:"No explicitly linked Trading 212 trades use this broker account ID. Select exact CSV trades first."},
