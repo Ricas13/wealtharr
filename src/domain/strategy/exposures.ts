@@ -49,7 +49,7 @@ export function isFullyDescribedExposure(exposure: ExposureDefinition | undefine
   return true;
 }
 
-export const EXPOSURES: readonly ExposureDefinition[] = [
+const BASE_EXPOSURES: readonly ExposureDefinition[] = [
   def("BROAD_EQUITY", "EQUITY", "Diversified global or broad-market equities"),
   def("DOMESTIC_EQUITY", "EQUITY", "Broad equities of the investor's home market"),
   def("INTERNATIONAL_EQUITY", "EQUITY", "Broad equities outside the investor's home market"),
@@ -142,9 +142,10 @@ const GROUP_2_DESCRIPTORS:ReadonlyMap<string,Partial<ExposureDefinition>>=new Ma
   ["EMERGING_MARKETS_EQUITY",{region:"EMERGING_MARKETS",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad emerging markets equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
   ["US_TIPS",{region:"US",maturityBand:"ALL_MATURITIES",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US Treasury inflation-protected securities; no nominal Treasury substitute",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
 ]);
-const byId = new Map(EXPOSURES.map((exposure) => [exposure.id,
-  {...exposure,...(GROUP_2_DESCRIPTORS.get(exposure.id)??{})}
-]));
+export const EXPOSURES:readonly ExposureDefinition[]=BASE_EXPOSURES.map((exposure)=>({
+  ...exposure,...(GROUP_2_DESCRIPTORS.get(exposure.id)??{})
+}));
+const byId = new Map(EXPOSURES.map((exposure) => [exposure.id,exposure]));
 
 
 export function getExposure(id: string) {
