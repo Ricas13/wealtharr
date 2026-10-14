@@ -88,8 +88,15 @@ export type StrategyPlugin = {
   codeRelease?: CodeRelease;
   /** Null when the seed only creates the generic research definition row. */
   seedDefinition: SeedDefinition | null;
-  /** Repo-relative path of the signed-off specification card under docs/strategy-specs, or null. */
+  /** Repo-relative path of the specification card under docs/strategy-specs, or null. */
   specCard: string | null;
   /** Repo-relative path of the golden tests with independently computed values, or null. */
   goldenTests: string | null;
+  /**
+   * Explicit claim that the method is finished. Absent means INCOMPLETE. The claim is only honoured
+   * when `isMethodComplete` (src/domain/strategy/method-complete.ts) also finds every checklist
+   * item satisfied, so declaring COMPLETE alone never releases anything. It is not a human
+   * attestation and does not imply market eligibility or enablement.
+   */
+  releaseStatus?: "COMPLETE" | "INCOMPLETE";
 };

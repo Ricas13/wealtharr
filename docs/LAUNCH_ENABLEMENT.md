@@ -20,11 +20,11 @@ Checks that exist but are **not** proof of tradability: the code states that EXA
 |---|---|---|---|---|
 | Catalogue key | `9sig` | `hfea` | `60-40` | `all-weather` |
 | Engine | `VALUE_TARGET` | `FIXED_ALLOCATION` | `FIXED_ALLOCATION` | `FIXED_ALLOCATION` |
-| Rules in code | `CANONICAL_9SIG_CONFIG`: target `NASDAQ_100_3X_LONG`, initial ratio 0.60, target rate 0.09 per review, contribution ratio 0.50, max cash use 0.90, tolerance 0.01 | 55% `US_EQUITY_3X_LONG`, 45% `LONG_TREASURY_3X_LONG` | 60% `BROAD_EQUITY`, 40% `AGGREGATE_BONDS` | 30% `BROAD_EQUITY`, 40% `LONG_TREASURY`, 15% `INTERMEDIATE_TREASURY`, 7.5% `GOLD`, 7.5% `BROAD_COMMODITIES` |
+| Rules in code | `CANONICAL_9SIG_CONFIG`: target `NASDAQ_100_3X_LONG`, initial ratio 0.60, target rate 0.09 per review, contribution ratio 0.50, max cash use 0.90, tolerance 0.01 | 55% `US_EQUITY_3X_LONG`, 45% `LONG_TREASURY_3X_LONG` | 60% `GLOBAL_EQUITY_ALL_CAP_UNHEDGED`, 40% `GLOBAL_AGGREGATE_BONDS_GBP_HEDGED` (named Wealtharr model, "Global 60/40 (GBP)") | 30% `BROAD_EQUITY`, 40% `LONG_TREASURY`, 15% `INTERMEDIATE_TREASURY`, 7.5% `GOLD`, 7.5% `BROAD_COMMODITIES` |
 | Leverage | 3x daily-reset | 3x on both legs | none | none |
 | Review | Quarterly, 16:00 cutoff, previous-business-day convention, empty holiday list; no `reviewTimezone` in the canonical config | Quarterly, calendar quarter end, 16:00 America/New_York, empty holiday list | Annual, threshold 0.00 | Annual, threshold 0.00 |
-| Spec card | **None** (`docs/strategy-specs/9sig.md` does not exist) | `docs/strategy-specs/hfea.md`: "externally corroborated, not independently certified"; reviewer PENDING | `docs/strategy-specs/60-40.md`: "model convention, not one uniquely authored strategy"; reviewer PENDING | `docs/strategy-specs/all-weather.md`: DRAFT, NOT SIGNED OFF; weights and schedule marked VERIFY; written without the primary source |
-| Golden tests | `tests/value-target.test.ts` (engine behaviour, expected values self-computed, not from the author's source); no author-source golden cases | `tests/strategy-reference-golden.test.ts`: £10k initial 5,500/4,500, drift 6,000/4,000 to sell 500 / buy 500, £1,000 contribution 550/450; plus HFEA fill-to-HOLD integration | Same file: £10k initial 6,000/4,000, 7,000/3,000 drift. No on-target, contribution, threshold or rounding cases | Same file: **added in this change** (see section 4). Previously none |
+| Spec card | **None** (`docs/strategy-specs/9sig.md` does not exist) | `docs/strategy-specs/hfea.md`: "externally corroborated, not independently certified"; reviewer PENDING | `docs/strategy-specs/60-40.md`: named Wealtharr model; every item labelled SOURCE or CONVENTION; owner-decision list; no sign-off recorded | `docs/strategy-specs/all-weather.md`: DRAFT, NOT SIGNED OFF; weights and schedule marked VERIFY; written without the primary source |
+| Golden tests | `tests/value-target.test.ts` (engine behaviour, expected values self-computed, not from the author's source); no author-source golden cases | `tests/strategy-reference-golden.test.ts`: £10k initial 5,500/4,500, drift 6,000/4,000 to sell 500 / buy 500, £1,000 contribution 550/450; plus HFEA fill-to-HOLD integration | `tests/strategy-golden-60-40.test.ts` (initial split and rounding, drift both ways, threshold boundary, contribution, minimum trade, engine hold/sell/fail-closed cases) plus the shared reference file | Same file: **added in this change** (see section 4). Previously none |
 | On a fresh seed: seed state | Definition `enabled=true`; version 1.0 inserted directly as `PUBLISHED`; **no attestation** | Definition `enabled=false`; version 1.0 `DRAFT` | `enabled=false`; `DRAFT` | `enabled=false`; `DRAFT` |
 | Disclosure | Seed default text ("Rule calculator for a user-selected strategy...") although the target is 3x leveraged; the catalogue's `LEVERAGE_DISCLOSURE` is attached only to HFEA | `LEVERAGE_DISCLOSURE` | seed default | seed default |
 | Instrument mappings | None seeded | None seeded | None seeded | None seeded |
@@ -35,11 +35,13 @@ Checks that exist but are **not** proof of tradability: the code states that EXA
 
 **HFEA**: (1) human review of `hfea.md` against the original author thread and calendar; (2) independently computed golden cases are present for the three headline cases but the card itself says "independently run golden cases" are still a blocker; (3) EXACT mappings for `US_EQUITY_3X_LONG` and `LONG_TREASURY_3X_LONG`; (4) market-holiday coverage and the 16:00 cutoff are marked as needing independent verification in the card; (5) licensed provider and disclosure/legal review.
 
-**60/40**: (1) human review of `60-40.md` (the card itself says this is a convention, not a uniquely authored strategy); (2) golden cases cover only two scenarios; (3) EXACT mappings for `BROAD_EQUITY` and `AGGREGATE_BONDS` ("country-specific bond exposure definitions" are pending in the card); (4) data/licensing.
+**60/40**: (1) the owner must confirm the model conventions listed in `60-40.md` (exposure definitions, sterling hedge on the bond leg, annual cadence, zero threshold); (2) EXACT mappings for `GLOBAL_EQUITY_ALL_CAP_UNHEDGED` and `GLOBAL_AGGREGATE_BONDS_GBP_HEDGED` (none seeded; the instrument requirements per leg are in the card); (3) data/licensing; (4) legal review of customer wording.
 
 **All Weather**: (1) the card is still DRAFT with every weight marked VERIFY and says Bridgewater's All Weather is a different product (the customer-facing text must say so; the catalogue rule text already says "NOT an official, single canonical Ray Dalio product"); (2) human review against the cited source (Portfolio Charts All Seasons, Tony Robbins); (3) EXACT mappings for five exposures, including `GOLD`, `BROAD_COMMODITIES` and `INTERMEDIATE_TREASURY`; (4) the card asks for a "withdrawal" golden case; one planner-level case with negative cash was added (£1,000 out of an on-target portfolio), but whether real callers ever pass negative cash to the planner is UNVERIFIED, so the card requirement is only partly met; (5) data/licensing.
 
 ## 3. Verified EXACT mappings required (owner)
+
+Pointer: how to choose and evidence an exact GB / ISA listing is in [uk-instrument-selection-methodology.md](uk-instrument-selection-methodology.md); the operator template is [instrument-verification-checklist.md](instrument-verification-checklist.md).
 
 For every row, the owner must verify product, ISIN, listing/exchange, trading currency (must be GBP for the enable gate), fund currency and that the product's exposure and leverage match the registry definition, against the issuer factsheet and KID/KIID. Do not use a product with a different leverage, duration or index "because it is similar": the resolver and the card rules reject substitution (HFEA card: "Do not substitute TQQQ for UPRO or a 3x 10-year Treasury instrument for TMF").
 
@@ -48,8 +50,9 @@ For every row, the owner must verify product, ISIN, listing/exchange, trading cu
 | `NASDAQ_100_3X_LONG` | 3 | LONG | 9Sig | Nasdaq-100 equities with 3x daily-reset leverage |
 | `US_EQUITY_3X_LONG` | 3 | LONG | HFEA | US large-cap equities with 3x daily-reset leverage |
 | `LONG_TREASURY_3X_LONG` | 3 | LONG | HFEA | Long-duration government bonds with 3x daily-reset leverage |
-| `BROAD_EQUITY` | 1 | LONG | 60/40, All Weather | Diversified global or broad-market equities |
-| `AGGREGATE_BONDS` | 1 | LONG | 60/40 | Broad investment-grade bond market |
+| `GLOBAL_EQUITY_ALL_CAP_UNHEDGED` | 1 | LONG | 60/40 | Global all-capitalisation equities across developed and emerging markets, unhedged and unleveraged |
+| `GLOBAL_AGGREGATE_BONDS_GBP_HEDGED` | 1 | LONG | 60/40 | Global investment-grade aggregate bonds of all maturities, hedged to pound sterling and unleveraged |
+| `BROAD_EQUITY` | 1 | LONG | All Weather | Diversified global or broad-market equities |
 | `LONG_TREASURY` | 1 | LONG | All Weather | Long-duration government bonds |
 | `INTERMEDIATE_TREASURY` | 1 | LONG | All Weather | Intermediate-duration government bonds |
 | `GOLD` | 1 | LONG | All Weather | Physical-gold-backed exposure |
@@ -105,11 +108,10 @@ Legend: **Code** = done in this repository; **Owner** = only a human can do it.
 - [ ] Owner: ATTEST path `docs/strategy-specs/hfea.md`; golden tests `tests/strategy-reference-golden.test.ts`.
 
 ### 60/40 (`60-40`)
-- [x] Code: engine, canonical config, golden cases (initial and one drift).
-- [ ] Owner: review `docs/strategy-specs/60-40.md` (convention card; variant is explicit: 60/40 annual, threshold 0) and sign it.
-- [ ] Owner: decide exactly what `BROAD_EQUITY` and `AGGREGATE_BONDS` mean per country and verify the product for each.
-- [ ] Owner: ATTEST path `docs/strategy-specs/60-40.md`; golden tests `tests/strategy-reference-golden.test.ts`.
-- [ ] Code (optional follow-up): extra golden cases (contribution, tolerance, rounding) like those added for All Weather.
+- [x] Code: engine, canonical config with precise exposures, spec card, engine-level golden cases (`tests/strategy-golden-60-40.test.ts`).
+- [ ] Owner: confirm the model conventions and answer the owner-decision list in `docs/strategy-specs/60-40.md`.
+- [ ] Owner: verify one product per leg for GB / ISA / GBP against the per-leg requirements in the card and create EXACT mappings.
+- [ ] Owner: data licence and legal review of customer wording.
 
 ### All Weather (`all-weather`)
 - [x] Code: engine, canonical config, golden cases added in this change (initial, rounding, on-target, equity-heavy, bond-heavy, deposit, zero-threshold, tolerance edge).

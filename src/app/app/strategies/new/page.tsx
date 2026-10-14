@@ -6,8 +6,7 @@ import { loadEntitlements } from "@/lib/entitlement-service";
 import { CreateStrategyForm } from "@/components/CreateStrategyForm";
 import { sql } from "@/lib/db";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
-import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
-import { preselectedStrategyKey } from "@/domain/explore-catalogue";
+import { isOfferableForUser, preselectedStrategyKey } from "@/domain/explore-catalogue";
 
 export default async function NewStrategyPage({searchParams}:{searchParams?:Promise<Record<string,string|string[]|undefined>>}){
   const query=(await searchParams)??{};
@@ -23,14 +22,25 @@ export default async function NewStrategyPage({searchParams}:{searchParams?:Prom
   const allowedRows=entitlements.availableStrategyKeys
     ? rows.filter((row:any)=>entitlements.availableStrategyKeys?.has(String(row.key)))
     : rows;
-  const strategies=allowedRows.map((r:any)=>({
-    key:String(r.key),name:String(r.name),adminPreview:r.enabled!==true,family:String(r.family),description:String(r.description),
-    version:String(r.version),inputSchema:Array.isArray(r.input_schema)?r.input_schema:[],
-    supportedWrappers:Array.isArray(r.supported_wrappers)?r.supported_wrappers.map(String):[],
-    supportedMarkets:assessStrategyMarket(String(r.engine_key),(r.config??{}) as Record<string,unknown>,
-      verifiedCandidates(marketMappings),{country:user.country,wrapper:user.country==="GB"?"ISA":"TAXABLE",currency:user.baseCurrency},
-      new Date().toISOString().slice(0,10)).supportedMarkets
-  }));
+  const mappings=verifiedCandidates(marketMappings);
+  const asOf=new Date().toISOString().slice(0,10);
+  // Same predicate as Explore and createStrategy: only strategies the user's own country and currency
+  // can actually start (for any wrapper the form offers) are listed.
+  const strategies=allowedRows.flatMap((r:any)=>{
+    const supportedWrappers:string[]=Array.isArray(r.supported_wrappers)?r.supported_wrappers.map(String):[];
+    const offer=isOfferableForUser({
+      strategy:{engine:String(r.engine_key),config:(r.config??{}) as Record<string,unknown>,
+        supportedRegions:Array.isArray(r.supported_regions)?r.supported_regions.map(String):[],supportedWrappers},
+      userMarket:{country:user.country,currency:user.baseCurrency},mappings,asOf
+    });
+    if(!offer.offerable)return [];
+    return [{
+      key:String(r.key),name:String(r.name),adminPreview:r.enabled!==true,family:String(r.family),description:String(r.description),
+      version:String(r.version),inputSchema:Array.isArray(r.input_schema)?r.input_schema:[],
+      supportedWrappers,
+      supportedMarkets:offer.assessment?.supportedMarkets??[]
+    }];
+  });
 
   // Only keys the form can really start are honoured; anything else is ignored.
   const initialStrategyKey=preselectedStrategyKey(query.strategy,strategies.map((strategy)=>strategy.key));

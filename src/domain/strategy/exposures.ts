@@ -3,15 +3,51 @@
  * tickers or funds; the instrument mapping layer resolves an exposure to a tradable line per
  * jurisdiction. Adding an exposure here is a deliberate, reviewed change.
  */
+export type MaturityBand = "ALL_MATURITIES" | "SHORT" | "INTERMEDIATE" | "LONG" | "NOT_APPLICABLE";
+/**
+ * How the exposure treats the currency of its underlying assets relative to the investor's base
+ * currency. UNHEDGED holds the underlying currencies; GBP_HEDGED hedges them back to sterling;
+ * LOCAL means the exposure is wholly in one currency (its own home currency).
+ */
+export type CurrencyPolicy = "UNHEDGED" | "GBP_HEDGED" | "LOCAL";
+
 export type ExposureDefinition = {
   id: string;
   assetClass: "EQUITY" | "BOND" | "CASH" | "COMMODITY";
   /** Nominal daily leverage multiple the exposure is defined with. */
   leverage: number;
   description: string;
+  /**
+   * Structured descriptor. Optional so that legacy, deliberately vague exposures stay valid; an
+   * exposure used by a strategy that is released as complete must carry every field required by
+   * `isFullyDescribedExposure`.
+   */
+  region?: string;
+  maturityBand?: MaturityBand;
+  currencyPolicy?: CurrencyPolicy;
+  /** Credit quality of a bond exposure, or NOT_APPLICABLE. */
+  creditQuality?: "INVESTMENT_GRADE" | "NOT_APPLICABLE";
+  /** What a verified listing must cover; the market-coverage claim of the exposure. */
+  coverage?: string;
+  /** Requirement a product must meet at fund level (domicile, wrapper eligibility). */
+  domicileRequirement?: string;
+  /** True when the definition is a Wealtharr model convention awaiting owner confirmation. */
+  modelConvention?: boolean;
 };
 
 const def = (id: string, assetClass: ExposureDefinition["assetClass"], description: string, leverage = 1): ExposureDefinition => ({ id, assetClass, leverage, description });
+
+/**
+ * True when every descriptor field that makes an exposure unambiguous is present. Used by the
+ * release predicate: a strategy cannot be complete while it references a vaguely described exposure.
+ */
+export function isFullyDescribedExposure(exposure: ExposureDefinition | undefined): boolean {
+  if (!exposure) return false;
+  if (!exposure.description.trim() || !Number.isFinite(exposure.leverage) || exposure.leverage <= 0) return false;
+  if (!exposure.region || !exposure.maturityBand || !exposure.currencyPolicy || !exposure.creditQuality) return false;
+  if (!exposure.coverage || !exposure.domicileRequirement) return false;
+  return true;
+}
 
 export const EXPOSURES: readonly ExposureDefinition[] = [
   def("BROAD_EQUITY", "EQUITY", "Diversified global or broad-market equities"),
@@ -38,7 +74,26 @@ export const EXPOSURES: readonly ExposureDefinition[] = [
   def("LONG_TREASURY_3X_LONG", "BOND", "Long-duration government bonds with 3x daily-reset leverage", 3),
   def("CASH_BILLS", "CASH", "Cash or short-dated government bills"),
   def("GOLD", "COMMODITY", "Physical-gold-backed exposure"),
-  def("BROAD_COMMODITIES", "COMMODITY", "Diversified commodities basket")
+  def("BROAD_COMMODITIES", "COMMODITY", "Diversified commodities basket"),
+  // Wealtharr 60/40 model exposures (docs/strategy-specs/60-40.md). These names and their
+  // definitions are a Wealtharr model convention that the owner must confirm; they are not taken
+  // from the Bogleheads wiki, which names only asset classes.
+  {
+    id: "GLOBAL_EQUITY_ALL_CAP_UNHEDGED", assetClass: "EQUITY", leverage: 1,
+    description: "Global all-capitalisation equities across developed and emerging markets, unhedged and unleveraged",
+    region: "GLOBAL", maturityBand: "NOT_APPLICABLE", currencyPolicy: "UNHEDGED", creditQuality: "NOT_APPLICABLE",
+    coverage: "Large, mid and small capitalisation companies across developed and emerging markets; a single global all-cap index or an equivalent single fund",
+    domicileRequirement: "A fund the investor can hold in a UK ISA; the accepted domiciles and fund types are an owner decision",
+    modelConvention: true
+  },
+  {
+    id: "GLOBAL_AGGREGATE_BONDS_GBP_HEDGED", assetClass: "BOND", leverage: 1,
+    description: "Global investment-grade aggregate bonds (government, government-related and corporate) of all maturities, hedged to pound sterling and unleveraged",
+    region: "GLOBAL", maturityBand: "ALL_MATURITIES", currencyPolicy: "GBP_HEDGED", creditQuality: "INVESTMENT_GRADE",
+    coverage: "Investment-grade government, government-related and corporate bonds of all maturities across the markets of one global aggregate index; a single global aggregate index or an equivalent single fund",
+    domicileRequirement: "A fund the investor can hold in a UK ISA; the accepted domiciles and fund types are an owner decision",
+    modelConvention: true
+  }
 ];
 
 const byId = new Map(EXPOSURES.map((exposure) => [exposure.id, exposure]));

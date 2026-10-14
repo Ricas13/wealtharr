@@ -18,9 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Mirror of the official Postgres image. Avoid Docker Hub unauthenticated rate limits
+        # Google cache of the official Docker Hub Postgres image, avoiding public ECR bandwidth limits
         # on ephemeral GitHub runners (toomanyrequests before tests even start).
-        image: public.ecr.aws/docker/library/postgres:16
+        image: mirror.gcr.io/library/postgres:16
         env:
           POSTGRES_USER: strategyos
           POSTGRES_PASSWORD: strategyos
@@ -63,9 +63,9 @@ jobs:
           npm run db:provision-roles
           npm run db:verify-roles
           # Exercise actual pg_dump under the backup-only credentials, not the owner.
-          # Reuse the already-pulled service image; a second ECR tag often hits 429.
+          # Reuse the same Postgres mirror image as the service container.
           docker run --rm --network host --env "PGPASSWORD=$BACKUP_DB_PASSWORD" \
-            public.ecr.aws/docker/library/postgres:16 \
+            mirror.gcr.io/library/postgres:16 \
             pg_dump -h 127.0.0.1 -U wealtharr_backup -d strategyos_test \
             --format=custom --no-owner --no-acl > /tmp/wealtharr-readonly-backup.pgcustom
           test -s /tmp/wealtharr-readonly-backup.pgcustom

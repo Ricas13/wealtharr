@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import type { SettingView } from "@/lib/settings";
+import { TurnstileAdminTest } from "@/components/TurnstileAdminTest";
 
 type Edits = Record<string, string | null>;
 
@@ -85,6 +86,12 @@ export function SettingsEditor({ initial, groups }: { initial: SettingView[]; gr
             <div className="help">{s.help}</div>
             {errors[s.key] && <div className="error" role="alert">{errors[s.key]}</div>}
           </div>)}
+          {group==="Cloudflare Turnstile"&&<div className="card">
+            <TurnstileAdminTest
+              siteKey={settings.find(s=>s.key==="TURNSTILE_SITE_KEY")?.value??""}
+              secretConfigured={settings.some(s=>s.key==="TURNSTILE_SECRET_KEY"&&s.source!=="unset")}
+            />
+          </div>}
         </div>
       </section>;
     })}

@@ -47,6 +47,12 @@ export const promoteMappingSchema = z.object({
   providerSymbol: z.string().trim().min(1).max(64).nullable().optional(),
   checklist: promotionChecklistSchema,
   subject: promotionSubjectSchema,
+  /**
+   * Raw evidence object. Its shape and completeness depend on the stored mapping (country, wrapper,
+   * broker, trading line), so the server validates it with validateInstrumentEvidence after loading
+   * the row. GB / ISA promotions are refused without a complete object.
+   */
+  evidence: z.record(z.string(), z.unknown()).optional(),
   note
 });
 
@@ -90,6 +96,12 @@ export const PROMOTION_REFUSALS: Record<PromotionRefusal, { status: number; mess
 
 export class PromotionRefused extends Error {
   constructor(readonly code: PromotionRefusal) { super(code); }
+}
+
+/** Evidence missing or invalid: answered 400 with every problem listed so nothing is fixed piecemeal. */
+export class EvidenceRefused extends Error {
+  readonly code = "EVIDENCE_REQUIRED" as const;
+  constructor(readonly issues: string[]) { super("EVIDENCE_REQUIRED"); }
 }
 
 export type MappingRow = {

@@ -1,4 +1,5 @@
 import {describe,expect,it} from "vitest";
+import {readFileSync} from "node:fs";
 import {foldAccountLedger,foldLedger,ledgerRowToEvent,ledgerRowsForAccount} from "@/domain/ledger";
 
 describe("canonical strategy-account ledger partition",()=>{
@@ -24,5 +25,17 @@ describe("canonical strategy-account ledger partition",()=>{
     expect(primary.cash.plus(secondary.cash).eq(combined.cash)).toBe(true);
     expect(primary.quantities.get("etf-a")!.plus(secondary.quantities.get("etf-a")!).eq(combined.quantities.get("etf-a")!)).toBe(true);
     expect(combined.cash.toString()).toBe("250");
+  });
+});
+
+describe("every ledger consumer uses the canonical per-account fold",()=>{
+  const read=(path:string)=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
+  it("executeAction and the strategy switch no longer filter ledger rows with account_id=$2",()=>{
+    for(const path of ["src/lib/action-service.ts","src/lib/strategy-switch-service.ts"]){
+      const source=read(path);
+      expect(source).not.toMatch(/FROM ledger_events[^"]*AND account_id=\$2/);
+      expect(source).toContain("foldAccountLedger(");
+    }
+    expect(read("src/lib/strategy-switch-service.ts")).not.toContain("foldLedger(");
   });
 });

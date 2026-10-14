@@ -1,4 +1,5 @@
 import {STRATEGY_PLUGINS,curatedRelease} from "../src/domain/strategy/catalog/index";
+import {strategiesToSeed} from "../src/domain/strategy/seed-plan";
 import postgres from "postgres";
 
 async function main(){
@@ -29,13 +30,14 @@ async function main(){
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
-    for(const plugin of STRATEGY_PLUGINS){
-      const definition=plugin.seedDefinition;
-      // No incomplete/DRAFT reference model or partial 9Sig release is seeded on a real install.
-      if(!syntheticCiCatalogue)continue;
-      if(!definition)continue;
+    // On a real install only plugins whose method is complete (isMethodComplete) are seeded, always
+    // as a DISABLED definition with a PUBLISHED version and no attestation row; no incomplete/DRAFT
+    // reference model or partial 9Sig release is seeded. An administrator enables a strategy later
+    // and only a complete EXACT market makes it reachable. The CI fixture keeps its full catalogue.
+    for(const entry of strategiesToSeed(STRATEGY_PLUGINS,syntheticCiCatalogue?"CI_FIXTURE":"PRODUCTION")){
+      const {plugin,definition,enabled}=entry;
       const key=plugin.key;
-      const {name,family,description,engine,proprietary,enabled}=definition;
+      const {name,family,description,engine,proprietary}=definition;
       const defQuery="INSERT INTO strategy_definitions (key,name,family,description,engine,proprietary,enabled,supported_regions,supported_wrappers) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text::jsonb,$9::text::jsonb) ON CONFLICT (key) DO NOTHING";
       const rows=await sql.unsafe(defQuery,[key,name,family,description,engine,proprietary,enabled,JSON.stringify(definition.supportedRegions),JSON.stringify(definition.supportedWrappers)]);
       const id=rows[0]?.id??(await sql.unsafe("SELECT id FROM strategy_definitions WHERE key=$1",[key]))[0]?.id;
@@ -45,7 +47,7 @@ async function main(){
       // Seeding the new code-approved DRAFT must not leave their definition.engine stuck on
       // RESEARCH_PENDING. Never mutate a definition with a published version or
       // operator-enabled status.
-      if(definition.realignsResearchOnlyDefinition){
+      if(entry.realignsResearchOnlyDefinition){
         await sql.unsafe(
           "UPDATE strategy_definitions SET name=$2,description=$3,family='FIXED_ALLOCATION',engine='FIXED_ALLOCATION' "+
           "WHERE id=$1 AND enabled=false AND NOT EXISTS ("+
@@ -54,7 +56,7 @@ async function main(){
         );
       }
 
-      if(definition.initialVersion===null)continue;
+      if(entry.initialVersion===null)continue;
 
       const release=curatedRelease(plugin);
       if(!release?.config)throw new Error("Missing reference configuration for "+key);
@@ -62,7 +64,7 @@ async function main(){
       const inputSchema:object[]=release.inputSchema??[];
       const disclosure=release.disclosure||"Rule calculator for a user-selected strategy. Not a suitability recommendation.";
 
-      const lifecycle=definition.initialVersion;
+      const lifecycle=entry.initialVersion;
       await sql.unsafe(
         "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) VALUES ($1,'1.0','2026-01-01',$2,$3,'OPTIONAL',$6::text::jsonb,$4::text::jsonb,$5,CASE WHEN $3='PUBLISHED' THEN now() ELSE NULL END) ON CONFLICT (strategy_definition_id,version) DO NOTHING",
         [id,engine,lifecycle,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]

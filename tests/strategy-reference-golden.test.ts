@@ -151,7 +151,7 @@ describe("independently worked portfolio allocation golden cases",()=>{
  it("60/40 and Buffett 90/10 are different code-locked rebalancing models",()=>{
   expect(fresh("60-40")).toEqual(["6000.00","4000.00"]);
   expect(plan("60-40",["7000","3000"])).toEqual([
-   ["SELL","BROAD_EQUITY","1000.00"],["BUY","AGGREGATE_BONDS","1000.00"]
+   ["SELL","GLOBAL_EQUITY_ALL_CAP_UNHEDGED","1000.00"],["BUY","GLOBAL_AGGREGATE_BONDS_GBP_HEDGED","1000.00"]
   ]);
   expect(fresh("buffett-90-10")).toEqual(["9000.00","1000.00"]);
   expect(plan("buffett-90-10",["9500","500"])).toEqual([

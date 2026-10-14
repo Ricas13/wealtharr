@@ -11,7 +11,7 @@ export const dynamic="force-dynamic";
 
 export default async function AdminPage(){
  await requireAdminPage();
- const [users,strategies,failed,attention,runs,flags,definitions,attested,registrations,createdStrategies,customers30]=await Promise.all([
+ const [users,strategies,failed,attention,runs,flags,definitions,attested,registrations,createdStrategies,customers30,activeSubscriptions,billingFailures]=await Promise.all([
   sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL"),
   sql.unsafe("SELECT count(*)::int AS c FROM strategy_instances WHERE status='ACTIVE'"),
   sql.unsafe("SELECT count(*)::int AS c FROM notification_deliveries WHERE status='PENDING' AND attempt_count>2"),
@@ -22,7 +22,9 @@ export default async function AdminPage(){
   sql.unsafe("SELECT count(*)::int AS c FROM strategy_version_attestations"),
   sql.unsafe("SELECT to_char(date_trunc('month',created_at),'YYYY-MM') AS bucket,count(*)::int AS c FROM users WHERE deleted_at IS NULL AND created_at>=date_trunc('month',now())-interval '5 months' GROUP BY 1"),
   sql.unsafe("SELECT to_char(date_trunc('month',created_at),'YYYY-MM') AS bucket,count(*)::int AS c FROM strategy_instances WHERE created_at>=date_trunc('month',now())-interval '5 months' GROUP BY 1"),
-  sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '30 days'")
+  sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '30 days'"),
+  sql.unsafe("SELECT count(*)::int AS c FROM subscriptions WHERE status IN ('ACTIVE','TRIALING')"),
+  sql.unsafe("SELECT count(*)::int AS c FROM billing_webhook_events WHERE status='FAILED' AND created_at>=now()-interval '24 hours'")
  ]);
  const alerts=evaluateOps(await gatherSnapshot());
  const launchLocked=process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true";
@@ -47,7 +49,7 @@ export default async function AdminPage(){
  return <div className="admin-overview admin-fidelity-overview">
   <div className="admin-design-heading">
    <div><span className="admin-kicker">WORKSPACE / OVERVIEW</span><h1>Overview</h1><p>Business performance and platform health</p></div>
-   <span className={"admin-design-status "+(launchLocked?"is-prelaunch":"is-live")}>{launchLocked?"Pre-launch":"Launch enabled"}</span>
+   <span className={"admin-design-status "+(launchLocked?"is-prelaunch":"is-live")}>{launchLocked?"Pre-launch":"Checkout switch on"}</span>
   </div>
   <div className="admin-overview-kpis" role="region" aria-label="Key business indicators">{cards.map(({label,value,detail,href,Icon})=>
    <Link key={label} href={href} className="admin-design-kpi">
@@ -65,6 +67,7 @@ export default async function AdminPage(){
     <Link className="admin-panel-footer-link" href="/admin/launch">Review launch readiness <ArrowRight size={14}/></Link>
    </section>
   </div>
+  <section className="admin-design-panel" aria-labelledby="admin-billing-pulse"><header className="admin-design-panel-header"><div><h2 id="admin-billing-pulse">Billing activity</h2><p>Recorded subscription and webhook states; not independently reconciled payments.</p></div><Link href="/admin/plans" aria-label="Open Commerce"><ArrowUpRight size={17}/></Link></header><div className="admin-design-info-row"><span>Active or trial subscriptions</span><strong>{Number(activeSubscriptions[0]?.c??0)}</strong></div><div className="admin-design-info-row"><span>Failed Stripe events · last 24 hours</span><strong className={Number(billingFailures[0]?.c??0)>0?"is-warning":undefined}>{Number(billingFailures[0]?.c??0)}</strong></div><p className="admin-data-caveat">Subscription counts include trials. No monthly recurring revenue is estimated without reconciled transactions.</p><Link href="/admin/plans" className="admin-panel-footer-link">Review Commerce <ArrowRight size={14}/></Link></section>
   <div className="admin-design-grid admin-design-grid-secondary">
    <section className="admin-design-panel" aria-labelledby="admin-strategy-summary">
     <header className="admin-design-panel-header"><div><h2 id="admin-strategy-summary">Strategy Studio</h2><p>Verified releases and research inventory</p></div><Link href="/admin/strategies" aria-label="Open strategy studio"><ArrowUpRight size={17}/></Link></header>

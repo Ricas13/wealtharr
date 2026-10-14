@@ -42,6 +42,26 @@ export async function PUT(request: Request) {
         errors[change.key] = "Turn on two-step sign-in for your own account first (Settings > Security), otherwise you would lock yourself out of admin tools.";
       }
     }
+    // Apply the proposed Turnstile changes as a set, rather than letting a
+    // half-configured widget lock customers out of registration or sign-in.
+    if(input.changes.some(c=>c.key.startsWith("TURNSTILE_"))){
+      const current=await listSettings();
+      const values=new Map(input.changes.map(c=>[c.key,c.value]));
+      const effective=(key:string)=>values.has(key)?values.get(key):current.find(s=>s.key===key)?.value;
+      const enabled=effective("TURNSTILE_ENABLED")==="true";
+      const hasSecret=values.has("TURNSTILE_SECRET_KEY")?Boolean(values.get("TURNSTILE_SECRET_KEY")):
+        current.some(s=>s.key==="TURNSTILE_SECRET_KEY"&&s.source!=="unset");
+      const changingSite=values.has("TURNSTILE_SITE_KEY");
+      const changingSecret=values.has("TURNSTILE_SECRET_KEY");
+      if(changingSite&&!changingSecret){
+        errors.TURNSTILE_SITE_KEY="Change the site key and matching secret together, or clear both.";
+      }
+      if(enabled&&changingSite){
+        errors.TURNSTILE_ENABLED="Turn off protection and save before replacing your Cloudflare keys.";
+      }else if(enabled&&(!effective("TURNSTILE_SITE_KEY")||!hasSecret)){
+        errors.TURNSTILE_ENABLED="Save the Cloudflare site key and secret key before enabling protection.";
+      }
+    }
     if (Object.keys(errors).length) return Response.json({ error: "Some settings were not saved.", errors }, { status: 400 });
 
     const result = await saveSettings(admin.id, input.changes);

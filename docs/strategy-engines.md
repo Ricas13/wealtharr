@@ -44,7 +44,8 @@ Every built-in strategy is a plugin: one file in `src/domain/strategy/catalog/`,
 A plugin carries:
 - `profile`: key, name, engine, `config` (the immutable executable rules, expressed in economic exposures, never tickers), optional `disclosure` (required for leveraged exposures) and `inputSchema`, plus `rules`, `research` sources and `risks`.
 - `seedDefinition`: what a fresh install inserts (name, family, description, engine, proprietary, enabled default, supported regions and wrappers, initial version lifecycle). The seed is insert-only and never modifies an installed version; the only installed-definition update is the guarded research-only realignment (`realignsResearchOnlyDefinition`, coffeehouse/core-four/swensen, disabled and unpublished rows only).
-- `specCard` and `goldenTests`: repo paths of the signed-off specification card and of the golden tests, or `null` while they do not exist yet.
+- `specCard` and `goldenTests`: repo paths of the specification card and of the golden tests, or `null` while they do not exist yet.
+- `releaseStatus`: the explicit `"COMPLETE"` declaration read by `isMethodComplete`; absent means incomplete. On a real install the seed inserts only complete plugins, as disabled definitions with a PUBLISHED version.
 
 Steps to add a strategy:
 1. Create `src/domain/strategy/catalog/<key>.ts` with the profile. Use an engine that already exists (`FIXED_ALLOCATION`, `VALUE_TARGET`); a new calculation family also needs an engine implementation. Mark it `RESEARCH_PENDING` (no `config`) until the rules are verified; never invent a rule.
@@ -52,7 +53,8 @@ Steps to add a strategy:
 3. Write the spec card `docs/strategy-specs/<name>.md` from the primary source, separating source-derived weights from Wealtharr's review convention.
 4. Write golden tests with independently computed expected values (hand-worked, not produced by the code under test) and set `goldenTests` and `specCard` on the plugin.
 5. Add the pinned expectations for the new strategy to `tests/strategy-plugin-snapshot.test.ts`, then run `npm run verify`.
-6. Release through Admin > Strategy Studio: create the DRAFT version, `ATTEST` (spec card path and golden tests), then `PUBLISH`, then `ENABLE`. Each gate is separate; publishing does not enable, and nothing is enabled automatically.
+6. Declare `releaseStatus:"COMPLETE"` on the plugin only when `isMethodComplete` (`src/domain/strategy/method-complete.ts`) is satisfied: PUBLISHED seed version, executable rules, customer-publishable engine, every exposure registered with a full structured descriptor, and a spec card (with the model-definition sections) and a dedicated golden-test file that references the strategy key. `tests/method-complete.test.ts` pins the set of complete strategies.
+7. Release through Admin > Strategy Studio: create the DRAFT version (or use the seeded PUBLISHED one on a real install), `PUBLISH`, then `ENABLE`. A manual `ATTEST` is optional audit metadata, not a gate. Each gate is separate; publishing does not enable, and nothing is enabled automatically. Enabling also requires a complete EXACT market for the account type.
 
 Changing an existing strategy:
 - Published versions are immutable (database trigger, migration 0014). Corrections are new versions, never in-place edits.

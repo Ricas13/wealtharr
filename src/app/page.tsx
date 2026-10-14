@@ -3,15 +3,14 @@ import {sql} from "@/lib/db";
 import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
 import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
 import {assertCuratedRules} from "@/domain/strategy/curated-release";
-import {assessStrategyMarket} from "@/domain/strategy/market-eligibility";
 import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-market-mappings";
-import {cardDescription,summariseRules} from "@/domain/explore-catalogue";
+import {cardDescription,isOfferableForUser,summariseRules} from "@/domain/explore-catalogue";
 import {PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStrategyCard} from "@/components/PublicLandingInteractivity";
 import "./marketing-home.css";
 
 export const dynamic="force-dynamic";
 type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;homepage_highlights:unknown;monthly_price_minor:number|null;annual_price_minor:number|null};
-type ReleaseRow={key:string;engine_key:string;config:Record<string,unknown>;input_schema:unknown};
+type ReleaseRow={key:string;engine_key:string;config:Record<string,unknown>;input_schema:unknown;supported_regions:unknown;supported_wrappers:unknown};
 function decodeEntitlements(raw:unknown):{features:string[];notificationChannels:string[]}{
   let parsed=raw;
   if(typeof raw==="string"){try{parsed=JSON.parse(raw);}catch{return {features:[],notificationChannels:[]};}}
@@ -51,7 +50,7 @@ async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
   // Do not advertise partially implemented strategies, research records or unverified mappings.
   try{
     const [versions,marketRows]=await Promise.all([
-      sql.unsafe("SELECT DISTINCT ON (d.key) d.key,v.engine_key,v.config,v.input_schema FROM strategy_definitions d "+
+      sql.unsafe("SELECT DISTINCT ON (d.key) d.key,d.supported_regions,d.supported_wrappers,v.engine_key,v.config,v.input_schema FROM strategy_definitions d "+
         "JOIN strategy_versions v ON v.strategy_definition_id=d.id "+
         "WHERE d.enabled=true AND v.lifecycle_status='PUBLISHED' AND v.effective_from<=current_date "+
         "AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
@@ -69,9 +68,15 @@ async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
       if(!release||!canonical?.config||!["VALUE_TARGET","FIXED_ALLOCATION"].includes(release.engine_key))return [];
       try{
         assertCuratedRules(plugin.key,String(release.engine_key),release.config,release.input_schema);
-        const market=assessStrategyMarket(release.engine_key,release.config,candidates,
-          {country:"GB",wrapper:"ISA",currency:"GBP"},asOf);
-        if(!market.available)return [];
+        // Public discovery targets a GB ISA account in GBP only (stated in the card category); no
+        // viewer market exists here. Same predicate as createStrategy, so the rail never advertises a
+        // strategy a GB/ISA/GBP user could not start.
+        const market=isOfferableForUser({
+          strategy:{engine:release.engine_key,config:release.config,
+            supportedRegions:Array.isArray(release.supported_regions)?release.supported_regions.map(String):[],
+            supportedWrappers:Array.isArray(release.supported_wrappers)?release.supported_wrappers.map(String):[]},
+          userMarket:{country:"GB",wrapper:"ISA",currency:"GBP"},mappings:candidates,asOf});
+        if(!market.offerable)return [];
         const summary=summariseRules(plugin);
         return [{key:plugin.key,name:String(plugin.seedDefinition?.name??plugin.profile?.name??plugin.key),
           description:cardDescription(plugin),category:"Released UK ISA method",

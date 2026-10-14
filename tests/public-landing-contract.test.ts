@@ -19,8 +19,8 @@ describe("approved public homepage financial and commercial boundaries",()=>{
     expect(home).toContain("d.enabled=true");
     expect(home).toContain("v.lifecycle_status='PUBLISHED'");
     expect(home).toContain("assertCuratedRules(");
-    expect(home).toContain("assessStrategyMarket(");
-    expect(home).toContain("if(!market.available)return [];");
+    expect(home).toContain("isOfferableForUser(");
+    expect(home).toContain("if(!market.offerable)return [];");
     expect(home).toContain('country:"GB",wrapper:"ISA",currency:"GBP"');
   });
   it("renders 0-5 administrator-published plan offers without fabricated prices",()=>{

@@ -934,7 +934,7 @@ export async function executeAction(
 
     // Keep lock ordering consistent with pause/close flows: strategy first, then action.
     const strategyRows=await tx.unsafe(
-      "SELECT i.id,i.status,i.execution_constraints FROM strategy_instances i WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
+      "SELECT i.id,i.status,i.account_id,i.execution_constraints FROM strategy_instances i WHERE i.id=$1 AND i.user_id=$2 FOR UPDATE OF i",
       [ownership[0].strategy_instance_id,userId]
     );
     const strategy=strategyRows[0];
@@ -978,17 +978,12 @@ export async function executeAction(
       const executionCurrency=assertExecutionCurrencyMatch(action.currency,action.account_currency);
 
       const ledgerRows=await tx.unsafe(
-        "SELECT event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events WHERE strategy_instance_id=$1 AND account_id=$2 ORDER BY occurred_at,created_at",
-        [action.strategy_instance_id,action.account_id]
+        "SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",
+        [action.strategy_instance_id]
       );
-      const position=foldLedger(ledgerRows.map((r)=>({
-        eventType:String(r.event_type),
-        currency:String(r.currency),
-        cashAmount:String(r.cash_amount),
-        feeAmount:String(r.fee_amount),
-        instrumentId:r.instrument_id?String(r.instrument_id):null,
-        quantity:String(r.quantity)
-})),String(action.account_currency));
+      // Same per-account partition as calculation: a legacy or ON DELETE SET NULL row with no account
+      // belongs to the strategy's primary account, never silently dropped from its cash or holdings.
+      const position=foldAccountLedger(ledgerRows,String(action.account_id),strategy.account_id?String(strategy.account_id):null,String(action.account_currency));
       const ledgerTime=await tx.unsafe(
         "SELECT max(occurred_at) AS latest_at FROM ledger_events WHERE strategy_instance_id=$1",
         [action.strategy_instance_id]

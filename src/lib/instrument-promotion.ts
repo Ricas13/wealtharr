@@ -1,17 +1,19 @@
 import "server-only";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
+import { createHash } from "node:crypto";
 import {
-  PromotionRefused, classifyPromotion, exposureIsRegistered, subjectMatchesMapping,
+  EvidenceRefused, PromotionRefused, classifyPromotion, exposureIsRegistered, subjectMatchesMapping,
   type PeerMapping, type PromoteMappingInput, type RejectMappingInput
 } from "@/domain/instrument-promotion";
+import { canonicalEvidenceJson, validateInstrumentEvidence } from "@/domain/instrument-evidence";
 
 type Tx = Pick<typeof sql, "unsafe">;
 const LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('instrument-mapping-promotion',0))";
 const MAPPING_SQL =
   "SELECT m.id::text AS id,m.economic_exposure,m.leverage::text AS leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency," +
   " m.fidelity,m.enabled,m.effective_from::text AS effective_from,m.effective_to::text AS effective_to,m.trading_line_id::text AS trading_line_id," +
-  " tl.provider_symbol,i.id::text AS instrument_id,i.isin,i.economic_exposure AS i_exposure,i.leverage::text AS i_leverage,i.direction AS i_direction" +
+  " tl.provider_symbol,tl.ticker,tl.exchange,tl.currency,i.id::text AS instrument_id,i.isin,i.economic_exposure AS i_exposure,i.leverage::text AS i_leverage,i.direction AS i_direction" +
   " FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id" +
   " WHERE m.id=$1 FOR UPDATE OF m";
 
@@ -51,6 +53,15 @@ export async function promoteCandidateMapping(actorUserId: string, input: Promot
     if (String(row.i_exposure) !== mapping.economicExposure || String(row.i_direction) !== mapping.direction || !sameLeverage) {
       throw new PromotionRefused("INSTRUMENT_MISMATCH");
     }
+    // Evidence is validated against the STORED row (country, wrapper, broker, trading line), never
+    // against client-supplied values, and before anything is written.
+    const checked = validateInstrumentEvidence(input.evidence, {
+      country: mapping.country, wrapper: mapping.wrapper, broker: row.broker == null ? null : String(row.broker),
+      tradingLine: { exchange: String(row.exchange), ticker: String(row.ticker), currency: String(row.currency) }
+    });
+    if (!checked.ok) throw new EvidenceRefused(checked.issues);
+    const evidenceJson = canonicalEvidenceJson(checked.evidence);
+    const evidenceSha256 = createHash("sha256").update(evidenceJson).digest("hex");
     if (row.isin != null && String(row.isin) !== input.isin) throw new PromotionRefused("ISIN_MISMATCH");
     if (row.isin == null) {
       const taken = await tx.unsafe("SELECT 1 FROM instruments WHERE isin=$1 AND id<>$2::uuid", [input.isin, row.instrument_id]);
@@ -83,15 +94,15 @@ export async function promoteCandidateMapping(actorUserId: string, input: Promot
     }
     if (input.providerSymbol) await tx.unsafe("UPDATE trading_lines SET provider_symbol=$1,updated_at=now() WHERE id=$2::uuid", [input.providerSymbol, row.trading_line_id]);
     const updated = await tx.unsafe(
-      "UPDATE regional_instrument_mappings SET fidelity='EXACT',enabled=true,updated_at=now() WHERE id=$1::uuid AND fidelity='CANDIDATE' RETURNING id",
-      [input.mappingId]
+      "UPDATE regional_instrument_mappings SET fidelity='EXACT',enabled=true,evidence=$2::jsonb,updated_at=now() WHERE id=$1::uuid AND fidelity='CANDIDATE' RETURNING id",
+      [input.mappingId, evidenceJson]
     );
     if (updated.length !== 1) throw new PromotionRefused("NOT_CANDIDATE");
     await tx.unsafe(
       "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'instrument-mapping.promoted','regional_instrument_mapping',$2,$3::jsonb)",
       [actorUserId, input.mappingId, JSON.stringify({
         from: "CANDIDATE", to: "EXACT", isin: input.isin, providerSymbol: input.providerSymbol ?? null, previousProviderSymbol: previousSymbol,
-        subject: input.subject, checklist: input.checklist, note: input.note
+        subject: input.subject, checklist: input.checklist, note: input.note, evidenceSha256, evidence: checked.evidence
       })]
     );
     return { mappingId: input.mappingId, fidelity: "EXACT" as const };
