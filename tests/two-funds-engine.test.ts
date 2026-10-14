@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import {describe,expect,it} from "vitest";
+import {getStrategyPlugin} from "../src/domain/strategy/catalog";
 import {twoFundsEngine,TWO_FUNDS_2050_CONFIG,TWO_FUNDS_2050_TDF,TWO_FUNDS_SCV} from "../src/domain/strategy/two-funds-engine";
 import type {EngineContext} from "../src/domain/strategy/types";
 function ctx(year:number,tdf:string,scv:string,cash="0"):EngineContext{
@@ -10,7 +11,10 @@ function ctx(year:number,tdf:string,scv:string,cash="0"):EngineContext{
     contributionsSinceReview:new Decimal(0),state:{},config:{...TWO_FUNDS_2050_CONFIG},
     settings:{},reviewDue:true,dataHealth:{status:"CURRENT"}};
 }
-describe("Merriman Moderate 2050 annual dynamic engine",()=>{
+describe("two-funds-for-life Merriman Moderate 2050 annual dynamic engine",()=>{
+  it("two-funds-for-life release stays disabled until its exact instrument market is mapped",()=>{
+    expect(getStrategyPlugin("two-funds-for-life")?.seedDefinition?.enabled).toBe(false);
+  });
   it("uses 24 remaining years in 2026: SCV 36%, target-date fund 64%",()=>{
     twoFundsEngine.validateConfig({...TWO_FUNDS_2050_CONFIG});
     expect(twoFundsEngine.calculate(ctx(2026,"6400","3600")).actionType).toBe("HOLD");
