@@ -47,6 +47,7 @@ export default async function AdminSecurityPage(){
     <tbody>{audit.map((row,i)=><tr key={i}><td><strong>{String(row.action)}</strong></td><td>{String(row.entity_type)}</td><td>{new Date(row.occurred_at).toLocaleString("en-GB")}</td></tr>)}</tbody>
    </table></div>:<p className="admin-setup-help">No audit events have been recorded yet.</p>}
    <p className="admin-data-caveat">This view intentionally excludes credentials, detailed customer holdings and audit metadata containing sensitive values.</p>
+   <Link href="/admin/security/audit" className="admin-panel-footer-link">Browse full audit history <ArrowRight size={15}/></Link>
   </section>
  </div>;
 }
