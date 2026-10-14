@@ -56,6 +56,8 @@ function referencedExposures(config:Readonly<Record<string,unknown>>|undefined):
     }
   }
   if(typeof config.targetExposure==="string")ids.push(config.targetExposure);
+  if(Array.isArray(config.riskAssets))for(const x of config.riskAssets)ids.push(typeof x==="string"?x:"");
+  if(Array.isArray(config.defensiveAssets))for(const x of config.defensiveAssets)ids.push(typeof x==="string"?x:"");
   return ids;
 }
 
