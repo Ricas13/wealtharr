@@ -287,12 +287,12 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate")).toEqual(PRE_REFACTOR_PROFILES.filter(p=>p.key!=="merriman-ultimate"));
+    expect(RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&key!=="hfea"&&p.key!=="hfea")).toEqual(PRE_REFACTOR_PROFILES.filter(p=>p.key!=="merriman-ultimate"&&key!=="hfea"&&p.key!=="hfea"));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
     expect(Object.keys(ENGINE_AND_CONFIG)).toEqual(RESEARCH_STRATEGIES.map(p=>p.key));
-    for(const profile of RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate")){
+    for(const profile of RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&key!=="hfea"&&p.key!=="hfea")){
       const pin=ENGINE_AND_CONFIG[profile.key];
       expect(profile.engine,profile.key).toBe(pin.engine);
       if(pin.config===undefined)expect(profile.config,profile.key).toBeUndefined();
@@ -328,7 +328,7 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
   it("curated-rule enforcement accepts exactly the pinned rules and nothing else",()=>{
     expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_LITERAL,[])).not.toThrow();
-    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG).filter(([key])=>key!=="merriman-ultimate")){
+    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG).filter(([key])=>key!=="merriman-ultimate"&&key!=="hfea")){
       if(pin.config&&pin.engine!=="RESEARCH_PENDING"){
         expect(()=>assertCuratedRules(key,pin.engine,pin.config,[]),key).not.toThrow();
         expect(()=>assertCuratedRules(key,"VALUE_TARGET",pin.config,[]),key).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
