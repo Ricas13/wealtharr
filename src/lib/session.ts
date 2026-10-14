@@ -51,6 +51,15 @@ export async function requireAdmin() {
   return user;
 }
 
+// For actions whose effect reaches every customer (for example confirming a corporate action):
+// two-step sign-in must be enabled on the account AND passed in this session, regardless of the
+// ADMIN_MFA_REQUIRED operator setting.
+export async function requireAdminWithMfa() {
+  const user = await requireAdmin();
+  if (!user.mfaEnabled || !user.sessionMfa) throw new Error("MFA_REQUIRED");
+  return user;
+}
+
 // For server-rendered pages and layouts: a missing, deleted or revoked session (for example
 // after a password reset on another device) sends the user to sign in instead of an error page.
 export async function requirePageUser() {

@@ -13,6 +13,11 @@ vi.mock("@/lib/session",()=>({
     if(session.user.role!=="ADMIN")throw new Error("FORBIDDEN");
     return session.user;
   },
+  requireAdminWithMfa:async()=>{
+    if(!session.user)throw new Error("UNAUTHENTICATED");
+    if(session.user.role!=="ADMIN")throw new Error("FORBIDDEN");
+    return session.user;
+  },
   requirePageUser:async()=>{if(!session.user)throw new Error("UNAUTHENTICATED");return session.user;}
 }));
 
