@@ -47,10 +47,19 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
           const observation = await provider.historicalPrice(String(line.provider_symbol), new Date(day + "T21:00:00.000Z"));
           if (!acceptHistoryObservation(observation, day, String(line.currency))) { rejected += 1; continue; }
           await sql.unsafe(
-            "INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed,adjustment_verified) VALUES ($1,$2,$3,$4,$5,true,true) "+ 
+            "INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed,adjustment_verified,"+
+            "session_calendar_certified,month_terminal_certified,total_return_certified,source_calendar,session_sequence,provider_corporate_actions_revision) "+
+            "VALUES ($1,$2,$3,$4,$5,true,true,$6,$7,$8,$9,$10,$11) "+ 
             "ON CONFLICT (trading_line_id,trading_day,provider) DO UPDATE SET "+ 
-            "adjusted_close=EXCLUDED.adjusted_close,currency=EXCLUDED.currency,licensed=true,adjustment_verified=true,ingested_at=now()",
-            [line.id, day, observation!.price, observation!.currency.toUpperCase(), observation!.provider]
+            "adjusted_close=EXCLUDED.adjusted_close,currency=EXCLUDED.currency,licensed=true,adjustment_verified=true,"+
+            "session_calendar_certified=EXCLUDED.session_calendar_certified,month_terminal_certified=EXCLUDED.month_terminal_certified,"+
+            "total_return_certified=EXCLUDED.total_return_certified,source_calendar=EXCLUDED.source_calendar,"+
+            "session_sequence=EXCLUDED.session_sequence,provider_corporate_actions_revision=EXCLUDED.provider_corporate_actions_revision,ingested_at=now()",
+            [line.id, day, observation!.price, observation!.currency.toUpperCase(), observation!.provider,
+             observation!.sessionCalendarCertified===true && Boolean(observation!.sourceCalendar) && Number.isSafeInteger(observation!.sessionSequence),
+             observation!.monthTerminalCertified===true && observation!.sessionCalendarCertified===true && Boolean(observation!.sourceCalendar) && Number.isSafeInteger(observation!.sessionSequence),
+             observation!.totalReturnCertified===true && Boolean(observation!.providerCorporateActionsRevision),
+             observation!.sourceCalendar??null,observation!.sessionSequence??null,observation!.providerCorporateActionsRevision??null]
           );
           stored += 1;
         } catch { rejected += 1; }
