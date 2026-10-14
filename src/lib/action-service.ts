@@ -10,6 +10,7 @@ import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } fr
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
 import {twoFundsAllocations} from "@/domain/strategy/two-funds-engine";
 import {trinityWeights} from "@/domain/strategy/trinity-engine";
+import {trinityNyseHolidayWindow} from "@/domain/strategy/trinity-calendar";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
@@ -205,7 +206,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const frequency=String(config.reviewFrequency??"QUARTERLY");
   const lastReview=scenario?.resetTimeline?new Date():state.lastReviewAt?new Date(String(state.lastReviewAt)):new Date(instance.started_at);
   const reviewTimezone=String(config.reviewTimezone??instance.user_timezone??"UTC");
-  const holidayDates=Array.isArray(config.marketHolidays)?config.marketHolidays.filter((v):v is string=>typeof v==="string"):[];
+  const holidayDates=calculationEngineKey==="TRINITY_HYBRID"
+    ?trinityNyseHolidayWindow(new Date())
+    :Array.isArray(config.marketHolidays)?config.marketHolidays.filter((v):v is string=>typeof v==="string"):[];
   const convention: "PREVIOUS"|"NEXT"=config.businessDayConvention==="NEXT"?"NEXT":"PREVIOUS";
   const scheduleInput={
     lastReviewAt:lastReview,
