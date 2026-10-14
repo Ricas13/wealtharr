@@ -36,6 +36,11 @@ describe("read-only Stripe subscription comparison",()=>{
    expect(result.checks.some(c=>!c.matched)).toBe(true);
   }
  });
+ it("does not call missing billing periods consistent for active or trialing subscriptions",()=>{
+  const withoutPeriod={...local,periodEnd:null};
+  expect(compareSubscriptionObservations(withoutPeriod,{...remote,periodEnd:null}).outcome).toBe("REVIEW");
+  expect(compareSubscriptionObservations({...withoutPeriod,status:"TRIALING"},{...remote,status:"trialing",periodEnd:null}).outcome).toBe("REVIEW");
+ });
  it("normalizes millisecond comparisons to whole seconds",()=>{
   expect(compared({periodEnd:remote.periodEnd!+500}).outcome).toBe("MATCH");
  });
