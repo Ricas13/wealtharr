@@ -11,5 +11,6 @@ export const plugin:StrategyPlugin={
     research:["https://portfoliocharts.com/portfolios/no-brainer-portfolio/"],
     risks:["Small-cap and overseas equity concentration","Treasury maturity fidelity","USD foreign-exchange exposure"]
   },
-  seedDefinition:null,specCard:"docs/strategy-specs/bernstein-no-brainer.md",goldenTests:"tests/group-3-reference.test.ts"
+  seedDefinition:{name:"Bernstein No-Brainer — US reference",family:"FIXED_ALLOCATION",description:"Source-locked Group 3 reference with precise economic exposures and annual Wealtharr rebalance",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:true},specCard:"docs/strategy-specs/bernstein-no-brainer.md",goldenTests:"tests/group-3-static-engine.test.ts"
+  ,releaseStatus:"COMPLETE"
 };
