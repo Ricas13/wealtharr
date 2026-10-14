@@ -32,6 +32,13 @@ describe("launch provider evidence",()=>{
   expect(page).toContain("No manual sign-off is a substitute");
   expect(page).not.toContain("Live payments stay blocked until every strategy customers can start has a recorded specification sign-off");
   expect(page).not.toContain("row.attested?");
+  const overview=readFileSync("src/app/admin/page.tsx","utf8");
+  expect(overview).toContain("Published version records");
+  expect(overview).toContain("Globally enabled definitions");
+  expect(overview).toContain("lifecycle_status=");
+  expect(overview).not.toContain("Attestation records");
+  expect(overview).not.toContain("strategy_version_attestations");
+
   expect(page).not.toContain("SELECT * FROM audit_events");
   expect(page).not.toContain("metadata->>'token'");
  });
