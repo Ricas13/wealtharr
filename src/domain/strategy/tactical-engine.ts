@@ -1,6 +1,5 @@
 import Decimal from "decimal.js";
 import {calculateTacticalAllocation,type TacticalVariant} from "./tactical-allocation";
-import {fixedAllocationEngine} from "./fixed-allocation";
 import type {StrategyEngine,EngineContext,ProposedAction,TrustedHistoricalSeries} from "./types";
 
 type TacticalConfig={variant:TacticalVariant;riskAssets:string[];defensiveAssets:string[];
