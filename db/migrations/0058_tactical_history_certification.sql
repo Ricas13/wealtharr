@@ -15,4 +15,6 @@ COMMENT ON COLUMN price_history.session_calendar_certified IS
  'Provider attestation: this date is a completed, actual trading session for its exchange calendar, including monthly terminal sessions';
 COMMENT ON COLUMN price_history.total_return_certified IS
  'Provider attestation: the adjusted close represents a consistently reconstructed dividends-reinvested total-return series';
-\nALTER TABLE price_history ADD CONSTRAINT price_history_terminal_session_requires_calendar CHECK (NOT month_terminal_certified OR session_calendar_certified);\nALTER TABLE price_history ADD CONSTRAINT price_history_certified_sequence_required CHECK (NOT session_calendar_certified OR session_sequence IS NOT NULL);\n
+
+ALTER TABLE price_history ADD CONSTRAINT price_history_terminal_session_requires_calendar CHECK (NOT month_terminal_certified OR session_calendar_certified);
+ALTER TABLE price_history ADD CONSTRAINT price_history_certified_sequence_required CHECK (NOT session_calendar_certified OR session_sequence IS NOT NULL);
