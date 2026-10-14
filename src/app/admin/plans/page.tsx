@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {sql} from "@/lib/db";
 import {requireAdminPage} from "@/lib/session";
 import {PlanPriceEditor} from "@/components/AdminEditors";
@@ -18,7 +19,7 @@ export default async function PlansAdmin(){
   sql.unsafe("SELECT count(*)::int AS c FROM billing_webhook_events WHERE status='FAILED' AND created_at>=now()-interval '24 hours'"),
   sql.unsafe("SELECT status,count(*)::int AS c,max(created_at) AS last_received FROM billing_webhook_events WHERE created_at>=now()-interval '24 hours' GROUP BY status ORDER BY status"),
   sql.unsafe("SELECT count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING') AND s.cancel_at_period_end=true)::int AS ending, count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING') AND s.current_period_end<now())::int AS overdue, count(*) FILTER (WHERE s.status IN ('PAST_DUE','UNPAID'))::int AS payment_attention, count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING','PAST_DUE','UNPAID') AND s.billing_check_error IS NOT NULL)::int AS sync_errors, count(*) FILTER (WHERE s.status IN ('ACTIVE','TRIALING') AND s.cancel_at_period_end=false AND s.current_period_end>=now() AND s.current_period_end<now()+interval '7 days')::int AS approaching FROM subscriptions s JOIN users u ON u.id=s.user_id WHERE u.deleted_at IS NULL"),
-  sql.unsafe("SELECT u.email,p.display_name AS plan,s.status,s.source,s.cancel_at_period_end,s.current_period_end,(s.billing_check_error IS NOT NULL) AS sync_error FROM subscriptions s JOIN users u ON u.id=s.user_id JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL AND (s.status IN ('PAST_DUE','UNPAID') OR (s.status IN ('ACTIVE','TRIALING') AND (s.billing_check_error IS NOT NULL OR s.cancel_at_period_end=true OR s.current_period_end<now()))) ORDER BY CASE WHEN s.billing_check_error IS NOT NULL THEN 0 WHEN s.status IN ('PAST_DUE','UNPAID') THEN 1 WHEN s.current_period_end<now() THEN 2 ELSE 3 END,s.current_period_end ASC NULLS LAST LIMIT 50")
+  sql.unsafe("SELECT u.id AS user_id,u.email,p.display_name AS plan,s.status,s.source,s.cancel_at_period_end,s.current_period_end,(s.billing_check_error IS NOT NULL) AS sync_error FROM subscriptions s JOIN users u ON u.id=s.user_id JOIN plans p ON p.id=s.plan_id WHERE u.deleted_at IS NULL AND (s.status IN ('PAST_DUE','UNPAID') OR (s.status IN ('ACTIVE','TRIALING') AND (s.billing_check_error IS NOT NULL OR s.cancel_at_period_end=true OR s.current_period_end<now()))) ORDER BY CASE WHEN s.billing_check_error IS NOT NULL THEN 0 WHEN s.status IN ('PAST_DUE','UNPAID') THEN 1 WHEN s.current_period_end<now() THEN 2 ELSE 3 END,s.current_period_end ASC NULLS LAST LIMIT 50")
  ]);
  const summary=[
   {label:"Published plans",count:rows.filter(p=>p.visible&&!p.archived).length,Icon:Layers3,detail:"Visible and not archived"},
@@ -59,7 +60,7 @@ export default async function PlansAdmin(){
    <h3>Customer records needing review</h3>
    {watchRows.length?<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Subscriptions requiring operator review">
     <table className="admin-studio-table"><thead><tr><th scope="col">CUSTOMER</th><th scope="col">PLAN / SOURCE</th><th scope="col">STATUS</th><th scope="col">RECORDED PERIOD END (UTC)</th><th scope="col">REVIEW REASON</th></tr></thead>
-    <tbody>{watchRows.map((s,i)=><tr key={i}><td><strong>{String(s.email)}</strong></td>
+    <tbody>{watchRows.map((s,i)=><tr key={i}><td><strong><Link href={"/admin/users/"+String(s.user_id)} aria-label={"Review customer "+String(s.email)}>{String(s.email)}</Link></strong></td>
      <td>{String(s.plan)}<small>{String(s.source??"Unknown source")}</small></td>
      <td>{String(s.status)}</td>
      <td>{s.current_period_end?new Date(s.current_period_end).toLocaleString("en-GB",{timeZone:"UTC"})+" UTC":"Not recorded"}</td>
