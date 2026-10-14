@@ -19,15 +19,12 @@ describe("Trinity Global Trend sleeve (research-stage signals)",()=>{
     expect(result.riskWeights).toEqual([0,1,2,3,4].map(i=>({exposure:"ASSET_"+i,weight:"0.20"})));
     expect(result.defensiveWeight).toBe("0.00");
   });
-  it("replaces any below-trend selected slot with defensive Treasury bills",()=>{
-    const input=Array.from({length:10},(_,i)=>series("ASSET_"+i,1.1-i*0.01));
-    // Replace one top momentum asset's final price with a deep reversal.
-    const points=input[0].points;
-    points[12]={...points[12],adjustedClose:new Decimal("1")};
+  it("redirects five falling trend slots fully to the defensive sleeve",()=>{
+    const input=Array.from({length:10},(_,i)=>series("ASSET_"+i,0.99-i*0.005));
     const result=trinityGlobalTrendSignal(input,reviewClose);
-    expect(result.riskWeights).toHaveLength(5);
-    expect(result.defensiveWeight).toBe("0.00");
-    expect(result.ranked.find(x=>x.exposure==="ASSET_0")?.aboveTrend).toBe(false);
+    expect(result.riskWeights).toEqual([]);
+    expect(result.defensiveWeight).toBe("1.00");
+    expect(result.ranked.every(x=>x.aboveTrend===false)).toBe(true);
   });
   it("fails closed on incomplete universes",()=>{
     expect(()=>trinityGlobalTrendSignal([series("X",1.01)],reviewClose)).toThrow("TRINITY_UNIVERSE_INCOMPLETE");
