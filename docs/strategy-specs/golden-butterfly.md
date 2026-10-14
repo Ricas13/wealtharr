@@ -16,3 +16,5 @@ US reference £10,000: five £2,000 sleeves. Later £3,000 large cap / £1,000 s
 **Release blockers**: method-version, exact rebalance cadence, UK/home-market translations, broker/wrapper instrument rights and independently tested golden cases; external reviewer attestation. Do not enable this research profile.
 
 Reviewer: PENDING; independent approval: NO.
+
+**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".
