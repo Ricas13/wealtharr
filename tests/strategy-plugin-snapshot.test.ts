@@ -83,10 +83,10 @@ const PRE_REFACTOR_PROFILES: readonly StrategyProfile[] = [
     ]
   },
   {
-    key:"80-20",name:"80/20 Portfolio",engine:"FIXED_ALLOCATION",launchState:"DRAFT_REQUIRES_VERIFICATION",
-    config:fixed([["BROAD_EQUITY","0.80"],["AGGREGATE_BONDS","0.20"]],"ANNUAL"),
-    rules:"80% diversified equities and 20% bonds; review annually.",
-    research:["https://www.bogleheads.org/wiki/Asset_allocation"],risks:["High equity drawdown potential"]
+    key:"80-20",name:"Global 80/20 (GBP) model",engine:"FIXED_ALLOCATION",launchState:"DRAFT_REQUIRES_VERIFICATION",
+    config:fixed([["GLOBAL_EQUITY_ALL_CAP_UNHEDGED","0.80"],["GLOBAL_AGGREGATE_BONDS_GBP_HEDGED","0.20"]],"ANNUAL"),
+    rules:"Wealtharr model: 80% global all-capitalisation equity unhedged and 20% global investment-grade aggregate bonds GBP hedged. Review annually and rebalance back to 80/20 with zero drift threshold. Weight, specific exposures and zero threshold are Wealtharr conventions, not universal Bogleheads rules.",
+    research:["https://www.bogleheads.org/wiki/Asset_allocation","https://investor.vanguard.com/investor-resources-education/portfolio-management/rebalancing-your-portfolio"],risks:["High equity drawdown potential"]
   },
   {
     key:"buffett-90-10",name:"Buffett 90/10 Portfolio",engine:"FIXED_ALLOCATION",launchState:"DRAFT_REQUIRES_VERIFICATION",
@@ -213,7 +213,7 @@ const ENGINE_AND_CONFIG:Record<string,{engine:string;config?:Record<string,unkno
   "three-fund":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([
     ["DOMESTIC_EQUITY","0.40"],["INTERNATIONAL_EQUITY","0.40"],["AGGREGATE_BONDS","0.20"]])}},
   "60-40":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["GLOBAL_EQUITY_ALL_CAP_UNHEDGED","0.60"],["GLOBAL_AGGREGATE_BONDS_GBP_HEDGED","0.40"]])}},
-  "80-20":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["BROAD_EQUITY","0.80"],["AGGREGATE_BONDS","0.20"]])}},
+  "80-20":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["GLOBAL_EQUITY_ALL_CAP_UNHEDGED","0.80"],["GLOBAL_AGGREGATE_BONDS_GBP_HEDGED","0.20"]])}},
   "buffett-90-10":{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([["US_LARGE_CAP","0.90"],["SHORT_TREASURY","0.10"]])}},
   coffeehouse:{engine:"FIXED_ALLOCATION",config:{...annual,allocations:pairs([
     ["US_LARGE_CAP","0.10"],["US_LARGE_CAP_VALUE","0.10"],["US_SMALL_CAP_BLEND","0.10"],["US_SMALL_CAP_VALUE","0.10"],
@@ -258,7 +258,7 @@ const SEED_DEFINITIONS:Record<string,SeedPin>={
   "golden-butterfly":{name:"Golden Butterfly",family:"FIXED_ALLOCATION",description:"Diversified fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "three-fund":{name:"Three-Fund Portfolio — 40/40/20 model",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "60-40":{name:"Global 60/40 (GBP) model",family:"FIXED_ALLOCATION",description:"Wealtharr model: 60% global equity, 40% global aggregate bonds, annual rebalance",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"PUBLISHED",realign:false},
-  "80-20":{name:"80/20 Portfolio",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
+  "80-20":{name:"Global 80/20 (GBP) model",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"PUBLISHED",realign:false},
   "permanent-portfolio":{name:"Permanent Portfolio",family:"FIXED_ALLOCATION",description:"Four equal asset sleeves",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "all-weather":{name:"All Weather (reference)",family:"FIXED_ALLOCATION",description:"Published unlevered reference approximation",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "buffett-90-10":{name:"Buffett 90/10 Portfolio",family:"FIXED_ALLOCATION",description:"Fixed 90/10 reference model",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
