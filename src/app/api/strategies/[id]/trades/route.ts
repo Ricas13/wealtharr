@@ -10,6 +10,9 @@ import {exchangeTradingDate,historicalBrokerFill} from "@/domain/historical-trad
 import {sql} from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
 import { assertNoSplitAfter } from "@/lib/ledger-timeline";
+import {twoFundsEngine,TWO_FUNDS_2050_TDF,TWO_FUNDS_SCV} from "@/domain/strategy/two-funds-engine";
+import {trinityEngine} from "@/domain/strategy/trinity-engine";
+import {TRINITY_TRADE_UNIVERSE} from "@/domain/strategy/trinity-model";
 
 const decimal=z.string().regex(/^\d+(?:\.\d{1,12})?$/);
 const inputSchema=z.object({
@@ -109,7 +112,17 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
         config.allocations.some((a:unknown)=>!!a&&typeof a==="object"&&
           String((a as Record<string,unknown>).exposure)===exposure)))
         throw new Error("TRADE_EXPOSURE_NOT_MANAGED");
-      if(!["VALUE_TARGET","FIXED_ALLOCATION"].includes(engine))
+      if(engine==="TWO_FUNDS_MODERATE"){
+        twoFundsEngine.validateConfig(config);
+        if(![TWO_FUNDS_2050_TDF,TWO_FUNDS_SCV].includes(exposure))throw new Error("TRADE_EXPOSURE_NOT_MANAGED");
+      }
+      if(engine==="TRINITY_HYBRID"){
+        trinityEngine.validateConfig(config);
+        // The broad US equity *signal* is never a security holding. Do not
+        // let an imported trade turn the indicator into a managed position.
+        if(!TRINITY_TRADE_UNIVERSE.some(id=>id===exposure))throw new Error("TRADE_EXPOSURE_NOT_MANAGED");
+      }
+      if(!["VALUE_TARGET","FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine))
         throw new Error("TRADE_ENGINE_NOT_VERIFIED");
 
       // Validate every intermediate balance *after inserting the historical
