@@ -522,7 +522,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
     const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
     const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
-    const allocations=calculationEngineKey==="TWO_FUNDS_MODERATE"
+    const allocations:Array<{exposure:string;weight:string|number;leverage?:string|number}>|null=calculationEngineKey==="TWO_FUNDS_MODERATE"
       ?twoFundsAllocations(config,new Date()).map(a=>({...a}))
       :calculationEngineKey==="TRINITY_HYBRID"
         ?exact.actionType==="DATA_REQUIRED"?null:trinityWeights({trustedHistory,now:new Date()})
