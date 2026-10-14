@@ -4,6 +4,7 @@ import {z} from "zod";
 import {sql} from "@/lib/db";
 import {requireAdminPage} from "@/lib/session";
 import {UserStrategyAccessEditor} from "@/components/UserStrategyAccessEditor";
+import {AdminStripeSubscriptionVerify} from "@/components/AdminStripeSubscriptionVerify";
 import {subscriptionWatchReason} from "@/domain/admin-subscription-watch";
 
 export const dynamic="force-dynamic";
@@ -88,6 +89,8 @@ export default async function AdminCustomerDetail({params}:{params:Promise<{id:s
    {reason&&<p className="admin-data-caveat">Review: {reason}. Verify the billing provider before changing account access.</p>}
    <p className="admin-data-caveat">This page does not collect payments, issue refunds, override billing status or expose Stripe IDs.</p>
   </section>
+
+  {String(sub?.source??"") === "STRIPE" && <AdminStripeSubscriptionVerify userId={String(user.id)}/>}
 
   <div style={{marginTop:20}}><UserStrategyAccessEditor key={String(user.id)}
    users={[{id:String(user.id),email:String(user.email)}]}
