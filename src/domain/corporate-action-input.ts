@@ -69,11 +69,19 @@ export function reduceRatio(to: number, from: number): { to: number; from: numbe
   return { to: to / divisor, from: from / divisor };
 }
 
-/** True when the reduced ratio is 10:1, 100:1, 1000:1 or the reverse: the shape of a pence/pounds or decimal-place error. */
+/**
+ * True when the ratio's magnitude max/min is within 15% of 10, 100 or 1000 (in [8.5,11.5], [85,115]
+ * or [850,1150]), in either direction: the shape of a pence/pounds or dropped-decimal error, including
+ * near misses such as 2:21 (x10.5) that the exact reduced form 10:1 would not catch.
+ */
 export function isPowerOfTenRatio(to: number, from: number): boolean {
-  const reduced = reduceRatio(to, from);
-  const powers = [10, 100, 1000];
-  return (reduced.from === 1 && powers.includes(reduced.to)) || (reduced.to === 1 && powers.includes(reduced.from));
+  const larger = Math.max(to, from);
+  const smaller = Math.min(to, from);
+  if (!(smaller >= 1)) return false;
+  // Integer arithmetic: 8.5 = 17/2 and 11.5 = 23/2; 85 and 115; 850 and 1150.
+  if (2 * larger >= 17 * smaller && 2 * larger <= 23 * smaller) return true;
+  if (larger >= 85 * smaller && larger <= 115 * smaller) return true;
+  return larger >= 850 * smaller && larger <= 1150 * smaller;
 }
 
 export const MIN_POWER_OF_TEN_NOTE_LENGTH = 40;
@@ -93,5 +101,10 @@ export const PENDING_ACTION_DAYS = 7;
  */
 export function requiresSecondAdmin(to: number, from: number): boolean {
   const reduced = reduceRatio(to, from);
-  return isPowerOfTenRatio(to, from) || reduced.to > 50 || reduced.from > 50;
+  if (reduced.to > 50 || reduced.from > 50) return true;
+  const larger = Math.max(reduced.to, reduced.from);
+  const smaller = Math.min(reduced.to, reduced.from);
+  // Numeric closeness, not the reduced form: 2:21 (x10.5) is a dropped-decimal error in a split's
+  // clothing. A magnitude of 5 or more (either direction) needs a second admin; integer arithmetic.
+  return larger >= 5 * smaller;
 }

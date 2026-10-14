@@ -28,8 +28,11 @@ type Holder = { userId: string; accountId: string; instanceId: string };
 
 const dayOffset = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 // Yesterday 21:00 UTC and 09:00 UTC, as SQL expressions.
-const YESTERDAY_2100 = "((now() AT TIME ZONE 'UTC')::date - interval '3 hours') AT TIME ZONE 'UTC'";
-const YESTERDAY_0900 = "((now() AT TIME ZONE 'UTC')::date - interval '15 hours') AT TIME ZONE 'UTC'";
+// Relative to the UTC date captured once in beforeAll, never to a later now(), so a run that crosses
+// midnight keeps its quotes and actions consistent.
+let TODAY_FOR_SQL = "";
+const yesterday2100 = () => `(('${TODAY_FOR_SQL}'::date - interval '3 hours') AT TIME ZONE 'UTC')`;
+const yesterday0900 = () => `(('${TODAY_FOR_SQL}'::date - interval '15 hours') AT TIME ZONE 'UTC')`;
 
 describe.skipIf(!url)("corporate-action-explained quote recovery through the market worker", () => {
   const run = Math.random().toString(36).slice(2, 8);
@@ -43,6 +46,7 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
     process.env.MARKET_DATA_PROVIDER = "mock";
     process.env.NEXT_PUBLIC_APP_URL = ORIGIN;
     TODAY = new Date().toISOString().slice(0, 10);
+    TODAY_FOR_SQL = TODAY;
     admin.id = String((await sql!.unsafe("INSERT INTO users (email,password_hash,role) VALUES ($1,'x','ADMIN') RETURNING id", [`ca-rec-admin-${run}@example.test`]))[0].id);
     users.push(admin.id);
   });
@@ -53,7 +57,7 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
   });
   afterAll(async () => {
     if (!sql) return;
-    for (const userId of users) await sql.unsafe("DELETE FROM users WHERE id=$1", [userId]);
+    // confirmed_by is RESTRICT: observations, then actions, then users, then instruments.
     for (const f of fixtures) {
       await sql.unsafe("DELETE FROM regional_instrument_mappings WHERE trading_line_id=$1", [f.lineId]);
       await sql.unsafe("DELETE FROM market_data_observations WHERE trading_line_id=$1", [f.lineId]);
@@ -61,10 +65,10 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
       await sql.unsafe("UPDATE actions SET trading_line_id=NULL WHERE trading_line_id=$1", [f.lineId]);
       await sql.unsafe("DELETE FROM trading_lines WHERE id=$1", [f.lineId]);
     }
-    for (const instrumentId of new Set([...fixtures.map((f) => f.instrumentId), ...extraInstruments])) {
-      await sql.unsafe("DELETE FROM corporate_actions WHERE instrument_id=$1", [instrumentId]);
-      await sql.unsafe("DELETE FROM instruments WHERE id=$1", [instrumentId]);
-    }
+    const instrumentIds = [...new Set([...fixtures.map((f) => f.instrumentId), ...extraInstruments])];
+    for (const instrumentId of instrumentIds) await sql.unsafe("DELETE FROM corporate_actions WHERE instrument_id=$1", [instrumentId]);
+    for (const userId of users) await sql.unsafe("DELETE FROM users WHERE id=$1", [userId]);
+    for (const instrumentId of instrumentIds) await sql.unsafe("DELETE FROM instruments WHERE id=$1", [instrumentId]);
     await sql.end();
   });
 
@@ -271,7 +275,7 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
   });
 
   it("accepts the halved price after a lagging provider stamped 100 on the effective day", async () => {
-    const f = await makeFixture("100", { refObservedSql: YESTERDAY_2100 });
+    const f = await makeFixture("100", { refObservedSql: yesterday2100() });
     await makeHolder(f.instrumentId);
     await confirmAction(f.instrumentId, 2, 1);
     feed.prices[f.symbol] = "100";
@@ -402,11 +406,11 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
   // ---- a price observed before the effective date is never used with post-split units ------------
 
   it("waits for a post-split price: a recorder is never valued at the pre-split price", async () => {
-    const f = await makeFixture("100", { refObservedSql: YESTERDAY_2100 });
+    const f = await makeFixture("100", { refObservedSql: yesterday2100() });
     const recorder = await makeHolder(f.instrumentId);
     await confirmAction(f.instrumentId, 2, 1);
     // The accepted quote is from yesterday 21:00; the split is recorded as of yesterday 09:00.
-    await recordUserSplit(recorder, f.instrumentId, 2, 1, "10", YESTERDAY_0900);
+    await recordUserSplit(recorder, f.instrumentId, 2, 1, "10", yesterday0900());
     // A price observed before the effective date's 00:00 UTC is awaiting; one on/after it is fine.
     expect(await verdict(recorder, f.instrumentId, new Date(Date.now() - 2 * 86_400_000))).toMatchObject({ kind: "AWAITING_PRICE" });
     expect(await verdict(recorder, f.instrumentId, new Date())).toEqual({ kind: "OK" });
@@ -494,5 +498,46 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
     await refresh();
     expect(await observations(f), await runInfo()).toEqual([100, 50, 30]);
     expect((await rejection(f))[0].reason).toBe("IMPLAUSIBLE_MOVE");
+  });
+
+  // ---- a duplicate split is ambiguous: fail closed ------------------------------------------------
+
+  it("treats two unreversed splits for one action on one account as unrecorded", async () => {
+    const instrumentId = await makeInstrument();
+    const holder = await makeHolder(instrumentId);
+    await confirmAction(instrumentId, 2, 1);
+    await recordUserSplit(holder, instrumentId, 2, 1, "10");
+    expect(await verdict(holder, instrumentId, new Date())).toEqual({ kind: "OK" });
+    await recordUserSplit(holder, instrumentId, 2, 1, "20");
+    expect(await verdict(holder, instrumentId, new Date())).toMatchObject({ kind: "UNRECORDED", duplicate: true });
+    // A matching split next to a mistyped one is equally ambiguous.
+    const other = await makeHolder(instrumentId);
+    await recordUserSplit(other, instrumentId, 3, 1, "20");
+    await recordUserSplit(other, instrumentId, 2, 1, "10");
+    expect(await verdict(other, instrumentId, new Date())).toMatchObject({ kind: "UNRECORDED", duplicate: true });
+  });
+
+  // ---- revoking keeps the history of strategies that were not holding at the effective date --------
+
+  it("deletes value history only for strategies holding at the effective date, and only from that date", async () => {
+    const f = await makeFixture("100");
+    const holding = await makeHolder(f.instrumentId);
+    const soldOut = await makeHolder(f.instrumentId, new Date(Date.now() - 5 * 86_400_000).toISOString());
+    await sql!.unsafe("INSERT INTO ledger_events (strategy_instance_id,account_id,occurred_at,event_type,currency,cash_amount,instrument_id,quantity,provenance) VALUES ($1,$2,now()-interval '2 days','SELL','GBP',1000,$3,-10,'USER_CONFIRMED')", [soldOut.instanceId, soldOut.accountId, f.instrumentId]);
+    const actionId = await confirmAction(f.instrumentId, 2, 1);
+    feed.prices[f.symbol] = "50";
+    await refresh();
+    for (const holder of [holding, soldOut]) {
+      await sql!.unsafe("INSERT INTO performance_series (strategy_instance_id,series_type,date,value,metadata) VALUES ($1,'USER_VALUE',$2::date,1000,'{}'::jsonb)", [holder.instanceId, TODAY]);
+      await sql!.unsafe("INSERT INTO performance_series (strategy_instance_id,series_type,date,value,metadata) VALUES ($1,'USER_VALUE',$2::date,1000,'{}'::jsonb)", [holder.instanceId, dayOffset(3)]);
+    }
+    const revoked = await callRoute({ action: "revoke", id: actionId, reason: "Revoked while checking the corporate action list." });
+    expect(revoked.status, JSON.stringify(revoked.json)).toBe(200);
+    const dates = async (instanceId: string) =>
+      (await sql!.unsafe("SELECT date::text AS date FROM performance_series WHERE strategy_instance_id=$1 AND series_type='USER_VALUE' ORDER BY date", [instanceId])).map((r) => String(r.date).slice(0, 10));
+    // Holding strategy: the effective date onwards is gone, earlier history stays.
+    expect(await dates(holding.instanceId)).toEqual([dayOffset(3)]);
+    // Sold out before the effective date: everything stays.
+    expect(await dates(soldOut.instanceId)).toEqual([dayOffset(3), TODAY]);
   });
 });

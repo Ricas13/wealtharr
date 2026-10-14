@@ -20,14 +20,15 @@ CREATE TABLE IF NOT EXISTS corporate_actions (
   status text NOT NULL DEFAULT 'CONFIRMED' CHECK (status IN ('PENDING','CONFIRMED','REVOKED')),
   evidence jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(evidence) = 'object'),
   created_by uuid REFERENCES users(id) ON DELETE SET NULL,
-  confirmed_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  confirmed_by uuid REFERENCES users(id) ON DELETE RESTRICT,
   confirmed_at timestamptz DEFAULT now(),
   expires_at timestamptz,
   revoked_by uuid REFERENCES users(id) ON DELETE SET NULL,
   revoked_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT corporate_actions_ratio_differs CHECK (ratio_to <> ratio_from),
-  CONSTRAINT corporate_actions_ratio_reduced CHECK (gcd(ratio_to, ratio_from) = 1)
+  CONSTRAINT corporate_actions_ratio_reduced CHECK (gcd(ratio_to, ratio_from) = 1),
+  CONSTRAINT corporate_actions_confirmed_complete CHECK (status <> 'CONFIRMED' OR (confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS corporate_actions_open_unique
   ON corporate_actions (instrument_id, kind, effective_date, ratio_to, ratio_from) WHERE status IN ('PENDING','CONFIRMED');

@@ -34,7 +34,7 @@ describe.skipIf(!url)("recording a split at a confirmed corporate action's effec
       [instanceId, accountId, at, eventType, cash, instrument, quantity, correctionOf]
     ))[0].id);
   const confirm = async (instrumentId: string, to: number, from: number) =>
-    sql!.unsafe("INSERT INTO corporate_actions (instrument_id,kind,ratio_to,ratio_from,effective_date,status) VALUES ($1,'SPLIT',$2,$3,'2026-03-10','CONFIRMED')", [instrumentId, to, from]);
+    sql!.unsafe("INSERT INTO corporate_actions (instrument_id,kind,ratio_to,ratio_from,effective_date,status,confirmed_by,created_by) VALUES ($1,'SPLIT',$2,$3,'2026-03-10','CONFIRMED',$4,$4)", [instrumentId, to, from, userId]);
   const split = async (instrumentId: string, to: number, from: number, occurredAt: string) => {
     const mod = await import("@/app/api/strategies/[id]/splits/route");
     const response = await mod.POST(
@@ -62,11 +62,10 @@ describe.skipIf(!url)("recording a split at a confirmed corporate action's effec
   });
   afterAll(async () => {
     if (!sql) return;
+    // confirmed_by is RESTRICT: remove the actions before the user.
+    for (const id of instruments) await sql.unsafe("DELETE FROM corporate_actions WHERE instrument_id=$1", [id]);
     await sql.unsafe("DELETE FROM users WHERE id=$1", [userId]);
-    for (const id of instruments) {
-      await sql.unsafe("DELETE FROM corporate_actions WHERE instrument_id=$1", [id]);
-      await sql.unsafe("DELETE FROM instruments WHERE id=$1", [id]);
-    }
+    for (const id of instruments) await sql.unsafe("DELETE FROM instruments WHERE id=$1", [id]);
     await sql.end();
   });
 
@@ -121,5 +120,37 @@ describe.skipIf(!url)("recording a split at a confirmed corporate action's effec
     expect(result.status, JSON.stringify(result.json)).toBe(200);
     // 10 + 4 - 4 + 10 restated from the 10 held at the split's instant.
     expect(await units(x)).toBe(20);
+  });
+
+  it("refuses a second 2:1 at the effective instant: 24 stays 24, not 34", async () => {
+    const x = await makeInstrument();
+    await insert("BUY", "-1000", "10", "2026-01-06T10:00:00Z", x);
+    await insert("BUY", "-400", "4", "2026-03-10T12:00:00Z", x);
+    await confirm(x, 2, 1);
+    expect((await split(x, 2, 1, "2026-03-10T00:00:00Z")).status).toBe(200);
+    const again = await split(x, 2, 1, "2026-03-10T00:00:00Z");
+    expect(again.status).toBe(409);
+    expect(await units(x)).toBe(24);
+    // Reversing the first with a correction lets it be recorded again.
+    const first = String((await sql!.unsafe("SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND instrument_id=$2 AND event_type='SPLIT'", [instanceId, x]))[0].id);
+    await insert("CORRECTION", "0", "-10", "2026-10-13T10:00:00Z", x, first);
+    expect(await units(x)).toBe(14);
+    expect((await split(x, 2, 1, "2026-03-10T00:00:00Z")).status).toBe(200);
+    expect(await units(x)).toBe(24);
+  });
+
+  it("refuses the split at the effective instant after one was recorded later at an arbitrary time", async () => {
+    const x = await makeInstrument();
+    await insert("BUY", "-1000", "10", "2026-01-06T10:00:00Z", x);
+    await insert("BUY", "-400", "4", "2026-03-10T12:00:00Z", x);
+    await confirm(x, 2, 1);
+    // Recorded on 1 April: restates all 14 units held then (28), the double application.
+    expect((await split(x, 2, 1, "2026-04-01T00:00:00Z")).status).toBe(200);
+    expect(await units(x)).toBe(28);
+    const second = await split(x, 2, 1, "2026-03-10T00:00:00Z");
+    expect(second.status).toBe(409);
+    expect(await units(x)).toBe(28);
+    // A different split on the same account inside the same confirmed window is refused too.
+    expect((await split(x, 3, 1, "2026-04-02T00:00:00Z")).status).toBe(409);
   });
 });

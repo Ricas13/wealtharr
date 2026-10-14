@@ -17,11 +17,13 @@ describe("corporate action ratios", () => {
     expect(reduceRatio(3, 2)).toEqual({ to: 3, from: 2 });
     expect(reduceRatio(20, 200)).toEqual({ to: 1, from: 10 });
   });
-  it("flags powers of ten in either direction, after reduction", () => {
-    for (const [to, from] of [[10, 1], [100, 1], [1000, 1], [1, 10], [1, 100], [1, 1000], [20, 2], [5, 50]]) {
+  it("flags magnitudes within 15% of 10, 100 or 1000 in either direction, including near misses", () => {
+    for (const [to, from] of [[10, 1], [100, 1], [1000, 1], [1, 10], [1, 100], [1, 1000], [20, 2], [5, 50],
+      [2, 21], [3, 31], [4, 41], [5, 49], [2, 19], [21, 2], [41, 4], [17, 2], [23, 2], [85, 1], [115, 1], [850, 1], [1150, 1]]) {
       expect(isPowerOfTenRatio(to, from), `${to}:${from}`).toBe(true);
     }
-    for (const [to, from] of [[2, 1], [3, 2], [1, 3], [5, 1], [20, 1], [1, 20]]) {
+    // 16:2 is x8 (below 8.5), 24:2 is x12 (above 11.5), 84:1 and 116:1 just outside the x100 band.
+    for (const [to, from] of [[2, 1], [3, 2], [1, 3], [5, 1], [20, 1], [1, 20], [8, 1], [12, 1], [84, 1], [116, 1], [50, 1]]) {
       expect(isPowerOfTenRatio(to, from), `${to}:${from}`).toBe(false);
     }
   });
@@ -52,14 +54,30 @@ describe("corporateActionIssue", () => {
 });
 
 describe("requiresSecondAdmin", () => {
-  it("is true for powers of ten and for any reduced term above 50, either way", () => {
-    for (const [to, from] of [[10, 1], [100, 1], [1, 10], [1, 1000], [51, 1], [1, 51], [200, 2], [3, 200], [60, 7]]) {
+  it("is true for a magnitude of 5 or more and for any reduced term above 50, either way", () => {
+    for (const [to, from] of [[10, 1], [100, 1], [1, 10], [1, 1000], [51, 1], [1, 51], [200, 2], [3, 200], [60, 7],
+      [2, 21], [3, 31], [4, 41], [5, 49], [2, 19], [21, 2], [41, 4], [5, 1], [1, 5], [20, 1], [50, 1], [1, 50], [25, 5]]) {
       expect(requiresSecondAdmin(to, from), `${to}:${from}`).toBe(true);
     }
   });
-  it("is false for ordinary ratios, including a non-reduced one that reduces to one", () => {
-    for (const [to, from] of [[2, 1], [3, 2], [1, 3], [5, 1], [20, 1], [50, 1], [1, 50], [100, 50], [4, 2]]) {
+  it("is false for ordinary ratios below 5, including a non-reduced one that reduces to one", () => {
+    // 49:10 is x4.9, just under the x5 threshold; 4:2 reduces to 2:1.
+    for (const [to, from] of [[2, 1], [3, 2], [4, 3], [1, 2], [1, 3], [1, 4], [4, 1], [49, 10], [10, 49], [4, 2]]) {
       expect(requiresSecondAdmin(to, from), `${to}:${from}`).toBe(false);
     }
+  });
+  it("a near-power-of-ten ratio needs the second admin AND the unit/currency confirmation", () => {
+    const today = "2026-10-14";
+    const base = {
+      action: "create" as const, instrumentId: "00000000-0000-4000-8000-000000000001", effectiveDate: "2026-10-12",
+      evidence: { sourceUrl: "https://example.test/notice", retrievedAt: "2026-10-13", note: "Compared the issuer notice with the exchange page." }
+    };
+    for (const [ratioTo, ratioFrom] of [[2, 21], [3, 31], [4, 41], [5, 49], [2, 19], [21, 2], [41, 4]]) {
+      expect(requiresSecondAdmin(ratioTo, ratioFrom), `${ratioTo}:${ratioFrom}`).toBe(true);
+      expect(corporateActionIssue(parse({ ...base, ratioTo, ratioFrom }), today), `${ratioTo}:${ratioFrom}`).toMatch(/power of ten/);
+    }
+    // x5 and x20 need a second admin but not the unit confirmation.
+    expect(corporateActionIssue(parse({ ...base, ratioTo: 1, ratioFrom: 5 }), today)).toBeNull();
+    expect(corporateActionIssue(parse({ ...base, ratioTo: 20, ratioFrom: 1 }), today)).toBeNull();
   });
 });

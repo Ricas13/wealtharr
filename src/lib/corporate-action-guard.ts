@@ -19,7 +19,7 @@ import type { Sql } from "postgres";
 // (AWAITING_PRICE). A price observed before that instant is never used to value or size.
 export type CorporateActionGuard =
   | { kind: "OK" }
-  | { kind: "UNRECORDED"; effectiveDate: string; accountId: string | null }
+  | { kind: "UNRECORDED"; effectiveDate: string; accountId: string | null; duplicate?: boolean }
   | { kind: "AWAITING_PRICE"; effectiveDate: string };
 
 type ConfirmedAction = { to: Decimal; from: Decimal; effectiveDate: string; startMs: number };
@@ -93,12 +93,16 @@ export async function assessCorporateActions(
       if (!quantity.isFinite() || quantity.eq(0)) continue;
       held = true;
       const accountId = holding.account_id ? String(holding.account_id) : null;
-      const recorded = splits.some((split) =>
-        split.accountId === accountId && split.to !== null && split.from !== null &&
-        split.to.mul(action.from).eq(split.from.mul(action.to)) &&
-        split.atMs >= action.startMs - DAY_MS && (later === undefined || split.atMs < later.startMs)
+      const inWindow = splits.filter((split) =>
+        split.accountId === accountId && split.atMs >= action.startMs - DAY_MS && (later === undefined || split.atMs < later.startMs)
       );
-      if (!recorded) return { kind: "UNRECORDED", effectiveDate: action.effectiveDate, accountId };
+      // More than one unreversed split in the window would restate the units more than once: the
+      // count is ambiguous, so fail closed until the duplicate is reversed with a correction.
+      if (inWindow.length > 1) return { kind: "UNRECORDED", effectiveDate: action.effectiveDate, accountId, duplicate: true };
+      const matching = inWindow.some((split) =>
+        split.to !== null && split.from !== null && split.to.mul(action.from).eq(split.from.mul(action.to))
+      );
+      if (!matching) return { kind: "UNRECORDED", effectiveDate: action.effectiveDate, accountId };
     }
     if (held && input.priceObservedAt && input.priceObservedAt.getTime() < action.startMs) awaiting = awaiting ?? action.effectiveDate;
   }
@@ -106,6 +110,10 @@ export async function assessCorporateActions(
 }
 
 export function corporateActionMessage(verdict: Exclude<CorporateActionGuard, { kind: "OK" }>): string {
+  if (verdict.kind === "UNRECORDED" && verdict.duplicate) {
+    return "A confirmed stock split took effect on " + verdict.effectiveDate +
+      " and more than one split is recorded for it on one account, so your units cannot be trusted. Reverse the duplicate with a correction before recalculating.";
+  }
   if (verdict.kind === "UNRECORDED") {
     return "A confirmed stock split took effect on " + verdict.effectiveDate +
       " but this strategy has not recorded it, so your units are still shown as pre-split. Record the stock split for this strategy before recalculating.";

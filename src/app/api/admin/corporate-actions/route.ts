@@ -4,7 +4,6 @@ import { requireAdminWithMfa } from "@/lib/session";
 import { assertSameOrigin, consumeRateLimit } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
-import { invalidateValuationsFrom } from "@/lib/ledger-timeline";
 import {
   PENDING_ACTION_DAYS, corporateActionIssue, corporateActionRequestSchema, reduceRatio, requiresSecondAdmin
 } from "@/domain/corporate-action-input";
@@ -41,7 +40,7 @@ const dayStart = (effectiveDate: string) => effectiveDate + "T00:00:00.000Z";
 async function notifyAdmins(tx: Pick<Sql, "unsafe">, instrumentId: string, title: string, text: string) {
   await tx.unsafe(
     "INSERT INTO notifications (user_id,type,title,body) SELECT u.id,'CORPORATE_ACTION',$2,i.name||': '||$3 " +
-    "FROM users u CROSS JOIN instruments i WHERE u.role='ADMIN' AND i.id=$1",
+    "FROM users u CROSS JOIN instruments i WHERE u.role='ADMIN' AND u.deleted_at IS NULL AND i.id=$1",
     [instrumentId, title, text]
   );
 }
@@ -49,24 +48,24 @@ async function notifyAdmins(tx: Pick<Sql, "unsafe">, instrumentId: string, title
 // The ratio must be grounded in a market observation, never invented: either a CURRENT rejected
 // quote that this action would explain under the worker's exact predicate, or an already accepted
 // post-effective quote that matches the ratio (a small split such as 3:2 passes plausibility).
-async function assertObservedEvidence(instrumentId: string, to: number, from: number, effectiveDate: string) {
-  const exists = await sql.unsafe("SELECT 1 FROM instruments WHERE id=$1", [instrumentId]);
+async function assertObservedEvidence(db: Pick<Sql, "unsafe">, instrumentId: string, to: number, from: number, effectiveDate: string) {
+  const exists = await db.unsafe("SELECT 1 FROM instruments WHERE id=$1", [instrumentId]);
   if (!exists[0]) throw new Refusal(404, "That instrument does not exist.");
-  const lines = await sql.unsafe("SELECT id FROM trading_lines WHERE instrument_id=$1", [instrumentId]);
+  const lines = await db.unsafe("SELECT id FROM trading_lines WHERE instrument_id=$1", [instrumentId]);
   let anyRejection = false;
   for (const line of lines) {
-    const pre = await sql.unsafe(
+    const pre = await db.unsafe(
       "SELECT price,observed_at FROM market_data_observations WHERE trading_line_id=$1 AND observed_at<$2::timestamptz ORDER BY observed_at DESC LIMIT 1",
       [line.id, dayStart(effectiveDate)]
     );
     if (!pre[0]) continue;
     const preReference = { price: String(pre[0].price), observedAt: new Date(String(pre[0].observed_at)) };
-    const post = await sql.unsafe(
+    const post = await db.unsafe(
       "SELECT price FROM market_data_observations WHERE trading_line_id=$1 AND observed_at>=$2::timestamptz ORDER BY observed_at DESC LIMIT 500",
       [line.id, dayStart(effectiveDate)]
     );
     const postEffectivePrices = post.map((p) => String(p.price));
-    const rejection = await sql.unsafe("SELECT price,observed_at FROM market_data_rejections WHERE trading_line_id=$1", [line.id]);
+    const rejection = await db.unsafe("SELECT price,observed_at FROM market_data_rejections WHERE trading_line_id=$1", [line.id]);
     if (rejection[0]) {
       anyRejection = true;
       const explained = explainingCorporateAction(String(rejection[0].price), new Date(String(rejection[0].observed_at)), [{
@@ -98,8 +97,9 @@ export async function POST(request: Request) {
     if (parsed.action === "create") {
       const ratio = reduceRatio(parsed.ratioTo, parsed.ratioFrom);
       const pending = requiresSecondAdmin(ratio.to, ratio.from);
-      await assertObservedEvidence(parsed.instrumentId, ratio.to, ratio.from, parsed.effectiveDate);
       const created = await sql.begin(async (tx) => {
+        // Validated inside the transaction that writes the row, so the market cannot change between.
+        await assertObservedEvidence(tx, parsed.instrumentId, ratio.to, ratio.from, parsed.effectiveDate);
         const inserted = await tx.unsafe(
           "INSERT INTO corporate_actions (instrument_id,kind,ratio_to,ratio_from,effective_date,status,evidence,created_by,confirmed_by,confirmed_at,expires_at) " +
           "VALUES ($1,'SPLIT',$2,$3,$4,$5,$6::jsonb,$7,$8,CASE WHEN $5='CONFIRMED' THEN now() ELSE NULL END," +
@@ -130,14 +130,18 @@ export async function POST(request: Request) {
       if (!row[0]) throw new Refusal(404, "That corporate action does not exist.");
       if (String(row[0].status) !== "PENDING") throw new Refusal(409, "That corporate action is not awaiting approval.");
       if (row[0].created_by && String(row[0].created_by) === admin.id) throw new Refusal(403, "A different admin must approve this corporate action.");
-      // The same observed-evidence test as at proposal time, against the market as it is now.
-      await assertObservedEvidence(String(row[0].instrument_id), Number(row[0].ratio_to), Number(row[0].ratio_from), String(row[0].effective_date).slice(0, 10));
       await sql.begin(async (tx) => {
-        const locked = await tx.unsafe("SELECT status,created_by,expires_at FROM corporate_actions WHERE id=$1 FOR UPDATE", [parsed.id]);
+        const locked = await tx.unsafe(
+          "SELECT instrument_id,ratio_to,ratio_from,effective_date::text AS effective_date,status,created_by FROM corporate_actions WHERE id=$1 FOR UPDATE",
+          [parsed.id]
+        );
         if (!locked[0] || String(locked[0].status) !== "PENDING") throw new Refusal(409, "That corporate action is not awaiting approval.");
         if (locked[0].created_by && String(locked[0].created_by) === admin.id) throw new Refusal(403, "A different admin must approve this corporate action.");
         const live = await tx.unsafe("SELECT 1 FROM corporate_actions WHERE id=$1 AND (expires_at IS NULL OR expires_at>now())", [parsed.id]);
         if (!live[0]) throw new Refusal(409, "That proposal has expired; propose it again.");
+        // The same observed-evidence test as at proposal time, against the market as it is now, while
+        // the row is locked.
+        await assertObservedEvidence(tx, String(locked[0].instrument_id), Number(locked[0].ratio_to), Number(locked[0].ratio_from), String(locked[0].effective_date).slice(0, 10));
         await tx.unsafe(
           "UPDATE corporate_actions SET status='CONFIRMED',confirmed_by=$2,confirmed_at=now(),expires_at=NULL WHERE id=$1",
           [parsed.id, admin.id]
@@ -198,9 +202,22 @@ export async function POST(request: Request) {
         );
       }
       // Valuation snapshots computed while the action was in force used its prices and units.
-      const holders = await tx.unsafe("SELECT DISTINCT strategy_instance_id FROM ledger_events WHERE instrument_id=$1", [instrumentId]);
-      const effectiveFrom = new Date(dayStart(String(found[0].effective_date).slice(0, 10)));
-      for (const holder of holders) await invalidateValuationsFrom(tx, String(holder.strategy_instance_id), effectiveFrom);
+      // Only strategies holding units at the effective instant or afterwards are affected; one that
+      // sold out earlier keeps its history. Snapshots can only be written for today, so this deletes
+      // (it cannot rebuild) and is limited to those strategies and to dates from the effective date.
+      const effectiveFrom = dayStart(String(found[0].effective_date).slice(0, 10));
+      const holders = await tx.unsafe(
+        "SELECT e.strategy_instance_id FROM ledger_events e WHERE e.instrument_id=$1 AND e.event_type<>'CORRECTION' " +
+        "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=e.id) GROUP BY e.strategy_instance_id " +
+        "HAVING COALESCE(sum(e.quantity) FILTER (WHERE e.occurred_at<$2::timestamptz),0)<>0 OR COALESCE(sum(e.quantity),0)<>0",
+        [instrumentId, effectiveFrom]
+      );
+      if (holders.length) {
+        await tx.unsafe(
+          "DELETE FROM performance_series WHERE strategy_instance_id=ANY($1::uuid[]) AND series_type='USER_VALUE' AND date>=($2::timestamptz AT TIME ZONE 'UTC')::date",
+          [holders.map((holder) => String(holder.strategy_instance_id)), effectiveFrom]
+        );
+      }
       await tx.unsafe(
         "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'corporate-action.revoked','corporate_action',$2,$3::jsonb)",
         [admin.id, parsed.id, JSON.stringify({ instrumentId, reason: parsed.reason, removedObservations: removed.length, restoredRejections: first.length })]

@@ -283,7 +283,8 @@ export const corporateActions = pgTable("corporate_actions", {
   evidence: jsonb("evidence").notNull().default(sql`'{}'::jsonb`),
   // PENDING (high-risk ratio awaiting a DIFFERENT admin) | CONFIRMED | REVOKED; see migration 0057.
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-  confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
+  // RESTRICT: a CONFIRMED row must always name who confirmed it (CHECK corporate_actions_confirmed_complete).
+  confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "restrict" }),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }).defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
@@ -297,7 +298,8 @@ export const corporateActions = pgTable("corporate_actions", {
   index("corporate_actions_instrument_idx").on(t.instrumentId, t.effectiveDate).where(sql`${t.status} = 'CONFIRMED'`),
   check("corporate_actions_ratio_range", sql`${t.ratioTo} BETWEEN 1 AND 1000 AND ${t.ratioFrom} BETWEEN 1 AND 1000`),
   check("corporate_actions_ratio_differs", sql`${t.ratioTo} <> ${t.ratioFrom}`),
-  check("corporate_actions_ratio_reduced", sql`gcd(${t.ratioTo}, ${t.ratioFrom}) = 1`)
+  check("corporate_actions_ratio_reduced", sql`gcd(${t.ratioTo}, ${t.ratioFrom}) = 1`),
+  check("corporate_actions_confirmed_complete", sql`${t.status} <> 'CONFIRMED' OR (${t.confirmedBy} IS NOT NULL AND ${t.confirmedAt} IS NOT NULL)`)
 ]);
 
 export const ledgerEvents = pgTable("ledger_events", {

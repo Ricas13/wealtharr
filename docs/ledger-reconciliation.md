@@ -27,4 +27,6 @@ Reversing a recorded split with a ledger correction restores the pre-split units
 
 If trades were entered after the split took effect, record the split with the effective date and time of the confirmed action (the day's 00:00 UTC) and its exact ratio: it restates only the units held at that instant, so post-split purchases are not multiplied again. A split dated before a later pre-effective entry is refused.
 
-Effective dates are UTC dates. A market whose session crosses UTC midnight is not supported until exchange-timezone handling exists. Ratios that are a power of ten or have a term above 50 need a second admin to approve them before any quote is explained.
+Effective dates are UTC dates. A market whose session crosses UTC midnight is not supported until exchange-timezone handling exists. Ratios that move the price by a factor of 5 or more (either direction, so 2:21 as well as 1:10) or that have a term above 50 need a second admin to approve them before any quote is explained.
+
+A split can only be recorded once per account and instrument for a given confirmed action: recording it again (the same ratio at or after the same instant, or any second split inside that action's window) is refused until the first is reversed with a correction. If two splits are somehow present for one action on one account, your strategy is `DATA_REQUIRED` until the duplicate is reversed, because the units were restated more than once.
