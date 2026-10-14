@@ -1,6 +1,7 @@
 import {STRATEGY_PLUGINS,curatedRelease} from "../src/domain/strategy/catalog/index";
 import {strategiesToSeed} from "../src/domain/strategy/seed-plan";
 import postgres from "postgres";
+import {insertSafeTacticalRelease} from "../src/lib/tactical-release-upgrade";
 
 async function main(){
   const url=process.env.DATABASE_URL;
@@ -65,30 +66,11 @@ async function main(){
         const release=curatedRelease(plugin);
         if(!release?.config)throw new Error("TACTICAL_RELEASE_CONFIG_MISSING:"+key);
         await sql.begin(async tx=>{
-          const defs=await tx.unsafe("SELECT id,engine,enabled FROM strategy_definitions WHERE id=$1 FOR UPDATE",[id]);
-          if(defs.length!==1)throw new Error("TACTICAL_RELEASE_DEFINITION_MISSING:"+key);
-          const existing=defs[0];
-          if(existing.enabled===true)return;
-          if(!["TACTICAL_ALLOCATION","MOMENTUM_ROTATION","RESEARCH_PENDING"].includes(String(existing.engine)))return;
-          const instances=await tx.unsafe("SELECT id FROM strategy_instances WHERE strategy_definition_id=$1 LIMIT 1",[id]);
-          if(instances.length)return;
-          const versions=await tx.unsafe(
-            "SELECT version,lifecycle_status FROM strategy_versions WHERE strategy_definition_id=$1 FOR UPDATE",[id]);
-          if(versions.some(row=>row.lifecycle_status==="PUBLISHED"))return;
-          if(versions.some(row=>!["1.0","2.0"].includes(String(row.version))))return;
-          const version=versions.some(row=>row.version==="1.0")?"2.0":"1.0";
-          if(versions.some(row=>row.version===version))return;
-          await tx.unsafe(
-            "UPDATE strategy_definitions SET name=$2,description=$3,family=$4,engine='TACTICAL_ALLOCATION' "+
-            "WHERE id=$1 AND enabled=false AND NOT EXISTS (SELECT 1 FROM strategy_instances WHERE strategy_definition_id=$1)",
-            [id,name,description,family]);
-          await tx.unsafe(
-            "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) "+
-            "VALUES ($1,$2,current_date,'TACTICAL_ALLOCATION','PUBLISHED','OPTIONAL',$3::text::jsonb,$4::text::jsonb,$5,now()) "+
-            "ON CONFLICT (strategy_definition_id,version) DO NOTHING",
-            [id,version,JSON.stringify(release.inputSchema??[]),JSON.stringify(release.config),
-             release.disclosure??"Rules-based portfolio calculation, not suitability or individual investment advice."]
-          );
+          await insertSafeTacticalRelease(tx,{
+            definitionId:String(id),name,description,family,
+            config:release.config!,inputSchema:release.inputSchema??[],
+            disclosure:release.disclosure??"Rules-based portfolio calculation, not suitability or individual investment advice."
+          });
         });
         continue;
       }
