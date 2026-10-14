@@ -193,3 +193,25 @@
 @media(prefers-reduced-motion:reduce){
  .wealtharr-marketing *{scroll-behavior:auto!important;animation:none!important;transition:none!important}
 }
+
+
+/* Interactive public hero chart: restrained finance-grade styling. */
+.wm-chart{padding:16px 12px 12px}
+.wm-chart-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.wm-chart-kicker{display:block;color:#8ba6a6;font-size:9px;font-weight:700;letter-spacing:1.1px}
+.wm-chart-value{display:block;font-size:clamp(22px,2.5vw,31px);line-height:1.2;font-variant-numeric:tabular-nums;letter-spacing:-1.2px;margin:6px 0 4px}
+.wm-chart-delta{display:block;color:#a0e4bd;font-size:10px;font-variant-numeric:tabular-nums}
+.wm-chart-delta span{color:#849c9b}
+.wm-chart-periods{display:flex;gap:2px;padding:3px;border:1px solid #2a4142;background:#132326;border-radius:8px}
+.wm-chart-periods button{border:0;background:transparent;color:#91a9a8;font-size:10px;border-radius:5px;min-width:28px;padding:6px 5px}
+.wm-chart-periods button.active{background:#2a4840;color:#e0ffea;font-weight:700}
+.wm-chart-periods button:hover:not(.active){color:#e7f9ed;background:#203535}
+.wm-chart-plot{position:relative;margin-top:8px}
+.wm-chart-plot svg{height:165px;width:100%;display:block;margin:0;overflow:visible;touch-action:pan-y}
+.wm-chart-plot svg rect{cursor:crosshair;touch-action:pan-y}
+.wm-chart-hover-label{position:absolute;bottom:3px;transform:translateX(-50%);background:#20332f;border:1px solid #486c5a;border-radius:5px;color:#e5f7ec;font-size:9px;white-space:nowrap;padding:4px 6px;pointer-events:none}
+.wm-chart-keyboard{display:block;width:100%;height:10px;margin:3px 0 0;accent-color:#8dd2b1;opacity:.48;cursor:pointer}
+.wm-chart-keyboard:focus-visible{opacity:1;outline:2px solid #b7f5cc;outline-offset:3px}
+.wm-chart-caption{display:flex;align-items:center;justify-content:space-between;gap:5px;color:#82999b;font-size:8px;margin-top:3px;text-align:center}
+.wm-chart-caption span:first-child,.wm-chart-caption span:last-child{white-space:nowrap}
+@media(max-width:720px){.wm-chart-top{gap:14px}.wm-chart-plot svg{height:175px}.wm-chart-value{font-size:29px}}
