@@ -16,8 +16,9 @@ export const plugin:StrategyPlugin={
     name:"Swensen Lazy Portfolio — US reference",family:"FIXED_ALLOCATION",description:"Research-only six-asset profile",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"DRAFT",realignsResearchOnlyDefinition:true
+    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:true
   },
   specCard:"docs/strategy-specs/group-2-swensen.md",
-  goldenTests:"tests/strategy-group-2-golden.test.ts"
+  goldenTests:"tests/strategy-group-2-golden.test.ts",
+releaseStatus:"COMPLETE"
 };
