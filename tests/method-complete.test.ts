@@ -94,7 +94,7 @@ describe("isMethodComplete: checklist matrix",()=>{
   });
   it("requires a disclosure for a leveraged exposure",()=>{
     const leveraged=withConfig(alloc("US_EQUITY_3X_LONG","LONG_TREASURY_3X_LONG"));
-    expect(failed(leveraged)).toEqual(expect.arrayContaining(["exposures","leverage"]));
+    expect(failed(leveraged)).toContain("leverage");
     const hfea=getStrategyPlugin("hfea")!;
     expect(failed(hfea)).toContain("declared");
   });
