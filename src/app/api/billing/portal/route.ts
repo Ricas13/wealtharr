@@ -13,10 +13,6 @@ export async function POST(request:Request){
     assertSameOrigin(request);
     const user=await requireUser();
     await consumeRateLimit("billing-portal:"+user.id,10,300);
-    // Dashboard-stored Stripe credentials and app address must be honoured without a restart.
-    await ensureSettings(true);
-    if(!process.env.STRIPE_SECRET_KEY||!process.env.NEXT_PUBLIC_APP_URL)
-      return Response.json({error:"Billing is unavailable."},{status:503,headers:noStore});
     const rows=await sql.unsafe(
       "SELECT stripe_customer_id,stripe_subscription_id,source,status FROM subscriptions WHERE user_id=$1 LIMIT 1",
       [user.id]
@@ -28,6 +24,10 @@ export async function POST(request:Request){
     if(!row?.stripe_customer_id)
       return Response.json({error:"No linked Stripe customer exists for this account."},{status:400,headers:noStore});
 
+    // Dashboard-stored Stripe credentials and app address must be honoured without a restart.
+    await ensureSettings(true);
+    if(!process.env.STRIPE_SECRET_KEY||!process.env.NEXT_PUBLIC_APP_URL)
+      return Response.json({error:"Billing is unavailable."},{status:503,headers:noStore});
     const stripe=new Stripe(process.env.STRIPE_SECRET_KEY,{timeout:8000,maxNetworkRetries:0});
     const localCustomerId=String(row.stripe_customer_id);
     const localSubscriptionId=row.stripe_subscription_id?String(row.stripe_subscription_id):null;
