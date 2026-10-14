@@ -7,7 +7,7 @@ import Decimal from "decimal.js";
  * Author historical spike rule (2018):
  * https://jasonkelly.com/resources/strategies/
  *
- * Explicitly requires a caller-provided version; never used in the live registry.
+ * IMPORTANT: October 2026 BestFolio claims a SPY trigger in 6Sig/9Sig,\n * whereas March 2026 r/KellyLetter participants report TQQQ. The benchmark\n * is NOT verified: this models only that specific forum reconstruction.\n * Never invoke as the author's certified signal or live registry engine.
  */
 export type Community9SigProtection={
   startQuarter:number|null;
