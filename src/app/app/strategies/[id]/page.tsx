@@ -18,6 +18,7 @@ import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { HistoricalQuoteLookup } from "@/components/HistoricalQuoteLookup";
 import { BrokerTradeForm } from "@/components/BrokerTradeForm";
+import {StrategyBrokerEvidence} from "@/components/StrategyBrokerEvidence";
 import { ManualPriceForm } from "@/components/ManualPriceForm";
 import { actionRecoveryGuidance, plainEnglishActionReason } from "@/domain/action-copy";
 import { AddLinkedAccountForm, CashEventForm, ContributionForm, ContributionPlanForm, ExecuteAction, ExecutionConstraintsForm, OpeningSnapshotForm, RecalculateButton, ReconcileForm, ReverseLedgerEventButton, StrategyLifecycleControls, StrategySwitchControl, StrategyVersionUpgrade, WhatIfPreview } from "@/components/StrategyActions";
@@ -66,6 +67,17 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
   if(!isUuid(id))notFound();
   const s:any=await getStrategyForUser(user.id,id);
   if(!s)notFound();
+  // Only explicitly assigned confirmed trade IDs, scoped by both the signed-in
+  // user and strategy. Do not fetch the broker's account-wide holdings or cash.
+  const linkedBrokerTrades=await sql.unsafe(
+    "SELECT b.provider,b.external_trade_id,l.event_type,l.occurred_at,l.quantity,l.currency,"+
+    "count(*) OVER()::int AS total FROM broker_trade_links b "+
+    "JOIN ledger_events l ON l.id=b.ledger_event_id "+
+    "WHERE b.user_id=$1::uuid AND b.strategy_instance_id=$2::uuid "+
+    "AND l.strategy_instance_id=$2::uuid AND l.event_type IN ('BUY','SELL') "+
+    "ORDER BY l.occurred_at DESC,b.id DESC LIMIT 25",[user.id,id]
+  );
+
   const entitlements=await loadEntitlements(user.id);
   const [strategyAccounts,availableStrategies]=await Promise.all([
     listStrategyAccounts(user.id,id),
@@ -381,6 +393,12 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
           </div>
           <section className="drawer-section contribution-plan-settings"><h3>Regular contribution</h3><p className="help">Optional reminder only. Planned money never appears in your portfolio until you record the real deposit.</p><ContributionPlanForm id={id} plan={(s.contribution_plan??{}) as Record<string,unknown>}/></section>
           <section className="drawer-section"><HistoricalQuoteLookup accounts={accountOptions}/><BrokerTradeForm strategyId={id} accounts={accountOptions}/><ManualPriceForm strategyId={id} instruments={priceOptions.map((o:any)=>({id:String(o.id),ticker:String(o.ticker),exchange:String(o.exchange),currency:String(o.currency)}))}/></section>
+          <StrategyBrokerEvidence total={Number(linkedBrokerTrades[0]?.total??0)}
+           rows={linkedBrokerTrades.map(row=>({
+            provider:String(row.provider),externalTradeId:String(row.external_trade_id),
+            eventType:String(row.event_type),occurredAt:new Date(row.occurred_at),
+            quantity:String(row.quantity),currency:String(row.currency)
+           }))}/>
           <section className="drawer-section"><h3>Match your broker</h3><p className="help">If the app and broker differ, reconcile them here. Unexplained differences block financial actions instead of being guessed.</p><ReconcileForm id={id} expected={accountOptions.length===1&&latestValue?Number(latestValue.value):null} accounts={accountOptions}/></section>
         </div>
       </details>
