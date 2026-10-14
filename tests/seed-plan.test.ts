@@ -11,7 +11,7 @@ const sixtyForty=getStrategyPlugin("60-40")!;
 describe("production seeding of strategy definitions",()=>{
   it("seeds only complete methods, as disabled definitions with a PUBLISHED version",()=>{
     const entries=strategiesToSeed(STRATEGY_PLUGINS,"PRODUCTION");
-    expect(entries.map(e=>e.plugin.key)).toEqual(["60-40"]);
+    expect(entries.map(e=>e.plugin.key)).toEqual(["hfea","all-weather","60-40","coffeehouse","core-four","swensen","merriman-ultimate"]);
     for(const entry of entries){
       expect(entry.enabled,entry.plugin.key).toBe(false);
       expect(entry.initialVersion,entry.plugin.key).toBe("PUBLISHED");
@@ -40,7 +40,7 @@ describe("production seeding of strategy definitions",()=>{
     const byKey=new Map(entries.map(e=>[e.plugin.key,e]));
     expect(byKey.get("9sig")).toMatchObject({enabled:true,initialVersion:"PUBLISHED"});
     expect(byKey.get("60-40")).toMatchObject({enabled:false,initialVersion:"PUBLISHED"});
-    expect(byKey.get("hfea")).toMatchObject({enabled:false,initialVersion:"DRAFT"});
+    expect(byKey.get("hfea")).toMatchObject({enabled:false,initialVersion:"PUBLISHED"});
     expect(byKey.get("coffeehouse")).toMatchObject({realignsResearchOnlyDefinition:true});
   });
 });
