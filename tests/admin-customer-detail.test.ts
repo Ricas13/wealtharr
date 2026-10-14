@@ -35,6 +35,9 @@ describe("Admin individual customer workflow",()=>{
   expect(lookup).toContain('href={"/admin/users/"+row.id}');
   expect(directory).toContain('href={"/admin/users/"+user.id}');
   expect(index).toContain("id:String(u.id)");
+  expect(index).not.toContain("LIMIT 5000");
+  expect(index).not.toContain("<UserStrategyAccessEditor");
+  expect(index).toContain("Manage an individual account");
   const commerce=read("src/app/admin/plans/page.tsx");
   expect(commerce).toContain("SELECT u.id AS user_id,u.email");
   expect(commerce).toContain('href={"/admin/users/"+String(s.user_id)}');
