@@ -3,6 +3,10 @@ import {requireAdminPage} from "@/lib/session";
 import { sql } from "@/lib/db";
 import { customerStrategyEvidence } from "@/lib/strategy-evidence";
 import { ensureSettings } from "@/lib/settings";
+import {providerLaunchEvidence} from "@/domain/admin-launch-evidence";
+import {gatherSnapshot} from "@/lib/ops-monitor";
+import {evaluateOps} from "@/domain/ops-health";
+import Link from "next/link";
 export const dynamic="force-dynamic";
 const descriptions:Record<string,{title:string;where:string}>={
  application_url:{title:"Public HTTPS URL",where:"Set the public web address in Admin › Settings › General."},
@@ -27,17 +31,34 @@ export default async function LaunchPage(){
  const passing=checks.filter(x=>x.passed).length;
  const providerWarnings=marketDataProviderWarnings(process.env);
  const strategyEvidence=await customerStrategyEvidence();
- const [workers,prices,mappings]=await Promise.all([
+ const [workers,prices,mappings,providerTests,opsSnapshot]=await Promise.all([
   sql.unsafe("SELECT DISTINCT ON (worker_key) worker_key,status,started_at FROM worker_runs ORDER BY worker_key,started_at DESC"),
   sql.unsafe("SELECT count(*)::int AS c FROM plan_prices WHERE active=true"),
-  sql.unsafe("SELECT count(*)::int AS c FROM regional_instrument_mappings WHERE enabled=true")
+  sql.unsafe("SELECT count(*)::int AS c FROM regional_instrument_mappings WHERE enabled=true"),
+  sql.unsafe("SELECT DISTINCT ON (metadata->>\'service\') metadata->>\'service\' AS service,metadata->>\'ok\' AS ok,occurred_at FROM audit_events WHERE action=\'integration.connection-test\' AND metadata->>\'service\' IN (\'STRIPE\',\'EMAIL\',\'MARKET_DATA\',\'MARKET_DATA_HISTORY\',\'TELEGRAM\') ORDER BY metadata->>\'service\',occurred_at DESC"),
+  gatherSnapshot()
  ]);
+ const liveEvidence=providerLaunchEvidence(providerTests.map(row=>({service:String(row.service),ok:row.ok==null?null:String(row.ok),occurredAt:row.occurred_at?new Date(row.occurred_at):null})),new Date());
+ const operationalAlerts=evaluateOps(opsSnapshot);
  return <><div className="page-title"><div><div className="eyebrow">Admin · Launch</div><h1>Launch readiness</h1><p>Configure providers in Admin › Settings, then verify actual service behaviour before accepting customers. No secrets are shown here.</p></div></div>
  <section className="card"><h2>{passing}/{checks.length} configuration gates passed</h2><p className="help">{passing===checks.length?"Configuration checks passed. Live integration, licensing, and documented approvals still need independent verification.":"Commercial launch is blocked until the required gates pass."}</p>
  <div className="detail-grid"><div className="glass metric"><small>Active plan prices</small><strong>{prices[0]?.c??0}</strong></div><div className="glass metric"><small>Enabled instrument mappings</small><strong>{mappings[0]?.c??0}</strong></div></div></section>
  {providerWarnings.length>0&&<section className="card" role="alert" style={{marginTop:16}}><h2>Market data warning</h2>{providerWarnings.map(w=><p key={w}><strong>{w}</strong></p>)}</section>}
  <div className="detail-grid" style={{marginTop:16}}>{checks.map(check=>{const item=descriptions[check.key];return <section className="card" key={check.key}><h3>{check.passed?"✓":"○"} {item.title}</h3><p><strong>{check.passed?"Configured":"Action required"}</strong></p><p className="help">{check.passed?"Environment preflight passed; validate with live service evidence.":check.reason}</p><p className="help">{item.where}</p></section>;})}</div>
- <section className="card" style={{marginTop:16}}><h2>Customer-visible strategies</h2><p className="help">Live payments stay blocked until every strategy customers can start has a recorded specification sign-off (Admin › Strategies, Attest). A sign-off records who approved a specification card; it does not verify the card.</p>{strategyEvidence.length?<div className="table-wrap" tabIndex={0} role="region" aria-label="Customer-visible strategies"><table><thead><tr><th>Strategy</th><th>Version</th><th>Sign-off</th></tr></thead><tbody>{strategyEvidence.map(row=><tr key={row.key}><td>{row.name}</td><td>{row.version}</td><td>{row.attested?"Recorded":"Missing"}</td></tr>)}</tbody></table></div>:<p>No strategy is currently visible to customers.</p>}</section>
+ <section className="card" style={{marginTop:16}}><h2>Customer-visible strategies</h2><p className="help">Only fully implemented, published, code-verified methods with an eligible instrument mapping may be offered to customers. No manual sign-off is a substitute for complete strategy execution, tested examples or legal and market-data evidence.</p>{strategyEvidence.length?<div className="table-wrap" tabIndex={0} role="region" aria-label="Customer-visible strategies"><table><thead><tr><th>Strategy</th><th>Version</th><th>Recorded specification attestation (optional)</th></tr></thead><tbody>{strategyEvidence.map(row=><tr key={row.key}><td>{row.name}</td><td>{row.version}</td><td>{row.attested?"Recorded":"Not recorded"}</td></tr>)}</tbody></table></div>:<p>No strategy is currently visible to customers.</p>}</section>
+ <section className="card" style={{marginTop:16}} aria-labelledby="launch-provider-evidence-title"><h2 id="launch-provider-evidence-title">Provider tests recorded in Admin</h2>
+ <p className="help">Last operator-triggered test for each provider, recorded in the audit log. A passing connection test is not proof of live checkout, email inbox delivery, quote accuracy, licensed market data, or production ownership.</p>
+ <div className="table-wrap" role="region" tabIndex={0} aria-label="Recent provider test evidence"><table>
+  <thead><tr><th scope="col">Provider test</th><th scope="col">Recorded result</th><th scope="col">When (UTC)</th></tr></thead><tbody>
+  {liveEvidence.map(row=><tr key={row.label}><td>{row.label}</td><td>{row.status}</td><td>{row.at?row.at.toLocaleString("en-GB",{timeZone:"UTC"})+" UTC":"Never"}</td></tr>)}
+  </tbody></table></div>
+ <p className="help">Previous or failed checks need follow-up; a recent pass remains a limited diagnostic, not a launch sign-off.</p>
+ <Link href="/admin/operations" className="button">Run integration tests</Link>
+ </section>
+ <section className="card" style={{marginTop:16}} aria-labelledby="launch-operational-alerts-title"><h2 id="launch-operational-alerts-title">Recorded operational warnings</h2>
+ <p className="help">Current alerts based on stored worker, backup, notification, price-data and billing evidence. An empty list is not a service-level certification.</p>
+ {operationalAlerts.length?operationalAlerts.map(alert=><p key={alert.key}><strong>{alert.severity==="critical"?"Critical":"Warning"} — {alert.title}:</strong> {alert.detail}</p>):<p className="help">No active alerts under current monitoring rules.</p>}
+ </section>
  <section className="card" style={{marginTop:16}}><h2>Operational evidence</h2><p className="help">A configured URL or token does not prove the provider works. Check recent worker executions and complete real payment/email/data/restore tests.</p>{workers.length?workers.map((w:any)=><div className="why-row" key={w.worker_key}><span>{w.worker_key}</span><b>{w.status} · {new Date(w.started_at).toLocaleString("en-GB")}</b></div>):<p>No worker executions recorded.</p>}</section>
  <section className="card" style={{marginTop:16}}><h2>Where to configure</h2><p><a href="/admin/plans">Plans and Stripe prices</a> · <a href="/admin/strategies">Strategies and versions</a> · <a href="/admin/instruments">Regional instruments</a></p><p className="help">Hosting, secret storage, backup policy, and regulator sign-off are external operator responsibilities. This dashboard never stores or displays raw secrets.</p></section></>;
 }
