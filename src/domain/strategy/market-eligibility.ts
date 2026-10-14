@@ -22,6 +22,11 @@ export function requiredPositions(engine: string, config: Record<string, unknown
       direction: "LONG"
     };
   };
+  if (engine === "TWO_FUNDS_MODERATE") {
+    const tdf=one(config.targetDateExposure);
+    const small=one(config.smallCapValueExposure);
+    return tdf&&small?[tdf,small]:[];
+  }
   if (engine === "VALUE_TARGET") {
     const required = one(config.targetExposure, config.targetLeverage);
     return required ? [required] : [];
