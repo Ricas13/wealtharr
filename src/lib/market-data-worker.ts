@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { classifyFreshness } from "@/domain/market-freshness";
 import { runBounded } from "@/lib/work-pool";
-import { assessQuote, explainingCorporateAction, type ConfirmedCorporateAction } from "@/domain/quote-plausibility";
+import { assessQuote, explainingCorporateAction, type ConfirmedCorporateAction, type ExplanationCandidate } from "@/domain/quote-plausibility";
 
 // A newer rejected observation must supersede cached accepted market data for action sizing.
 async function markRejected(lineId:string, observation:{observedAt:Date;price:string;currency:string;provider:string},reason:string){
@@ -107,13 +107,48 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
               "WHERE instrument_id=$1 AND kind='SPLIT' AND status='CONFIRMED'",
               [line.instrument_id]
             );
-            const actions: ConfirmedCorporateAction[] = actionRows.map((r) => ({
-              id: String(r.id), to: Number(r.ratio_to), from: Number(r.ratio_from), effectiveDate: String(r.effective_date).slice(0, 10)
-            }));
-            explained = explainingCorporateAction(observation.price,
-              { price: String(last.price), observedAt: new Date(last.observed_at) }, observation.observedAt, actions);
+            const candidates: ExplanationCandidate[] = [];
+            for (const r of actionRows) {
+              const effectiveDate = String(r.effective_date).slice(0, 10);
+              const effectiveStart = effectiveDate + "T00:00:00.000Z";
+              // The reference is the latest ACCEPTED observation strictly before the effective date.
+              const pre = await sql.unsafe(
+                "SELECT price,observed_at FROM market_data_observations WHERE trading_line_id=$1 AND observed_at<$2::timestamptz ORDER BY observed_at DESC LIMIT 1",
+                [line.id, effectiveStart]
+              );
+              const post = await sql.unsafe(
+                "SELECT price FROM market_data_observations WHERE trading_line_id=$1 AND observed_at>=$2::timestamptz ORDER BY observed_at DESC LIMIT 1",
+                [line.id, effectiveStart]
+              );
+              candidates.push({
+                action: { id: String(r.id), to: Number(r.ratio_to), from: Number(r.ratio_from), effectiveDate },
+                preReference: pre[0] ? { price: String(pre[0].price), observedAt: new Date(pre[0].observed_at) } : null,
+                latestOnOrAfterEffective: post[0] ? { price: String(post[0].price) } : null
+              });
+            }
+            explained = explainingCorporateAction(observation.price, observation.observedAt, candidates);
           }
-          if (!assessment.ok && !explained) {
+          if (explained) {
+            const action = explained;
+            // Revocation takes a conflicting row lock and deletes the observations this action
+            // explained, so the check, the observation and the link are one unit.
+            const stored = await sql.begin(async (tx) => {
+              const live = await tx.unsafe("SELECT id FROM corporate_actions WHERE id=$1 AND status='CONFIRMED' FOR SHARE", [action.id]);
+              if (!live[0]) return false;
+              await tx.unsafe(
+                "INSERT INTO market_data_observations (trading_line_id,observed_at,price,currency,provider,freshness,explained_by_corporate_action_id) VALUES ($1,$2,$3,$4,$5,'CURRENT',$6) ON CONFLICT (trading_line_id,observed_at,provider) DO NOTHING",
+                [line.id, observation.observedAt, observation.price, observation.currency, observation.provider, action.id]
+              );
+              await tx.unsafe("DELETE FROM market_data_rejections WHERE trading_line_id=$1 AND observed_at<=$2", [line.id, observation.observedAt]);
+              return true;
+            });
+            if (stored) {
+              notes.push({ tradingLineId: String(line.id), code: "CORPORATE_ACTION_EXPLAINED_QUOTE", corporateActionId: action.id });
+              refreshed += 1;
+              return;
+            }
+          }
+          if (!assessment.ok) {
             await markRejected(String(line.id),observation,assessment.code);
             failed += 1;
             failures.push({ tradingLineId: String(line.id), code: assessment.code });
@@ -125,7 +160,6 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
           );
           await sql.unsafe("DELETE FROM market_data_rejections WHERE trading_line_id=$1 AND observed_at<=$2",
             [line.id,observation.observedAt]);
-          if (explained) notes.push({ tradingLineId: String(line.id), code: "CORPORATE_ACTION_EXPLAINED_QUOTE", corporateActionId: explained.id });
           refreshed += 1;
         } catch {
           failed += 1;

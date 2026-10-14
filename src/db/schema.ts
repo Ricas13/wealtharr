@@ -3,7 +3,7 @@
 // of truth (applied by scripts/migrate.ts). Never generate migrations from this file.
 import {
   pgTable, uuid, text, timestamp, boolean, integer, bigint, numeric, jsonb,
-  uniqueIndex, index, date, primaryKey
+  uniqueIndex, index, date, primaryKey, check
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -287,7 +287,14 @@ export const corporateActions = pgTable("corporate_actions", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => [
-  index("corporate_actions_instrument_idx").on(t.instrumentId, t.effectiveDate)
+  // Also in SQL: CHECK ratio_to/ratio_from BETWEEN 1 AND 1000, ratio_to <> ratio_from, gcd(ratio_to, ratio_from) = 1.
+  uniqueIndex("corporate_actions_confirmed_unique")
+    .on(t.instrumentId, t.kind, t.effectiveDate, t.ratioTo, t.ratioFrom)
+    .where(sql`${t.status} = 'CONFIRMED'`),
+  index("corporate_actions_instrument_idx").on(t.instrumentId, t.effectiveDate).where(sql`${t.status} = 'CONFIRMED'`),
+  check("corporate_actions_ratio_range", sql`${t.ratioTo} BETWEEN 1 AND 1000 AND ${t.ratioFrom} BETWEEN 1 AND 1000`),
+  check("corporate_actions_ratio_differs", sql`${t.ratioTo} <> ${t.ratioFrom}`),
+  check("corporate_actions_ratio_reduced", sql`gcd(${t.ratioTo}, ${t.ratioFrom}) = 1`)
 ]);
 
 export const ledgerEvents = pgTable("ledger_events", {
@@ -355,6 +362,9 @@ export const marketDataObservations = pgTable("market_data_observations", {
   currency: text("currency").notNull(),
   provider: text("provider").notNull(),
   freshness: text("freshness").notNull().default("CURRENT"),
+  // Set when an administrator-confirmed corporate action explained this quote (migration 0057);
+  // revoking the action deletes these rows.
+  explainedByCorporateActionId: uuid("explained_by_corporate_action_id").references(() => corporateActions.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => [
   uniqueIndex("market_observation_unique").on(t.tradingLineId, t.observedAt, t.provider),

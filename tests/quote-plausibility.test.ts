@@ -80,47 +80,55 @@ describe("matchesRecordedSplit",()=>{
 });
 
 describe("explainingCorporateAction",()=>{
- const reference={price:"100",observedAt:new Date("2026-10-09T16:00:00Z")};
+ // Reference accepted on 10-09 (before the effective date 10-12); the quote arrives on 10-12.
+ const pre={price:"100",observedAt:new Date("2026-10-09T16:00:00Z")};
  const quoteAt=new Date("2026-10-12T10:00:00Z");
  const action=(effectiveDate:string,to=2,from=1,id="a1")=>({id,to,from,effectiveDate});
- it("explains the halved price of a 2:1 split effective after the reference and on/before the quote",()=>{
+ const cand=(a:ReturnType<typeof action>,preReference:{price:string;observedAt:Date}|null=pre,latestOnOrAfterEffective:{price:string}|null=null)=>({action:a,preReference,latestOnOrAfterEffective});
+ it("explains the halved price of a 2:1 split effective on the quote date, with a pre-effective reference",()=>{
   const a=action("2026-10-12");
-  expect(explainingCorporateAction("50",reference,quoteAt,[a])).toBe(a);
-  expect(assessQuote(50,reference,quoteAt)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
-  // Effective the day after the reference is also strictly after it.
-  expect(explainingCorporateAction("50",reference,quoteAt,[action("2026-10-10")])).not.toBeNull();
+  expect(explainingCorporateAction("50",quoteAt,[cand(a)])).toBe(a);
+  expect(assessQuote(50,pre,quoteAt)).toEqual({ok:false,code:"IMPLAUSIBLE_MOVE"});
  });
- it("requires the effective date to be strictly after the reference date and not after the quote date",()=>{
-  expect(explainingCorporateAction("50",reference,quoteAt,[action("2026-10-09")])).toBeNull();
-  expect(explainingCorporateAction("50",reference,quoteAt,[action("2026-10-08")])).toBeNull();
-  expect(explainingCorporateAction("50",reference,quoteAt,[action("2026-10-13")])).toBeNull();
+ it("requires the reference to be observed on a UTC date strictly before the effective date",()=>{
+  const sameDay={price:"100",observedAt:new Date("2026-10-12T00:30:00Z")};
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12"),sameDay)])).toBeNull();
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12"),null)])).toBeNull();
+  const lastSecond={price:"100",observedAt:new Date("2026-10-11T23:59:59Z")};
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12"),lastSecond)])).not.toBeNull();
  });
- it("limits the quote to 14 days after the effective date",()=>{
-  // Effective 10-12: a quote on 10-26 is exactly 14 days after; 10-27 is 15.
-  expect(explainingCorporateAction("50",{price:"100",observedAt:new Date("2026-10-11T12:00:00Z")},new Date("2026-10-26T10:00:00Z"),[action("2026-10-12")])).not.toBeNull();
-  expect(explainingCorporateAction("50",{price:"100",observedAt:new Date("2026-10-11T12:00:00Z")},new Date("2026-10-27T10:00:00Z"),[action("2026-10-12")])).toBeNull();
+ it("requires the effective date not to be after the quote date and the quote within 14 days",()=>{
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-13"))])).toBeNull();
+  const early={price:"100",observedAt:new Date("2026-10-11T12:00:00Z")};
+  expect(explainingCorporateAction("50",new Date("2026-10-26T10:00:00Z"),[cand(action("2026-10-12"),early)])).not.toBeNull();
+  expect(explainingCorporateAction("50",new Date("2026-10-27T10:00:00Z"),[cand(action("2026-10-12"),early)])).toBeNull();
  });
- it("never applies an action twice: a post-split reference is not explained again",()=>{
-  // 50 accepted on the effective day; a later 25 is -50% again but the reference is already post-split.
-  const accepted={price:"50",observedAt:new Date("2026-10-12T11:00:00Z")};
-  expect(explainingCorporateAction("25",accepted,new Date("2026-10-13T10:00:00Z"),[action("2026-10-12")])).toBeNull();
+ it("accepts a lagging provider: 100 stamped on the effective day does not become the reference",()=>{
+  // 100 was accepted on 10-12 (latest on/after the effective date); the pre-effective reference is still 100.
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12"),pre,{price:"100"})])).not.toBeNull();
+ });
+ it("never applies an action twice once the post-split price has been adopted",()=>{
+  // Accepted 50 on/after the effective date; 25 is not within 5% of 100 x 1 / 2 either.
+  expect(explainingCorporateAction("25",new Date("2026-10-13T10:00:00Z"),[cand(action("2026-10-12"),pre,{price:"50"})])).toBeNull();
+  // And a quote that would match is not "explained" again: the post-split price is already adopted.
+  expect(explainingCorporateAction("50",new Date("2026-10-13T10:00:00Z"),[cand(action("2026-10-12"),pre,{price:"50"})])).toBeNull();
  });
  it("does not explain an unrelated move, a x100 pence/pounds error or a stub price",()=>{
-  expect(explainingCorporateAction("50",reference,quoteAt,[])).toBeNull();
-  expect(explainingCorporateAction("50",reference,quoteAt,[action("2026-10-12",3,1)])).toBeNull();
-  expect(explainingCorporateAction("60",reference,quoteAt,[action("2026-10-12")])).toBeNull();
-  expect(explainingCorporateAction("10000",reference,quoteAt,[action("2026-10-12")])).toBeNull();
-  expect(explainingCorporateAction("0.0123",reference,quoteAt,[action("2026-10-12",1000,1)])).toBeNull();
+  expect(explainingCorporateAction("50",quoteAt,[])).toBeNull();
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12",3,1))])).toBeNull();
+  expect(explainingCorporateAction("60",quoteAt,[cand(action("2026-10-12"))])).toBeNull();
+  expect(explainingCorporateAction("10000",quoteAt,[cand(action("2026-10-12"))])).toBeNull();
+  expect(explainingCorporateAction("0.0123",quoteAt,[cand(action("2026-10-12",1000,1))])).toBeNull();
  });
  it("explains a 1:10 reverse split and applies the 5% tolerance",()=>{
-  expect(explainingCorporateAction("1000",reference,quoteAt,[action("2026-10-12",1,10)])).not.toBeNull();
-  expect(explainingCorporateAction("52.45",reference,quoteAt,[action("2026-10-12")])).not.toBeNull();
-  expect(explainingCorporateAction("52.55",reference,quoteAt,[action("2026-10-12")])).toBeNull();
+  expect(explainingCorporateAction("1000",quoteAt,[cand(action("2026-10-12",1,10))])).not.toBeNull();
+  expect(explainingCorporateAction("52.45",quoteAt,[cand(action("2026-10-12"))])).not.toBeNull();
+  expect(explainingCorporateAction("52.55",quoteAt,[cand(action("2026-10-12"))])).toBeNull();
  });
  it("prefers the latest matching effective date and ignores malformed actions",()=>{
   const older=action("2026-10-10",2,1,"older");
   const newer=action("2026-10-12",2,1,"newer");
-  expect(explainingCorporateAction("50",reference,quoteAt,[older,newer])).toBe(newer);
-  expect(explainingCorporateAction("50",reference,quoteAt,[{id:"x",to:2,from:1,effectiveDate:"nope"},{id:"y",to:0,from:1,effectiveDate:"2026-10-12"}])).toBeNull();
+  expect(explainingCorporateAction("50",quoteAt,[cand(older),cand(newer)])).toBe(newer);
+  expect(explainingCorporateAction("50",quoteAt,[cand({id:"x",to:2,from:1,effectiveDate:"nope"}),cand({id:"y",to:0,from:1,effectiveDate:"2026-10-12"})])).toBeNull();
  });
 });

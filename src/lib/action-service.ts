@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
+import { assessCorporateActions, corporateActionMessage } from "@/lib/corporate-action-guard";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
 import { getStrategyEngine } from "@/domain/strategy/registry";
@@ -109,28 +110,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   if(requiredRelease[0]){dataStatus="MISSING";dataMessage="Strategy version "+String(requiredRelease[0].version)+" is a required rules update. Update this strategy before new financial actions are calculated.";}
   if(effectiveCash.lt(0)){dataStatus="MISSING";dataMessage="This scenario needs more cash than is currently available. Reduce the withdrawal or sell investments first.";}
 
-  // An administrator-confirmed split that took effect after this strategy first held the instrument:
-  // the strategy still counts pre-split units unless it recorded the split (an unreversed SPLIT on or
-  // after the day before the effective date) or a manual price newer than the effective date was
-  // entered. Instrument-wide, so it covers every trading line of the instrument. A position first
-  // opened on or after the effective date is not affected. Returns the effective date or null.
-  const unrecordedConfirmedSplit=async(instrumentId:string,manualPriceAt:Date|null):Promise<string|null>=>{
-    const rows=await db.unsafe(
-      "SELECT a.effective_date::text AS effective_date FROM corporate_actions a "+
-      "WHERE a.instrument_id=$1 AND a.kind='SPLIT' AND a.status='CONFIRMED' AND a.effective_date<=(now() AT TIME ZONE 'UTC')::date "+
-      "AND a.effective_date>(SELECT (min(e.occurred_at) AT TIME ZONE 'UTC')::date FROM ledger_events e "+
-      "WHERE e.strategy_instance_id=$2 AND e.instrument_id=$1 AND e.event_type NOT IN ('SPLIT','CORRECTION')) "+
-      "AND NOT EXISTS (SELECT 1 FROM ledger_events s WHERE s.strategy_instance_id=$2 AND s.instrument_id=$1 AND s.event_type='SPLIT' "+
-      "AND s.occurred_at>=(a.effective_date::timestamp AT TIME ZONE 'UTC')-interval '1 day' "+
-      "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id)) "+
-      "AND ($3::timestamptz IS NULL OR $3::timestamptz<(a.effective_date::timestamp AT TIME ZONE 'UTC')) "+
-      "ORDER BY a.effective_date DESC LIMIT 1",
-      [instrumentId,strategyInstanceId,manualPriceAt?manualPriceAt.toISOString():null]
-    );
-    return rows[0]?String(rows[0].effective_date).slice(0,10):null;
+  // Administrator-confirmed splits (per account, per action): see src/lib/corporate-action-guard.ts.
+  // `priceObservedAt` is when the price about to be used was observed.
+  const confirmedSplitBlock=async(instrumentId:string,priceObservedAt:Date|null):Promise<string|null>=>{
+    const verdict=await assessCorporateActions(db,{strategyInstanceId,instrumentId,primaryAccountId,priceObservedAt});
+    return verdict.kind==="OK"?null:corporateActionMessage(verdict);
   };
-  const confirmedSplitMessage=(effectiveDate:string)=>
-    "A confirmed stock split took effect on "+effectiveDate+"; record the split for this strategy or enter a verified post-split price before recalculating.";
 
   for(const account of accounts){
     const accountId=String(account.id);
@@ -174,10 +159,11 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         dataMessage="The latest provider quote was rejected as implausible. Verify the price, corporate action and units before trading.";
         continue;
       }
-      const unrecordedSplit=await unrecordedConfirmedSplit(instrumentId,manualPrice&&manualAt&&Number.isFinite(manualAt.getTime())?manualAt:null);
-      if(unrecordedSplit){
+      const usedPriceAt=manualPrice?manualAt:acceptedAt;
+      const splitBlock=await confirmedSplitBlock(instrumentId,usedPriceAt&&Number.isFinite(usedPriceAt.getTime())?usedPriceAt:null);
+      if(splitBlock){
         dataStatus="MISSING";
-        dataMessage=confirmedSplitMessage(unrecordedSplit);
+        dataMessage=splitBlock;
         continue;
       }
       // A split changes the unit basis: never value post-split units using older prices or overrides.
@@ -362,13 +348,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       const overrideAt=chosenOverride?.observed_at?new Date(chosenOverride.observed_at):null;
       const rejectedNewer=Boolean(rejectedAt&&(!quoteAt||rejectedAt>=quoteAt)&&
         (!chosenOverride||!overrideAt||overrideAt<=rejectedAt));
+      const sizingPriceAt=chosenOverride?.manual_value!=null?overrideAt:quoteAt;
       const sizingUnrecordedSplit=quote?.instrument_id
-        ?await unrecordedConfirmedSplit(String(quote.instrument_id),overrideAt&&Number.isFinite(overrideAt.getTime())?overrideAt:null)
+        ?await confirmedSplitBlock(String(quote.instrument_id),sizingPriceAt&&Number.isFinite(sizingPriceAt.getTime())?sizingPriceAt:null)
         :null;
       if(rejectedNewer){
         proposal={actionType:"DATA_REQUIRED",title:"Verify rejected price",instruction:"The latest provider quote was rejected as implausible. Resolve the discrepancy before recording any trade.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(sizingUnrecordedSplit){
-        proposal={actionType:"DATA_REQUIRED",title:"Record the stock split",instruction:confirmedSplitMessage(sizingUnrecordedSplit),explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
+        proposal={actionType:"DATA_REQUIRED",title:"Record the stock split",instruction:sizingUnrecordedSplit,explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(!effectivePrice){
         proposal={actionType:"DATA_REQUIRED",title:"Price needed before you trade",instruction:"A current price is not available for the instrument this strategy would use.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(String(quote.observation_currency??quote.currency)!==String(instance.currency)){

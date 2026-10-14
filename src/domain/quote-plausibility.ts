@@ -4,7 +4,9 @@ import Decimal from "decimal.js";
 // dropped decimal, a split not yet applied. Feeding that into an action would size real orders from
 // it, so a quote that jumps as far as (or further than) any real session could move is rejected and
 // surfaced as a failed refresh until a person looks at it (a manual price with evidence can still be
-// recorded, and a stock split is recorded as a SPLIT ledger event).
+// recorded). A real stock split is explained ONLY by an administrator-confirmed corporate action
+// (`explainingCorporateAction`); a SPLIT a user records in their own ledger restates that strategy's
+// units and never makes a quote acceptable.
 //
 // The limit is EXCLUSIVE: a move of exactly the limit is rejected. An exact 2:1 split halves the
 // price (-50%), which a ">" comparison against 0.5 used to let straight through.
@@ -69,36 +71,49 @@ function isoDayNumber(value: string): number {
   return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000);
 }
 
+/** An action together with the observations of the quote's own trading line around its effective date. */
+export type ExplanationCandidate = {
+  action: ConfirmedCorporateAction;
+  /** Latest ACCEPTED observation observed strictly before the effective date 00:00 UTC, or null. */
+  preReference: { price: Decimal.Value; observedAt: Date } | null;
+  /** Latest ACCEPTED observation on/after the effective date 00:00 UTC, or null. */
+  latestOnOrAfterEffective: { price: Decimal.Value } | null;
+};
+
 /**
- * The confirmed action that explains `price` as the post-action form of `reference`, or null. The
- * caller must only ask when `assessQuote` REJECTED the quote as IMPLAUSIBLE_MOVE. ALL must hold:
- *  - the effective date is strictly after the reference observation's UTC date (so the reference is
- *    pre-split and an already-post-split reference, e.g. a second glitch after acceptance, never
- *    qualifies: no double application);
- *  - the effective date is not after the quote's UTC date;
- *  - the quote's date is at most 14 days after the effective date;
- *  - price is within 5% of reference x from / to (`matchesRecordedSplit`).
+ * The confirmed action that explains `price` as the post-action form of the pre-effective accepted
+ * price, or null. The caller must only ask when `assessQuote` REJECTED the quote as IMPLAUSIBLE_MOVE.
+ * ALL must hold for a candidate:
+ *  - its effective date is not after the quote's UTC date and the quote is at most 14 days after it;
+ *  - a pre-effective reference exists and was observed on a UTC date strictly before the effective
+ *    date (a lagging provider stamping the unadjusted price on the effective day cannot become the
+ *    reference);
+ *  - price is within 5% of preReference x from / to (`matchesRecordedSplit`);
+ *  - the latest accepted observation on/after the effective date, if any, is NOT itself within that
+ *    tolerance of preReference x from / to (when it is, the post-split price has already been
+ *    adopted and nothing is left to explain: no double application).
  * Of several matches the latest effective date wins.
  */
 export function explainingCorporateAction(
   price: Decimal.Value,
-  reference: { price: Decimal.Value; observedAt: Date },
   quoteObservedAt: Date,
-  actions: ConfirmedCorporateAction[],
+  candidates: ExplanationCandidate[],
   tolerance: Decimal.Value = SPLIT_MATCH_TOLERANCE
 ): ConfirmedCorporateAction | null {
-  if (!Number.isFinite(quoteObservedAt.getTime()) || !Number.isFinite(reference.observedAt.getTime())) return null;
+  if (!Number.isFinite(quoteObservedAt.getTime())) return null;
   const quoteDay = utcDayNumber(quoteObservedAt);
-  const referenceDay = utcDayNumber(reference.observedAt);
   let best: ConfirmedCorporateAction | null = null;
   let bestDay = -Infinity;
-  for (const action of actions) {
+  for (const { action, preReference, latestOnOrAfterEffective } of candidates) {
     const effectiveDay = isoDayNumber(action.effectiveDate);
     if (!Number.isFinite(effectiveDay)) continue;
-    if (!(effectiveDay > referenceDay)) continue;
     if (effectiveDay > quoteDay) continue;
     if (quoteDay - effectiveDay > CORPORATE_ACTION_WINDOW_DAYS) continue;
-    if (!matchesRecordedSplit(price, reference.price, [{ to: action.to, from: action.from }], tolerance)) continue;
+    if (!preReference || !Number.isFinite(preReference.observedAt.getTime())) continue;
+    if (!(utcDayNumber(preReference.observedAt) < effectiveDay)) continue;
+    const split = [{ to: action.to, from: action.from }];
+    if (!matchesRecordedSplit(price, preReference.price, split, tolerance)) continue;
+    if (latestOnOrAfterEffective && matchesRecordedSplit(latestOnOrAfterEffective.price, preReference.price, split, tolerance)) continue;
     if (effectiveDay > bestDay) { best = action; bestDay = effectiveDay; }
   }
   return best;
