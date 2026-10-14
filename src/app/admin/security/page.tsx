@@ -3,14 +3,16 @@ import {ShieldCheck,LockKeyhole,ScrollText,DatabaseBackup,ArrowRight} from "luci
 import {requireAdminPage} from "@/lib/session";
 import {sql} from "@/lib/db";
 import {isMfaEnabled} from "@/lib/mfa";
+import {AdminPromotionForm} from "@/components/AdminPromotionForm";
 
 export const dynamic="force-dynamic";
 export default async function AdminSecurityPage(){
  const user=await requireAdminPage();
- const [mfa,audit,connectionTests]=await Promise.all([
+ const [mfa,audit,connectionTests,adminUsers]=await Promise.all([
   isMfaEnabled(user.id),
   sql.unsafe("SELECT action,entity_type,occurred_at FROM audit_events ORDER BY occurred_at DESC LIMIT 15"),
-  sql.unsafe("SELECT metadata->>'service' AS service,metadata->>'ok' AS ok,occurred_at FROM audit_events WHERE action='integration.connection-test' AND metadata->>'service' IN ('STRIPE','EMAIL','MARKET_DATA','MARKET_DATA_HISTORY','TELEGRAM') ORDER BY occurred_at DESC LIMIT 12")
+  sql.unsafe("SELECT metadata->>'service' AS service,metadata->>'ok' AS ok,occurred_at FROM audit_events WHERE action='integration.connection-test' AND metadata->>'service' IN ('STRIPE','EMAIL','MARKET_DATA','MARKET_DATA_HISTORY','TELEGRAM') ORDER BY occurred_at DESC LIMIT 12"),
+  sql.unsafe("SELECT email,(mfa_enabled_at IS NOT NULL) AS mfa_enabled FROM users WHERE role='ADMIN' AND deleted_at IS NULL ORDER BY created_at LIMIT 50")
  ]);
  return <div>
   <div className="admin-design-heading"><div><span className="admin-kicker">GOVERNANCE / SECURITY</span>
@@ -31,6 +33,17 @@ export default async function AdminSecurityPage(){
     <Link className="admin-panel-footer-link" href="/admin/launch">Review recovery evidence <ArrowRight size={15}/></Link>
    </section>
   </div>
+  <section className="admin-design-panel" aria-labelledby="existing-administrators-title">
+   <header className="admin-design-panel-header"><div><h2 id="existing-administrators-title">Existing administrators</h2>
+    <p>Current non-deleted Admin accounts. Every administrator needs their own two-step sign-in to perform high-impact actions.</p></div></header>
+   {adminUsers.length?<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Administrator accounts">
+    <table className="admin-studio-table"><thead><tr><th scope="col">ACCOUNT</th><th scope="col">TWO-STEP SIGN-IN</th></tr></thead>
+     <tbody>{adminUsers.map(a=><tr key={String(a.email)}><td>{String(a.email)}</td>
+      <td>{a.mfa_enabled===true?"Enrolled":"Not enrolled — cannot approve high-risk actions"}</td></tr>)}</tbody>
+    </table></div>:<p className="admin-data-caveat">No active administrator accounts are recorded.</p>}
+   <p className="admin-data-caveat">The list reports enrolment, not a live signed-in second approver. High-risk corporate actions still require approval from a different MFA-authenticated administrator.</p>
+  </section>
+  <div style={{marginTop:20,marginBottom:20}}><AdminPromotionForm/></div>
   <section className="admin-design-panel admin-audit-panel" aria-labelledby="admin-provider-tests-title">
    <header className="admin-design-panel-header"><div><h2 id="admin-provider-tests-title">Recent integration tests</h2><p>Last 12 administrator-triggered checks, as recorded in the audit log</p></div></header>
    {connectionTests.length?<div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Provider connection test history"><table className="admin-studio-table">
