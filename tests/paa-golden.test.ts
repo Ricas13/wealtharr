@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import Decimal from "decimal.js";
 const D=(n:number|string)=>new Decimal(n);
 import {paaReferenceAllocation} from "../src/domain/strategy/paa-signals";
-describe("paa canonical golden",()=>{
+describe("paa",()=>{
  it("9 of 12 positive momentum => half safe, half top 6 equal",()=>{
   const risky=Array.from({length:12},(_,i)=>"R"+i);
   const safe=["IEF"];
