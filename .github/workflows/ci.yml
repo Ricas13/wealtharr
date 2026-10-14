@@ -129,6 +129,7 @@ jobs:
           docker build --quiet -f docker/backup.Dockerfile .
           rm -f .env.production
       - run: sh -n scripts/verify-private-staging.sh
+      - run: bash -n scripts/repair-public-routing.sh
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
