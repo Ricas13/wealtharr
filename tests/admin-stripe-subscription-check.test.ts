@@ -8,7 +8,7 @@ const local:SubscriptionObservation={
  status:"ACTIVE",cadence:"MONTHLY",periodEnd:1790000000000,cancelAtPeriodEnd:false
 };
 const remote:StripeObservation={
- subscriptionId:"sub_one",customerId:"cus_one",metadataUserId:local.userId,planId:local.planId,
+ subscriptionId:"sub_one",customerId:"cus_one",metadataUserId:local.userId,planId:local.planId,itemCount:1,
  status:"active",cadence:"MONTHLY",periodEnd:local.periodEnd,cancelAtPeriodEnd:false
 };
 const compared=(input:Partial<StripeObservation>)=>compareSubscriptionObservations(local,{...remote,...input});
@@ -17,6 +17,8 @@ describe("read-only Stripe subscription comparison",()=>{
   expect(compared({}).outcome).toBe("MATCH");
   expect(compared({metadataUserId:null}).outcome).toBe("MATCH");
   expect(compared({planId:null}).outcome).toBe("REVIEW");
+  expect(compared({itemCount:2}).outcome).toBe("REVIEW");
+  expect(compared({itemCount:0}).outcome).toBe("REVIEW");
  });
  it("fails closed on missing or conflicting ownership identifiers, without revealing fields",()=>{
   for(const input of [
