@@ -9,6 +9,7 @@ import { assessCorporateActions, corporateActionMessage } from "@/lib/corporate-
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
 import {twoFundsAllocations} from "@/domain/strategy/two-funds-engine";
+import {trinityWeights} from "@/domain/strategy/trinity-engine";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
@@ -23,7 +24,7 @@ import { validatedEffectivePrice } from "@/domain/manual-override";
 import { loadTrustedHistory } from "@/lib/trusted-history-loader";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
-import { nextCalendarQuarterDueAt } from "@/domain/schedule";
+import { nextCalendarQuarterDueAt,nextCalendarMonthDueAt } from "@/domain/schedule";
 import { alertKeyClass, buildStrategyAlert } from "@/domain/strategy-alert";
 import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
@@ -215,7 +216,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   };
   const dueAt=config.reviewSchedule==="CALENDAR_QUARTER_END"
     ?nextCalendarQuarterDueAt(scheduleInput)
-    :nextReviewDueAt({...scheduleInput,frequency});
+    :config.reviewSchedule==="CALENDAR_MONTH_END"
+      ?nextCalendarMonthDueAt(scheduleInput)
+      :nextReviewDueAt({...scheduleInput,frequency});
   const reviewDue=Boolean(state.forceReview)||new Date()>=dueAt;
   const contributionRows=scenario?.resetTimeline
     ?[{amount:"0"}]
@@ -244,9 +247,11 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     }
   }
   // Momentum research engines read licensed price history; every other engine ignores it.
-  const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
-    ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
-  const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
+  const momentumUniverse=calculationEngineKey==="TRINITY_HYBRID"&&Array.isArray(config.signalUniverse)
+    ?(config.signalUniverse as unknown[]).map(String)
+    :calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
+      ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
+  const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),calculationEngineKey==="TRINITY_HYBRID"?14:(Number(config.lookbackMonths)||12),new Date(),db):undefined;
   const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
     const mappingRows=await db.unsafe(
       "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
@@ -511,12 +516,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // EXECUTION account's cash and holdings. It returns the next order, a residue HOLD (every leg within half a
   // unit of target) or a DATA_REQUIRED that names why nothing can be traded.
   let override:SizingOverride|undefined;
-  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
     const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
     const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
     const allocations=calculationEngineKey==="TWO_FUNDS_MODERATE"
       ?twoFundsAllocations(config,new Date()).map(a=>({...a}))
-      :effectiveAllocations(config,settings);
+      :calculationEngineKey==="TRINITY_HYBRID"
+        ?exact.actionType==="DATA_REQUIRED"?null:trinityWeights({trustedHistory,now:new Date()})
+        :effectiveAllocations(config,settings);
     if(needsTrade&&allocations){
       const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
       const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});
