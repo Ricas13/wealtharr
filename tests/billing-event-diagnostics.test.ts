@@ -3,7 +3,7 @@ import {safeBillingErrorCode} from "@/domain/billing-event-diagnostics";
 
 describe("billing diagnostic redaction",()=>{
  it("shows short machine-readable codes, never raw provider text",()=>{
-  expect(safeBillingErrorCode("STRIPE_CUSTOMER_MISSING")).toBe("STRIPE_CUSTOMER_MISMATCH");
+  expect(safeBillingErrorCode("STRIPE_CUSTOMER_MISSING")).toBe("STRIPE_CUSTOMER_MISSING");
   expect(safeBillingErrorCode("WEBHOOK_FAILED")).toBe("WEBHOOK_FAILED");
   expect(safeBillingErrorCode("UNKNOWN_SECRET_LIKE_CODE")).toBe("Details withheld — inspect protected server logs");
   expect(safeBillingErrorCode("stripe failed: https://example.com/?token=secret")).toBe("Details withheld — inspect protected server logs");
