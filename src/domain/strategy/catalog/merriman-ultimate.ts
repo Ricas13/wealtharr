@@ -33,9 +33,10 @@ export const plugin:StrategyPlugin={
     name:"Merriman Ultimate Buy-and-Hold (50/50)",family:"FIXED_ALLOCATION",
     description:"Ten-sleeve 100% equity 50/50 US/international allocation; annual Wealtharr review convention",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
-    supportedRegions:[],supportedWrappers:[],initialVersion:"DRAFT",
+    supportedRegions:[],supportedWrappers:[],initialVersion:"PUBLISHED",
     realignsResearchOnlyDefinition:false
   },
   specCard:"docs/strategy-specs/group-2-merriman-ultimate.md",
-  goldenTests:"tests/strategy-group-2-golden.test.ts"
+  goldenTests:"tests/strategy-group-2-golden.test.ts",
+releaseStatus:"COMPLETE"
 };
