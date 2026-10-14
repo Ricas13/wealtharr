@@ -20,11 +20,11 @@ describe("Group 3 reference-only allocation evidence",()=>{
       expect(plugin?.releaseStatus).toBe("COMPLETE");
     });
   }
-  it("age-scaled and tactical methods remain intentionally nonpublishable",()=>{
-    for(const key of ["trinity"]){
+  it("all five Group 3 methods remain administratively disabled by default",()=>{
+    for(const key of ["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]){
       const plugin=getStrategyPlugin(key);
-      expect(plugin?.profile?.engine).toBe("RESEARCH_PENDING");
-      expect(plugin?.seedDefinition).toBeNull();
+      expect(plugin?.seedDefinition?.enabled).toBe(false);
+      expect(plugin?.releaseStatus).toBe("COMPLETE");
     }
   });
 });
