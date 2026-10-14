@@ -17,6 +17,6 @@ export const plugin:StrategyPlugin={
     supportedRegions:[],supportedWrappers:[],
     initialVersion:"DRAFT",realignsResearchOnlyDefinition:true
   },
-  specCard:"docs/strategy-specs/coffeehouse-core-four-swensen.md",
-  goldenTests:"tests/strategy-reference-golden.test.ts"
+  specCard:"docs/strategy-specs/group-2-core-four.md",
+  goldenTests:"tests/strategy-group-2-golden.test.ts"
 };
