@@ -52,6 +52,8 @@ export type ProposedAction = {
   confidence: "HIGH" | "MEDIUM" | "LOW";
   dueAt?: Date | null;
   completesReview?: boolean;
+  /** Machine code of a DATA_REQUIRED outcome from the execution convention (alert text and notification key). */
+  reasonCode?: string;
 };
 
 export interface StrategyEngine {

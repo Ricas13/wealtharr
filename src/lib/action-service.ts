@@ -7,7 +7,7 @@ import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
-import { openOutcomeNote, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
+import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
@@ -22,7 +22,7 @@ import { loadTrustedHistory } from "@/lib/trusted-history-loader";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { nextCalendarQuarterDueAt } from "@/domain/schedule";
-import { buildStrategyAlert } from "@/domain/strategy-alert";
+import { alertKeyClass, buildStrategyAlert } from "@/domain/strategy-alert";
 import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
 import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
@@ -255,7 +255,10 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // Unit price, execution-account cash and execution-account holding of one leg, for order sizing
   // (execution-residue.ts). Mirrors order sizing below (same account ranking, mapping, override and quote
   // rules); null means "unknown" and fails closed.
-  const legExecutionFor=async(economicExposure:string,leverageRaw:unknown,side:"BUY"|"SELL"):Promise<{price:Decimal;buyCash:Decimal;heldUnits:Decimal}|null>=>{
+  // NOTE for the stock-split guard (PR #94): whichever of that PR and this one merges second must apply the
+  // split guard to the price returned here, exactly as the order-sizing path below does, so a post-split quote
+  // is never used to size a unit.
+  const legExecutionFor=async(economicExposure:string,leverageRaw:unknown,side:"BUY"|"SELL"):Promise<{price:Decimal;buyCash:Decimal;heldUnits:Decimal;accountId:string}|null>=>{
     try{
       const leverage=exposureLeverage(economicExposure,leverageRaw);
       // A sale is sized on the held line of the largest position (as in resolveProposal), not on the
@@ -307,7 +310,8 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         return {
           price:new Decimal(price.toString()),
           buyCash:(position?.cash??new Decimal(0)).plus(scenarioDelta),
-          heldUnits:quote.instrument_id?(position?.quantities.get(String(quote.instrument_id))??new Decimal(0)):new Decimal(0)
+          heldUnits:quote.instrument_id?(position?.quantities.get(String(quote.instrument_id))??new Decimal(0)):new Decimal(0),
+          accountId
         };
       }
       return null;
@@ -499,8 +503,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         const sizingLegs:SizingLeg[]=[];
         for(const leg of legs){
           const allocation=allocations.find(a=>String(a.exposure)===leg.exposure);
-          const execution=await legExecutionFor(leg.exposure,allocation?.leverage,leg.target.lt(leg.current)?"SELL":"BUY");
-          sizingLegs.push({...leg,price:execution?.price??null,buyCash:execution?.buyCash??new Decimal(0),heldUnits:execution?.heldUnits??new Decimal(0)});
+          const selling=leg.target.lt(leg.current);
+          const execution=await legExecutionFor(leg.exposure,allocation?.leverage,selling?"SELL":"BUY");
+          sizingLegs.push({
+            ...leg,price:execution?.price??null,buyCash:execution?.buyCash??new Decimal(0),heldUnits:execution?.heldUnits??new Decimal(0),
+            buyAccountId:selling?null:execution?.accountId??null,sellAccountId:selling?execution?.accountId??null:null
+          });
         }
         const outcome=sizeNextTrade({legs:sizingLegs,total,threshold,constraints});
         if(outcome.kind==="TRADE"){
@@ -517,7 +525,8 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           override={proposal:{
             actionType:"DATA_REQUIRED",title:note.title,instruction:note.instruction,
             explanation:[...exact.explanation.filter((row)=>!row.label.startsWith("Full plan")),...note.rows],
-            nextState:state,confidence:outcome.kind==="UNPRICED"?"LOW":"HIGH",dueAt:exact.dueAt
+            nextState:state,confidence:outcome.kind==="UNPRICED"?"LOW":"HIGH",dueAt:exact.dueAt,
+            reasonCode:outcomeReasonCode(outcome)
           }};
         }
       }
@@ -561,7 +570,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // A HOLD, BUY or SELL is a REVIEW alert; any DATA_REQUIRED (data problem, blocking preference, portfolio
   // too small, cash needed) is a DATA_REQUIRED alert whose title and instruction carry the distinct message.
   // A changed class is a new review_key, hence a new notification row.
-  const notificationClass=proposal.actionType==="DATA_REQUIRED"?"DATA_REQUIRED":"REVIEW";
+  // The outcome code is part of the class: a change of reason (cash needed -> preference blocks) is a new
+  // review_key and therefore a new notification and delivery.
+  const notificationClass=alertKeyClass(proposal.actionType,proposal.reasonCode);
   const reviewKey=crypto.createHash("sha256")
     .update(strategyInstanceId+"|"+lastReview.toISOString()+"|"+notificationClass).digest("hex");
   // An estimated BUY/SELL is never proof that target weights were achieved.
@@ -842,6 +853,7 @@ export async function calculateAction(strategyInstanceId:string){
       // in-flight or delivered alert always points to the latest revision.
       const message=buildStrategyAlert({
         actionType:proposal.actionType,
+        reason:proposal.reasonCode??null,
         amount:proposal.amount?.toString()??null,
         currency:proposal.currency??null,
         ticker:executionTicker??proposal.economicExposure??null,

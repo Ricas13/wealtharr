@@ -64,54 +64,69 @@ Changing an existing strategy:
 ## Execution convention for residual drift (fixed-allocation engine)
 
 This is a Wealtharr **implementation convention** (order sizing), not a strategy rule. The engine proposes exact
-gaps; whole shares, a minimum trade, a cash buffer, a fee or a selling preference then make part of that gap
+gaps; whole shares, a minimum trade, a cash buffer, a fee or a selling preference make part of that gap
 untradable. Code: `src/domain/strategy/execution-residue.ts` (`sizeNextTrade`), `src/domain/execution.ts`,
 `src/lib/action-service.ts`.
 
-**Unit.** Whole shares: the validated price of one share of the leg. Fractional: `max(0.005, 10 x flat fee)`
-(a trade worth less than ten fees is not made). The minimum trade size and the cash buffer are *preferences*, not
-part of the unit. `0.005` assumes a 2-decimal currency.
+**Unit `u`.** Whole shares: the validated price of one share of the leg. Fractional: `max(0.01, 10 x flat fee)`
+(a fee is never burnt on a trade worth less than ten fees). The minimum trade size and the cash buffer are
+*preferences*, not part of the unit. `0.005` (the smallest order) assumes a 2-decimal currency.
 
-**At target.** A leg is at target when `|deviation| <= threshold x total`, or `|deviation| <= unit / 2 +
-(number of legs) x flat fee`. If every leg is at target the review closes with a HOLD whose explanation lists the
-residual deviation per leg and the residual cash. A HOLD is emitted only this way.
+**At target (band).** `|deviation| <= threshold x total`, or `|deviation| <= u/2 + max(legs x flat fee, 0.1 x u)`
+(inclusive). The `0.1 x u` term is hysteresis so a price move between fills cannot turn a just-traded leg into a
+trade in the other direction; `legs x fee` absorbs the fee-driven drift of the targets.
 
-**Sizing (one trade per recalculation).** Every leg outside its band is traded to the nearest unit (ties round
+**Sizing, one trade per recalculation.** Every leg outside its band is traded to the nearest unit (ties round
 down, at least one unit):
-1. Sales first, largest deviation first, only if selling is allowed, at most what the *execution account* holds,
-   not below the minimum trade.
-2. Then purchases, largest deviation first, limited by the *execution account's* spendable cash
-   (`cash - buffer - fee`): the nearest count if affordable, else the largest affordable whole count.
+1. Sales first, largest deviation first: selling allowed, at most what the *execution account* holds, not below
+   the minimum trade.
+2. Purchases, largest deviation first, limited by the execution account's spendable cash (`cash - buffer - fee`).
+   Whole shares: if the nearest purchases of all underweight legs together cost more than the spendable cash,
+   purchases are sized with FLOOR (never rounding up and starving another leg); if that gives no purchase the
+   nearest affordable count is used.
+3. Funding sale: a held overweight leg (inside its band or not) with at least one unit, whose one-unit sale leaves
+   it within its band and frees enough cash, *in the same account as the buyer*, for one unit of an underweight leg
+   that is at least one unit short.
+
+**Decision order** (for a review the engine says has to trade):
+1. an unpriced leg: `DATA_REQUIRED` (UNPRICED);
+2. every leg within the threshold: HOLD;
+3. every leg within the threshold or its band: HOLD ("within half a unit");
+4. a whole-share leg outside its band whose unit exceeds its target: TOO_SMALL (minimum investable shown);
+5. a permitted nearest-unit trade, or funding sale: BUY / SELL;
+6. a preference that blocks (selling disabled / cash buffer / minimum trade size, each alone then together,
+   evaluated on the execution account, including the funding sale): `DATA_REQUIRED` naming it;
+7. whole shares, every underweight leg less than one unit short, no unit affordable and nothing outside its band to
+   sell: HOLD ("within one unit"): "Every holding is within one trading unit of its target. Your cash is less than
+   the cost of one more unit of X; add about Z to buy it, or keep this allocation";
+8. cash needed (CASH_SHORTFALL, with the amount) or nothing to sell (NOTHING_TO_SELL, only when no unit of an
+   overweight leg is held).
 
 **Termination.** An overweight leg is only sold and an underweight leg only bought; a trade to the nearest unit
-leaves the leg within `unit / 2` of target (inside its band, which also absorbs the fee-driven drift of targets),
-so it is not traded again and a buy-then-sell of the same leg cannot occur. Cash-capped purchases only repeat as
-purchases.
+leaves the leg within `u/2`, inside its band, so it is not traded again. A funding sale leaves its leg inside its
+band, so it happens at most once. Cash-capped purchases only repeat as purchases. Under fixed prices the trades
+are bounded by the number of legs plus the number of cash-capped purchases.
 
-**When no permitted trade exists** but a leg is not at target, the review stays `DATA_REQUIRED`, in this order:
-an unpriced leg; a preference that blocks (selling disabled / cash buffer / minimum trade size, each alone then
-together, evaluated on the execution account); a portfolio too small (a whole-share leg whose unit exceeds its
-target, or a leg below 50% of its target) with the minimum investable amount; nothing to sell; a structural cash
-shortfall (cash needed shown).
+**What a HOLD means.** A HOLD at step 3 or 7 records the residual drift per leg, its size as a percentage of the
+portfolio and the cash that would bring every underweight leg to target. Worst-case leg drift is about
+`0.6 x u` (whole shares, zero fee), i.e. `0.6 x (unit price / portfolio value)` of the portfolio:
 
-**One-unit exception (whole shares only).** With a threshold of 0, nearest-unit purchases can leave the last leg
-less than one unit short while the cash cannot buy one unit. The review then closes with a HOLD ("WITHIN_ONE_UNIT":
-"Every holding is within one trading unit of its target. Your cash is less than the cost of one more unit of X; add
-about Z to buy it, or keep this allocation") only when ALL hold: every price is validated; no preference (selling,
-cash buffer, minimum trade, alone or together) would enable a trade; the portfolio is not too small; no overweight
-leg is outside its band; every underweight leg is less than one unit (its price) short; no unit of any underweight
-leg is affordable from the execution account's spendable cash; and no one-unit sale of an overweight leg would fund
-one. If such a sale would (and does not push that leg more than half a unit below target) it is proposed instead of
-closing; otherwise the review stays `DATA_REQUIRED` with the cash needed. Fractional mode never uses it.
+| Strategy shape | Legs | Unit = 1% of portfolio | 5% | 20% |
+|---|---|---|---|---|
+| 60/40 | 2 | 0.6% per leg | 3% | 12% |
+| HFEA 55/45 | 2 | 0.6% | 3% | 12% |
+| Permanent Portfolio 4 x 25% | 4 | 0.6% per leg (up to 2.4% summed) | 3% (12%) | 12% (48%) |
+| Golden Butterfly 5 legs | 5 | 0.6% per leg (up to 3% summed) | 3% (15%) | 12% (60%) |
 
-Decision order for a review the engine says has to trade: (1) unpriced leg; (2) every leg within threshold, HOLD;
-(3) a whole-share leg whose unit exceeds its target, TOO_SMALL; (4) every leg within threshold or half a unit,
-HOLD; (5) a permitted nearest-unit trade; (6) blocking preference named; (7) a leg below 50% of target, TOO_SMALL;
-(8) the one-unit exception (HOLD, or the funding sale); (9) cash needed / nothing to sell.
+A leg whose unit is a large share of the portfolio is the cause; fractional shares remove it. The review then
+reads TOO_SMALL once a unit exceeds the leg's whole target.
 
-**Alerts.** A HOLD / BUY / SELL is a `REVIEW` alert; every `DATA_REQUIRED` is a `DATA_REQUIRED` alert whose title
-and instruction carry the specific reason. A change of class is a new `review_key` and therefore a new
-notification; a change of message within a class updates the existing notification (and resets it to unread).
+**Alerts.** HOLD, BUY and SELL are `REVIEW` alerts. A `DATA_REQUIRED` outcome carries its own amount-free title and
+text and the outcome code (e.g. `DATA_REQUIRED:CASH_SHORTFALL`, `DATA_REQUIRED:PREFERENCE_BLOCKED:SELLING_DISABLED`)
+is part of the notification class used for the `review_key`, so a change of reason is a new notification row (the
+fingerprint, which includes the instruction, is a new action row too, so the unique `action_id` is not reused). The
+closing HOLD shares the cycle's `REVIEW` key with the cycle's BUY/SELL alerts exactly as before this convention.
 
-**Pricing.** A sale is priced on the held line of the largest position (as in order sizing); a purchase on the mapped
-line of the account with the most cash; both must be validated, current and in the account currency.
+**Assumptions.** One currency per strategy. A funding sale is only counted when its proceeds land in the buyer's
+account. Prices must be validated, current and in the account currency (the stock-split guard of PR #94 must be
+applied to the sizing price by whichever change merges second).

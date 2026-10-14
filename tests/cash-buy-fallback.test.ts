@@ -68,18 +68,19 @@ describe("residual cash that cannot buy a share (PR #61 scenarios)", () => {
   });
 
   it("is TOO_SMALL (never a HOLD) when a leg's unit exceeds its target", () => {
-    // Holdings 100 / 60 / 40 plus cash 100: total 300, targets 150 / 90 / 60. A share of any leg costs 100, which
-    // exceeds B's target (90) and C's target (60): the portfolio cannot fund one unit of B (minimum about
-    // 100 x 300 / 90 = 333.33). The earlier version of this case closed silently with a HOLD.
-    const holdings = { A: "100", B: "60", C: "40" };
+    // Whole-share holdings A 1 x 100, B and C none, plus cash 200: total 300, targets 150 / 90 / 60. A share of
+    // any leg costs 100 (band 60): A is 50 under (inside its band), B is 90 under (outside) and its unit exceeds
+    // its target (90): the portfolio cannot fund one unit of B (minimum about 100 x 300 / 90 = 333.33).
+    // The earlier version of this case, with fractional holdings 60 / 40, closed silently with a HOLD.
+    const holdings = { A: "100", B: "0", C: "0" };
     const { legs, total } = residueLegs({
       allocations: [{ exposure: "A", weight: "0.5" }, { exposure: "B", weight: "0.3" }, { exposure: "C", weight: "0.2" }],
       exposures: Object.entries(holdings).map(([economicExposure, value]) => ({ economicExposure, value: new Decimal(value) })),
-      cash: new Decimal("100")
+      cash: new Decimal("200")
     });
     expect(total.toFixed(2)).toBe("300.00");
     const out = sizeNextTrade({
-      legs: legs.map((leg) => ({ ...leg, price: new Decimal(100), buyCash: new Decimal(100), heldUnits: new Decimal(1) })),
+      legs: legs.map((leg) => ({ ...leg, price: new Decimal(100), buyCash: new Decimal(200), heldUnits: new Decimal(1) })),
       total, threshold: new Decimal("0.05"), constraints: normalizeExecutionConstraints({ fractionalShares: false })
     });
     expect(out.kind).toBe("TOO_SMALL");
