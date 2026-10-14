@@ -33,10 +33,10 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
   evaluateMethodCompleteness(plugin,files).checks.filter(c=>!c.ok).map(c=>c.id);
 
 describe("isMethodComplete: the real catalogue",()=>{
-  it("marks exactly the Global 60/40 (GBP) model complete, with and without file evidence",()=>{
+  it("marks the seven method-complete releases including all six Group 2 strategies",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["60-40"]);
-    expect(complete(realFiles)).toEqual(["60-40"]);
+    expect(complete()).toEqual(["hfea","all-weather","60-40","coffeehouse","core-four","swensen","merriman-ultimate"]);
+    expect(complete(realFiles)).toEqual(["hfea","all-weather","60-40","coffeehouse","core-four","swensen","merriman-ultimate"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){
@@ -51,8 +51,8 @@ describe("isMethodComplete: the real catalogue",()=>{
       expect(isMethodComplete(plugin,realFiles),plugin.key).toBe(false);
     }
   });
-  it("keeps 9Sig, HFEA and the other fixed allocations incomplete",()=>{
-    for(const key of ["9sig","hfea","three-fund","80-20","all-weather","dual-momentum"])
+  it("keeps unfinished groups blocked",()=>{
+    for(const key of ["9sig","three-fund","80-20","dual-momentum"])
       expect(isMethodComplete(getStrategyPlugin(key)),key).toBe(false);
     expect(isMethodComplete(undefined)).toBe(false);
   });
