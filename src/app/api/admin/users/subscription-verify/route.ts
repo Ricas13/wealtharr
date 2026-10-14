@@ -68,7 +68,7 @@ export async function POST(request:Request){
    cancelAtPeriodEnd:row.cancel_at_period_end===true
   };
   const observed:StripeObservation={
-   subscriptionId:remote.id,customerId:remoteCustomerId,
+   subscriptionId:remote.id,customerId:remoteCustomerId,itemCount:remote.items.data.length,
    metadataUserId:remote.metadata?.userId||null,
    planId:matchingPlans.length===1?String(matchingPlans[0].id):null,
    status:remote.status,
