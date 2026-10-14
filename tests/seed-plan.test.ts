@@ -11,7 +11,7 @@ const sixtyForty=getStrategyPlugin("60-40")!;
 describe("production seeding of strategy definitions",()=>{
   it("seeds only complete methods, as disabled definitions with a PUBLISHED version",()=>{
     const entries=strategiesToSeed(STRATEGY_PLUGINS,"PRODUCTION");
-    expect(entries.map(e=>e.plugin.key)).toEqual(["60-40"]);
+    expect(entries.map(e=>e.plugin.key)).toEqual(["60-40","80-20"]);
     for(const entry of entries){
       expect(entry.enabled,entry.plugin.key).toBe(false);
       expect(entry.initialVersion,entry.plugin.key).toBe("PUBLISHED");
