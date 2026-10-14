@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {masterSetupSignals,type MasterSetupInputs} from "@/domain/master-setup";
 const fixture:MasterSetupInputs={
-  publicUrl:false,brand:false,mfa:false,stripe:false,email:false,market:false,
+  publicUrl:false,brand:false,mfa:false,turnstileConfigured:false,stripe:false,email:false,market:false,
   notifications:false,indexing:false,plans:0,publishedStrategies:0,approvedMappings:0,
   lastCronAt:null,backupAt:null,backupExpected:false,attestations:false,now:new Date("2026-10-09T14:00:00Z")
 };
@@ -15,6 +15,14 @@ describe("Master Admin setup checklist",()=>{
     const signals=masterSetupSignals({...fixture,publishedStrategies:10,approvedMappings:50,attestations:true});
     for(const name of ["catalogue","instruments","launch"])
       expect(signals.find(x=>x.id===name)?.status).toBe("requires-verification");
+  });
+  it("requires real Turnstile configuration and never claims saved keys passed a live challenge",()=>{
+    const missing=masterSetupSignals(fixture).find(s=>s.id==="turnstile");
+    const configured=masterSetupSignals({...fixture,turnstileConfigured:true}).find(s=>s.id==="turnstile");
+    expect(missing?.status).toBe("needs-setup");
+    expect(configured?.status).toBe("requires-verification");
+    expect(configured?.detail).toContain("real live challenge");
+    expect(configured?.href).toBe("/admin/settings#settings-cloudflare-turnstile");
   });
   it("requires recent successful background and backup executions",()=>{
     const signals=masterSetupSignals({...fixture,lastCronAt:new Date("2026-10-09T13:00:00Z"),backupAt:new Date("2026-10-09T12:00:00Z"),backupExpected:true});
