@@ -23,7 +23,7 @@ import { loadTrustedHistory } from "@/lib/trusted-history-loader";
 import {loadTacticalCertifiedHistory} from "@/lib/tactical-history-loader";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
-import { nextCalendarQuarterDueAt } from "@/domain/schedule";
+import { nextCalendarQuarterDueAt,nextCompletedMonthReviewDueAt } from "@/domain/schedule";
 import { alertKeyClass, buildStrategyAlert } from "@/domain/strategy-alert";
 import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
@@ -215,7 +215,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   };
   const dueAt=config.reviewSchedule==="CALENDAR_QUARTER_END"
     ?nextCalendarQuarterDueAt(scheduleInput)
-    :nextReviewDueAt({...scheduleInput,frequency});
+    :config.reviewSchedule==="CALENDAR_MONTH_COMPLETE"
+      ?nextCompletedMonthReviewDueAt(scheduleInput)
+      :nextReviewDueAt({...scheduleInput,frequency});
   const reviewDue=Boolean(state.forceReview)||new Date()>=dueAt;
   const contributionRows=scenario?.resetTimeline
     ?[{amount:"0"}]
