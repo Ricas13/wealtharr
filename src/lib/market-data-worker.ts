@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { classifyFreshness } from "@/domain/market-freshness";
 import { runBounded } from "@/lib/work-pool";
-import { assessQuote } from "@/domain/quote-plausibility";
+import { assessQuote, explainingCorporateAction, type ConfirmedCorporateAction } from "@/domain/quote-plausibility";
 
 // A newer rejected observation must supersede cached accepted market data for action sizing.
 async function markRejected(lineId:string, observation:{observedAt:Date;price:string;currency:string;provider:string},reason:string){
@@ -43,6 +43,9 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
   let failed = 0;
   let skipped = 0;
   const failures: Array<{ tradingLineId: string; code: string }> = [];
+  // Codes and ids only, never provider payloads: quotes accepted because an administrator-confirmed
+  // corporate action explains them.
+  const notes: Array<{ tradingLineId: string; code: string; corporateActionId: string }> = [];
 
   try {
     const lines = await sql.unsafe(
@@ -50,7 +53,7 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
       // deadline-cut run resumes with the lines it did not reach and a symbol that keeps failing rotates
       // to the back instead of holding a slot ahead of healthy ones. The predicates are EXISTS-only, so
       // each trading line appears once without DISTINCT.
-      "SELECT tl.id,tl.provider_symbol,tl.currency FROM trading_lines tl " +
+      "SELECT tl.id,tl.instrument_id,tl.provider_symbol,tl.currency FROM trading_lines tl " +
       "WHERE tl.provider_symbol IS NOT NULL AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) " +
       "AND (EXISTS (SELECT 1 FROM ledger_events l JOIN strategy_instances si ON si.id=l.strategy_instance_id WHERE l.instrument_id=tl.instrument_id AND si.status='ACTIVE') " +
       "OR EXISTS (SELECT 1 FROM regional_instrument_mappings m WHERE m.trading_line_id=tl.id AND m.enabled=true AND m.effective_from<=current_date AND (m.effective_to IS NULL OR m.effective_to>=current_date))) " +
@@ -94,7 +97,23 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
           const assessment = assessQuote(observation.price,
             last?{price:String(last.price),observedAt:new Date(last.observed_at)}:null,
             new Date(),maxMove(),{ignoreReferenceAge:unresolved.length>0});
-          if (!assessment.ok) {
+          // Only an implausible move can be explained, and only by an ADMINISTRATOR-confirmed corporate
+          // action for this instrument (never by a split a user recorded in their own ledger). A quote
+          // that passed plausibility is never examined here.
+          let explained: ConfirmedCorporateAction | null = null;
+          if (!assessment.ok && assessment.code === "IMPLAUSIBLE_MOVE" && last) {
+            const actionRows = await sql.unsafe(
+              "SELECT id,ratio_to,ratio_from,effective_date::text AS effective_date FROM corporate_actions " +
+              "WHERE instrument_id=$1 AND kind='SPLIT' AND status='CONFIRMED'",
+              [line.instrument_id]
+            );
+            const actions: ConfirmedCorporateAction[] = actionRows.map((r) => ({
+              id: String(r.id), to: Number(r.ratio_to), from: Number(r.ratio_from), effectiveDate: String(r.effective_date).slice(0, 10)
+            }));
+            explained = explainingCorporateAction(observation.price,
+              { price: String(last.price), observedAt: new Date(last.observed_at) }, observation.observedAt, actions);
+          }
+          if (!assessment.ok && !explained) {
             await markRejected(String(line.id),observation,assessment.code);
             failed += 1;
             failures.push({ tradingLineId: String(line.id), code: assessment.code });
@@ -106,6 +125,7 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
           );
           await sql.unsafe("DELETE FROM market_data_rejections WHERE trading_line_id=$1 AND observed_at<=$2",
             [line.id,observation.observedAt]);
+          if (explained) notes.push({ tradingLineId: String(line.id), code: "CORPORATE_ACTION_EXPLAINED_QUOTE", corporateActionId: explained.id });
           refreshed += 1;
         } catch {
           failed += 1;
@@ -118,7 +138,7 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
 
     await sql.unsafe(
       "UPDATE worker_runs SET status=$1,finished_at=now(),details=$2::jsonb WHERE id=$3",
-      [failed || skipped ? "PARTIAL" : "SUCCESS", JSON.stringify({ provider: provider.name, configured: true, refreshed, failed, skipped, failures: failures.slice(0, 50) }), runId]
+      [failed || skipped ? "PARTIAL" : "SUCCESS", JSON.stringify({ provider: provider.name, configured: true, refreshed, failed, skipped, failures: failures.slice(0, 50), notes: notes.slice(0, 50) }), runId]
     );
     return { provider: provider.name, configured: true, refreshed, failed, skipped };
   } catch (error) {

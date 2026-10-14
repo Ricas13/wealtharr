@@ -270,6 +270,26 @@ export const regionalInstrumentMappings = pgTable("regional_instrument_mappings"
   index("regional_mapping_lookup_idx").on(t.economicExposure, t.country, t.wrapper, t.effectiveFrom)
 ]);
 
+// Administrator-confirmed corporate actions (migration 0057). Only a CONFIRMED row can explain a
+// split-sized provider quote; a split in a user's ledger never does.
+export const corporateActions = pgTable("corporate_actions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  instrumentId: uuid("instrument_id").notNull().references(() => instruments.id),
+  kind: text("kind").notNull().default("SPLIT"),
+  ratioTo: integer("ratio_to").notNull(),
+  ratioFrom: integer("ratio_from").notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  status: text("status").notNull().default("CONFIRMED"),
+  evidence: jsonb("evidence").notNull().default(sql`'{}'::jsonb`),
+  confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (t) => [
+  index("corporate_actions_instrument_idx").on(t.instrumentId, t.effectiveDate)
+]);
+
 export const ledgerEvents = pgTable("ledger_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   strategyInstanceId: uuid("strategy_instance_id").notNull().references(() => strategyInstances.id, { onDelete: "cascade" }),

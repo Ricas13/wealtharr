@@ -26,9 +26,9 @@ export type RecordedSplit = { to: Decimal.Value; from: Decimal.Value };
 export const SPLIT_MATCH_TOLERANCE = new Decimal("0.05");
 
 /**
- * True when `price` is what `previousPrice` becomes under one of the recorded splits (previous x
- * from / to) within the tolerance. Only then may the pre-split quote be dropped as a plausibility
- * reference: one user's record of a split must not switch the check off for a move it does not explain.
+ * True when `price` is what `previousPrice` becomes under one of the given splits (previous x
+ * from / to) within the tolerance. Callers pass ONLY administrator-confirmed corporate actions (see
+ * `explainingCorporateAction`), never a user's own ledger split.
  */
 export function matchesRecordedSplit(
   price: Decimal.Value,
@@ -48,6 +48,60 @@ export function matchesRecordedSplit(
     if (current.div(expected).minus(1).abs().lte(allowed)) return true;
   }
   return false;
+}
+
+/**
+ * An administrator-confirmed corporate action (registry table `corporate_actions`). `effectiveDate`
+ * is the first trading day on which the instrument trades at post-split prices, as YYYY-MM-DD (UTC).
+ * A split a USER recorded in their own ledger is NEVER one of these: user input must not be able to
+ * make an implausible quote acceptable for everyone.
+ */
+export type ConfirmedCorporateAction = { id: string; to: number; from: number; effectiveDate: string };
+/** A confirmed action explains quotes only for this many days from its effective date. */
+export const CORPORATE_ACTION_WINDOW_DAYS = 14;
+
+function utcDayNumber(date: Date): number {
+  return Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86_400_000);
+}
+function isoDayNumber(value: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return NaN;
+  return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000);
+}
+
+/**
+ * The confirmed action that explains `price` as the post-action form of `reference`, or null. The
+ * caller must only ask when `assessQuote` REJECTED the quote as IMPLAUSIBLE_MOVE. ALL must hold:
+ *  - the effective date is strictly after the reference observation's UTC date (so the reference is
+ *    pre-split and an already-post-split reference, e.g. a second glitch after acceptance, never
+ *    qualifies: no double application);
+ *  - the effective date is not after the quote's UTC date;
+ *  - the quote's date is at most 14 days after the effective date;
+ *  - price is within 5% of reference x from / to (`matchesRecordedSplit`).
+ * Of several matches the latest effective date wins.
+ */
+export function explainingCorporateAction(
+  price: Decimal.Value,
+  reference: { price: Decimal.Value; observedAt: Date },
+  quoteObservedAt: Date,
+  actions: ConfirmedCorporateAction[],
+  tolerance: Decimal.Value = SPLIT_MATCH_TOLERANCE
+): ConfirmedCorporateAction | null {
+  if (!Number.isFinite(quoteObservedAt.getTime()) || !Number.isFinite(reference.observedAt.getTime())) return null;
+  const quoteDay = utcDayNumber(quoteObservedAt);
+  const referenceDay = utcDayNumber(reference.observedAt);
+  let best: ConfirmedCorporateAction | null = null;
+  let bestDay = -Infinity;
+  for (const action of actions) {
+    const effectiveDay = isoDayNumber(action.effectiveDate);
+    if (!Number.isFinite(effectiveDay)) continue;
+    if (!(effectiveDay > referenceDay)) continue;
+    if (effectiveDay > quoteDay) continue;
+    if (quoteDay - effectiveDay > CORPORATE_ACTION_WINDOW_DAYS) continue;
+    if (!matchesRecordedSplit(price, reference.price, [{ to: action.to, from: action.from }], tolerance)) continue;
+    if (effectiveDay > bestDay) { best = action; bestDay = effectiveDay; }
+  }
+  return best;
 }
 
 export function assessQuote(
