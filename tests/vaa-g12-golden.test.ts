@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import Decimal from "decimal.js";
 const D=(n:number|string)=>new Decimal(n);
 import {vaaAllocation} from "../src/domain/strategy/vaa-signals";
-describe("vaa-g12 canonical golden",()=>{
+describe("vaa-g12",()=>{
  it("one bad => zero defensive and two winners at 50%; LQD offensive winner netted",()=>{
   const offensive=["SPY","QQQ","IWM","VGK","EWJ","EEM","REIT","GSCI","GLD","HYG","LQD","TLT"];
   const defensive=["LQD","IEF","SHY"];
