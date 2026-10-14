@@ -44,6 +44,8 @@ describe("Stripe billing portal ownership",()=>{
    "stripe.billingPortal.sessions.create","cache-control"
   ])expect(route).toContain(required);
   expect(route.indexOf("if(!verified)")).toBeLessThan(route.indexOf("stripe.billingPortal.sessions.create"));
+  expect(route.indexOf('String(row.source??"STRIPE")')).toBeLessThan(route.indexOf("await ensureSettings(true)"));
+  expect(route.indexOf("await ensureSettings(true)")).toBeLessThan(route.indexOf("stripe.customers.retrieve"));
   expect(route).not.toContain("stripe.subscriptions.update(");
   expect(route).not.toContain("stripe.refunds.create(");
   expect(route).not.toContain("UPDATE subscriptions SET");
