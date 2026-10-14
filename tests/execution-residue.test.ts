@@ -1,373 +1,466 @@
 import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
-import { fixedAllocationEngine, REBALANCE_STUCK_TITLE } from "../src/domain/strategy/fixed-allocation";
-import { isCashBuyShortfall, isSkippableSellBlock, settleCashBuyFallback } from "../src/domain/strategy/cash-buy-fallback";
+import { fixedAllocationEngine } from "../src/domain/strategy/fixed-allocation";
 import {
-  alertClassFor, assessStuckResidue, bestImprovingTrade, improvingTradeRows, isResidueClosureReason, PRACTICAL_BLOCK_MESSAGES,
-  residueHoldProposal, residueLegs, stuckNote, sumOfSquares, type StuckAssessment, type TradeLeg
+  openOutcomeNote, residueHoldProposal, residueLegs, roundHalfDown, sizeNextTrade, sizedTradeRows, type SizingLeg, type SizingOutcome
 } from "../src/domain/strategy/execution-residue";
 import { normalizeExecutionConstraints, planPracticalTrade, SMALLEST_TRADE_UNIT } from "../src/domain/execution";
 import { postActionReviewState } from "../src/domain/strategy/review-completion";
-import type { ProposedAction } from "../src/domain/strategy/types";
 
-const NOW = new Date("2026-10-07T12:00:00Z");
-
-type Leg = { exposure: string; weight: string; value: string; price: string };
+type Spec = { exposure: string; weight: string; value: string; price: string; held?: string };
 type Constraints = { fractionalShares?: boolean; allowSelling?: boolean; minimumTradeAmount?: string; cashBufferAmount?: string; flatFee?: string };
 
-function context(legs: Leg[], cash: string, threshold: string, extra: { unaffordable?: Record<string, Decimal>; unsellable?: string[]; reviewDue?: boolean } = {}) {
-  return {
-    strategyInstanceId: "i", strategyVersionId: "v", now: NOW, baseCurrency: "GBP", cash: new Decimal(cash),
-    exposures: legs.map((l) => ({ economicExposure: l.exposure, value: new Decimal(l.value) })),
-    contributionsSinceReview: new Decimal(0), state: {}, settings: {},
-    config: { allocations: legs.map((l) => ({ exposure: l.exposure, weight: l.weight })), rebalanceThreshold: threshold },
-    reviewDue: extra.reviewDue ?? true, dataHealth: { status: "CURRENT" as const },
-    unaffordableCashBuys: extra.unaffordable, unsellableExposures: extra.unsellable
-  };
+function constraintsOf(c: Constraints) {
+  return normalizeExecutionConstraints({ fractionalShares: false, allowSelling: true, ...c });
 }
 
-function residueOf(legs: Leg[], cash: string) {
-  return residueLegs({
-    allocations: legs.map((l) => ({ exposure: l.exposure, weight: l.weight })),
-    exposures: legs.map((l) => ({ economicExposure: l.exposure, value: new Decimal(l.value) })),
+/** Legs from specs (targets at weight x (value + cash)), the execution account holds all units and all cash. */
+function build(specs: Spec[], cash: string, buyCash?: string) {
+  const { legs, total } = residueLegs({
+    allocations: specs.map((s) => ({ exposure: s.exposure, weight: s.weight })),
+    exposures: specs.map((s) => ({ economicExposure: s.exposure, value: new Decimal(s.value) })),
     cash: new Decimal(cash)
   });
+  const sizing: SizingLeg[] = legs.map((leg, i) => ({
+    ...leg,
+    price: new Decimal(specs[i].price),
+    buyCash: new Decimal(buyCash ?? cash),
+    heldUnits: new Decimal(specs[i].held ?? new Decimal(specs[i].value).div(specs[i].price).toString())
+  }));
+  return { sizing, total };
 }
 
-/** S = sum of squared deviations from target at the current total. */
-function sOf(legs: Leg[], cash: string) {
-  return sumOfSquares(residueOf(legs, cash).legs);
+function size(specs: Spec[], cash: string, threshold: string, c: Constraints = {}): SizingOutcome {
+  const { sizing, total } = build(specs, cash);
+  return sizeNextTrade({ legs: sizing, total, threshold: new Decimal(threshold), constraints: constraintsOf(c) });
 }
 
-/**
- * Mirrors the service pipeline: engine proposal -> practical-trade planning -> cash-buy / sale fallback ->
- * stuck assessment (propose the best improving order, name a blocking preference, or close as residue).
- */
-async function stepOnce(legs: Leg[], cash: string, threshold: string, constraints: Constraints): Promise<{ proposal: ProposedAction; assessment: StuckAssessment | null }> {
-  const priceOf = (exposure: string) => legs.find((l) => l.exposure === exposure)!;
-  const blockedReasons: Array<keyof typeof PRACTICAL_BLOCK_MESSAGES> = [];
-  const run = async (unaffordable: Record<string, Decimal>, unsellable: string[]) => {
-    const proposal: ProposedAction = fixedAllocationEngine.calculate(context(legs, cash, threshold, { unaffordable, unsellable }));
-    let blockedCashBuyExposure: string | null = null;
-    let blockedSellExposure: string | null = null;
-    let practicalBlockReason: string | null = null;
-    let final = proposal;
-    if (proposal.economicExposure && proposal.amount && (proposal.actionType === "BUY" || proposal.actionType === "SELL")) {
-      const leg = priceOf(proposal.economicExposure);
-      const practical = planPracticalTrade({
-        side: proposal.actionType, proposedAmount: proposal.amount, price: leg.price,
-        availableCash: cash, heldQuantity: new Decimal(leg.value).div(leg.price), constraints
-      });
-      if (practical.status === "BLOCKED") {
-        practicalBlockReason = practical.reason;
-        blockedReasons.push(practical.reason);
-        if (proposal.actionType === "BUY" && isCashBuyShortfall(practical.reason)) blockedCashBuyExposure = proposal.economicExposure;
-        if (proposal.actionType === "SELL" && isSkippableSellBlock(practical.reason)) blockedSellExposure = proposal.economicExposure;
-        final = { ...proposal, actionType: "DATA_REQUIRED", amount: undefined, instruction: PRACTICAL_BLOCK_MESSAGES[practical.reason] };
-      } else {
-        final = { ...proposal, amount: practical.amount };
-      }
-    }
-    return { proposal: final, blockedCashBuyExposure, blockedSellExposure, practicalBlockReason };
-  };
-  const settled = await settleCashBuyFallback(run, new Decimal(cash));
-  const proposal = settled.proposal;
-  const reason = settled.practicalBlockReason ?? (proposal.title === REBALANCE_STUCK_TITLE ? "NO_PRACTICAL_STEP" : null);
-  if (proposal.actionType !== "DATA_REQUIRED" || !reason || !isResidueClosureReason(reason)) return { proposal, assessment: null };
-
-  const normalized = normalizeExecutionConstraints(constraints);
-  const { legs: residue, total } = residueOf(legs, cash);
-  const tradeLegs: TradeLeg[] = residue.map((leg) => ({ ...leg, price: new Decimal(priceOf(leg.exposure).price) }));
-  const assessment = assessStuckResidue({ legs: tradeLegs, cash: new Decimal(cash), constraints: normalized, total, threshold: new Decimal(threshold) });
-  if (assessment.kind === "PROPOSE") {
-    const trade = assessment.trade;
-    const leg = priceOf(trade.exposure);
-    const practical = planPracticalTrade({
-      side: trade.side, proposedAmount: trade.amount, price: leg.price,
-      availableCash: cash, heldQuantity: new Decimal(leg.value).div(leg.price), constraints
-    });
-    if (practical.status !== "EXECUTABLE") return { proposal: { ...proposal, instruction: PRACTICAL_BLOCK_MESSAGES[practical.reason] }, assessment };
-    return {
-      proposal: {
-        actionType: trade.side, title: "", instruction: "", amount: practical.amount, economicExposure: trade.exposure,
-        explanation: improvingTradeRows(trade, "GBP"), nextState: {}, confidence: "HIGH"
-      },
-      assessment
-    };
-  }
-  if (assessment.kind === "CLOSE") {
-    return { proposal: residueHoldProposal(proposal, tradeLegs, { state: {}, now: NOW, cash: new Decimal(cash), currency: "GBP", fractionalShares: normalized.fractionalShares }), assessment };
-  }
-  const note = stuckNote(assessment, "GBP");
-  const instruction = proposal.title === REBALANCE_STUCK_TITLE && blockedReasons[0] ? PRACTICAL_BLOCK_MESSAGES[blockedReasons[0]] : proposal.instruction;
-  return { proposal: { ...proposal, instruction: instruction + " " + note.sentence, explanation: [...proposal.explanation, ...note.rows] }, assessment };
-}
-
-/** Recalculate, fill at the exact planned amount, repeat until a HOLD / DATA_REQUIRED or maxSteps. */
-async function iterate(start: { legs: Leg[]; cash: string }, threshold: string, constraints: Constraints, maxSteps = 25) {
-  let legs = start.legs.map((l) => ({ ...l }));
-  let cash = new Decimal(start.cash);
+/** Recalculate, fill at the exact planned amount (flat fee on every trade), repeat. */
+function run(specs: Spec[], cash0: string, threshold: string, c: Constraints = {}, maxSteps = 20) {
+  let now = specs.map((s) => ({ ...s }));
+  let cash = new Decimal(cash0);
+  const fee = new Decimal(c.flatFee ?? 0);
   const trades: Array<[string, string, string]> = [];
-  const sSeries: Decimal[] = [sOf(legs, cash.toString())];
   for (let i = 0; i < maxSteps; i += 1) {
-    const { proposal } = await stepOnce(legs, cash.toString(), threshold, constraints);
-    if ((proposal.actionType !== "BUY" && proposal.actionType !== "SELL") || !proposal.amount || !proposal.economicExposure) {
-      return { final: proposal, trades, sSeries, legs, cash, exhausted: false };
-    }
-    const signed = proposal.actionType === "BUY" ? proposal.amount : proposal.amount.neg();
-    legs = legs.map((l) => (l.exposure === proposal.economicExposure ? { ...l, value: new Decimal(l.value).plus(signed).toString() } : l));
-    cash = cash.minus(signed);
-    trades.push([proposal.actionType, proposal.economicExposure, proposal.amount.toFixed(2)]);
-    sSeries.push(sOf(legs, cash.toString()));
+    const out = size(now, cash.toString(), threshold, c);
+    if (out.kind !== "TRADE") return { out, trades, specs: now, cash, steps: i, exhausted: false };
+    const t = out.trade;
+    const signed = t.side === "BUY" ? t.amount : t.amount.neg();
+    now = now.map((s) => (s.exposure === t.exposure ? { ...s, value: new Decimal(s.value).plus(signed).toString() } : s));
+    cash = cash.minus(signed).minus(fee);
+    trades.push([t.side, t.exposure, t.amount.toFixed(2)]);
   }
-  return { final: null, trades, sSeries, legs, cash, exhausted: true };
+  return { out: null, trades, specs: now, cash, steps: maxSteps, exhausted: true };
 }
 
-const two = (equity: string, bonds: string, prices = { EQUITY: "87.30", BONDS: "41.70" }): Leg[] => [
+const two = (equity: string, bonds: string, prices = { EQUITY: "87.30", BONDS: "41.70" }): Spec[] => [
   { exposure: "EQUITY", weight: "0.6", value: equity, price: prices.EQUITY },
   { exposure: "BONDS", weight: "0.4", value: bonds, price: prices.BONDS }
 ];
-const WHOLE: Constraints = { fractionalShares: false };
 
-describe("headline whole-share example under the improving-trade rule", () => {
-  it("buys, buys, then one more share that cuts the worst deviation, then closes", async () => {
-    // 60/40, cash 10000, prices EQUITY 87.30 / BONDS 41.70, whole shares, threshold 0.
-    // 1. BUY EQUITY min(6000, 10000) = 6000 -> floor(68.73) = 68 shares = 5936.40.
-    // 2. cash 4063.60: BUY BONDS min(4000, 4063.60) = 4000 -> floor(95.92) = 95 shares = 3961.50.
-    // 3. cash 102.10, EQUITY 5936.40 (63.60 under), BONDS 3961.50 (38.50 under): the engine's capped buys are
-    //    below one share, but S = 63.60^2 + 38.50^2 = 4044.96 + 1482.25 = 5527.21 and one more EQUITY share
-    //    (87.30, affordable from 102.10) leaves EQUITY 23.70 over: S = 561.69 + 1482.25 = 2043.94 < 5527.21
-    //    (one more BONDS share gives 4044.96 + 10.24 = 4055.20), so BUY EQUITY 87.30 is proposed.
-    // 4. cash 14.80, EQUITY 6023.70 (23.70 over), BONDS 3961.50 (38.50 under): no buy fits (14.80 < 41.70), selling
-    //    one EQUITY share (87.30) and buying one BONDS share gives 4044.96 + 10.24 = 4055.20 > 2043.94: local optimum.
-    const result = await iterate({ legs: two("0", "0"), cash: "10000" }, "0", WHOLE);
-    expect(result.trades).toEqual([["BUY", "EQUITY", "5936.40"], ["BUY", "BONDS", "3961.50"], ["BUY", "EQUITY", "87.30"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    const byLabel = Object.fromEntries((result.final?.explanation ?? []).map((row) => [row.label, row.value]));
-    expect(byLabel["Residual cash"]).toBe("14.80");
-    expect(byLabel["Residual drift EQUITY"]).toBe("over target by 23.70 GBP");
-    expect(byLabel["Residual drift BONDS"]).toBe("under target by 38.50 GBP");
-    expect(result.final?.instruction).toContain("No single permitted order");
-    // S series: start 6000^2 + 4000^2 = 52,000,000; after trade 2 it is 5527.21; after trade 3 it is 2043.94.
-    expect(result.sSeries[2].toFixed(2)).toBe("5527.21");
-    expect(result.sSeries[3].toFixed(2)).toBe("2043.94");
+describe("nearest-unit sizing", () => {
+  it("rounds to the nearest unit with ties rounded down", () => {
+    expect(roundHalfDown(new Decimal("0.5")).toString()).toBe("0");
+    expect(roundHalfDown(new Decimal("0.51")).toString()).toBe("1");
+    expect(roundHalfDown(new Decimal("1.5")).toString()).toBe("1");
+    expect(roundHalfDown(new Decimal("1.5000001")).toString()).toBe("2");
+    expect(roundHalfDown(new Decimal("6.985")).toString()).toBe("7");
   });
 
-  it("scores the third step as the best improving trade", () => {
-    const { legs } = residueOf(two("5936.40", "3961.50"), "102.10");
-    const trade = bestImprovingTrade({
-      legs: legs.map((leg) => ({ ...leg, price: new Decimal(leg.exposure === "EQUITY" ? "87.30" : "41.70") })),
-      cash: new Decimal("102.10"), constraints: normalizeExecutionConstraints(WHOLE)
-    });
-    expect(trade?.side).toBe("BUY");
-    expect(trade?.exposure).toBe("EQUITY");
-    expect(trade?.amount.toFixed(2)).toBe("87.30");
-    expect(trade?.overshoot.toFixed(2)).toBe("23.70");
-    expect(trade?.sAfter.toFixed(2)).toBe("2043.94");
+  it("headline whole-share example: two buys, then a named cash shortfall (never a silent HOLD)", () => {
+    // 60/40, cash 10000, prices 87.30 / 41.70, threshold 0. Targets 6000 / 4000.
+    // 1. EQUITY gap 6000 / 87.30 = 68.73 -> 69 shares = 6023.70 (overshoots by 23.70), affordable from 10000.
+    // 2. cash 3976.30: BONDS gap 4000 / 41.70 = 95.92 -> 96 shares = 4003.20 > 3976.30, so the largest
+    //    affordable count floor(3976.30 / 41.70) = 95 shares = 3961.50.
+    // 3. cash 14.80: EQUITY is 23.70 over (inside its band 43.65); BONDS is 38.50 under (band 20.85, outside).
+    //    The nearest unit is 1 share = 41.70 > 14.80 spendable and nothing outside its band can be sold, so the
+    //    review reports the cash shortfall (needed 41.70, spendable 14.80). It does NOT close silently.
+    const result = run(two("0", "0"), "10000", "0");
+    expect(result.trades).toEqual([["BUY", "EQUITY", "6023.70"], ["BUY", "BONDS", "3961.50"]]);
+    expect(result.out?.kind).toBe("CASH_SHORTFALL");
+    if (result.out?.kind === "CASH_SHORTFALL") {
+      expect(result.out.exposure).toBe("BONDS");
+      expect(result.out.needed.toFixed(2)).toBe("41.70");
+      expect(result.out.spendable.toFixed(2)).toBe("14.80");
+      expect(result.cash.toFixed(2)).toBe("14.80");
+    }
   });
 
-  it("closes the review state: lastReviewAt advances and forceReview clears", async () => {
-    const closing = (await stepOnce(two("6023.70", "3961.50"), "14.80", "0", WHOLE)).proposal;
-    expect(closing.actionType).toBe("HOLD");
-    const state = postActionReviewState(closing, { forceReview: true, reviewTargetValue: "x" }, new Date("2026-10-07T12:30:00Z"));
-    expect(state.forceReview).toBe(false);
-    expect(state.lastReviewAt).toBe("2026-10-07T12:30:00.000Z");
+  it("closes with a HOLD once every leg is within half a unit (non-round prices 91.70 / 44.40, 55/45)", () => {
+    // 55/45, cash 10000, targets 5500 / 4500, threshold 0, whole shares (the DB lifecycle numbers).
+    // 1. EQUITY 5500 / 91.70 = 59.98 -> 60 shares = 5502.00. 2. cash 4498: BONDS 4500 / 44.40 = 101.35 -> 101 shares
+    //    = 4484.40 (affordable). 3. EQUITY over 2.00 (band 45.85) and BONDS under 15.60 (band 22.20): at target.
+    const specs: Spec[] = [
+      { exposure: "EQUITY", weight: "0.55", value: "0", price: "91.70" },
+      { exposure: "BONDS", weight: "0.45", value: "0", price: "44.40" }
+    ];
+    const result = run(specs, "10000", "0");
+    expect(result.trades).toEqual([["BUY", "EQUITY", "5502.00"], ["BUY", "BONDS", "4484.40"]]);
+    expect(result.out?.kind).toBe("HOLD");
+    if (result.out?.kind === "HOLD") {
+      expect(result.out.reason).toBe("WITHIN_HALF_UNIT");
+      const hold = residueHoldProposal({ explanation: [], dueAt: null }, result.out,
+        { state: { forceReview: true }, now: new Date("2026-10-07T12:00:00Z"), cash: result.cash, currency: "GBP", fractionalShares: false });
+      expect(hold.actionType).toBe("HOLD");
+      const byLabel = Object.fromEntries(hold.explanation.map((row) => [row.label, row.value]));
+      expect(byLabel["Residual cash"]).toBe("13.60");
+      expect(byLabel["Residual drift EQUITY"]).toBe("over target by 2.00 GBP");
+      expect(byLabel["Residual drift BONDS"]).toBe("under target by 15.60 GBP");
+      expect(byLabel["Why the review closes"]).toContain("half a trading unit");
+      const closed = postActionReviewState(hold, { forceReview: true }, new Date("2026-10-07T12:30:00Z"));
+      expect(closed.forceReview).toBe(false);
+      expect(closed.lastReviewAt).toBe("2026-10-07T12:30:00.000Z");
+    }
   });
 });
 
 describe("regression scenarios from the independent reviews", () => {
-  it("C1: selling disabled stays DATA_REQUIRED; selling allowed sells", async () => {
-    // 60/40 total 2000, cash 0, threshold 5%, EQUITY 1600 / BONDS 400, prices 400 / 300.
-    // S = 400^2 + 400^2 = 320,000. Selling disabled: no purchase (cash 0), no sale; with selling allowed
-    // SELL EQUITY 400 gives S = 0 + 400^2 = 160,000, so the preference is what blocks it.
-    const legs = two("1600", "400", { EQUITY: "400", BONDS: "300" });
-    const blocked = await stepOnce(legs, "0", "0.05", { fractionalShares: false, allowSelling: false });
-    expect(blocked.proposal.actionType).toBe("DATA_REQUIRED");
-    expect(blocked.assessment?.kind).toBe("PREFERENCE_BLOCKED");
-    expect(blocked.proposal.instruction).toContain("selling is disabled");
-    expect(blocked.proposal.explanation.some((row) => row.label === "A preference blocks improvement")).toBe(true);
-    const allowed = await stepOnce(legs, "0", "0.05", { fractionalShares: false, allowSelling: true });
-    expect(allowed.proposal.actionType).toBe("SELL");
-    expect(allowed.proposal.economicExposure).toBe("EQUITY");
-    expect(allowed.proposal.amount?.toFixed(2)).toBe("400.00");
+  it("C1: selling disabled names the preference; selling allowed sells 400", () => {
+    // 60/40 total 2000, cash 0, threshold 5% (tolerance 100): EQUITY 1600 / BONDS 400, prices 400 / 300.
+    // Targets 1200 / 800. EQUITY 400 over, one share = 400 (band 200): sell round(1.0) = 1 share = 400.
+    const specs = two("1600", "400", { EQUITY: "400", BONDS: "300" });
+    const blocked = size(specs, "0", "0.05", { allowSelling: false });
+    expect(blocked.kind).toBe("PREFERENCE_BLOCKED");
+    if (blocked.kind === "PREFERENCE_BLOCKED") {
+      expect(blocked.blockers).toEqual(["SELLING_DISABLED"]);
+      expect(blocked.trade.side).toBe("SELL");
+      expect(blocked.trade.amount.toFixed(2)).toBe("400.00");
+      expect(openOutcomeNote(blocked, "GBP").instruction).toContain("selling is disabled");
+    }
+    const allowed = size(specs, "0", "0.05");
+    expect(allowed.kind).toBe("TRADE");
+    if (allowed.kind === "TRADE") {
+      expect(allowed.trade.side).toBe("SELL");
+      expect(allowed.trade.exposure).toBe("EQUITY");
+      expect(allowed.trade.amount.toFixed(2)).toBe("400.00");
+      expect(allowed.trade.units.toString()).toBe("1");
+    }
   });
 
-  const c1r: Leg[] = [
+  const c1r: Spec[] = [
     { exposure: "A", weight: "0.5", value: "2500", price: "2500" },
     { exposure: "B", weight: "0.5", value: "6000", price: "2000" }
   ];
 
-  it("C1-R: selling disabled does not close at 25% drift", async () => {
-    // 50/50 threshold 5%: A 1 x 2500, B 3 x 2000, cash 1500, total 10000. S = 2500^2 + 1000^2 = 7,250,000.
-    // Selling B (2000) alone leaves S = 2500^2 + 1000^2 = 7,250,000 (not strictly lower), but sell-then-buy-A
-    // gives A 5000, B 4000, S = 0 + 1000^2 = 1,000,000. With selling disabled the preference is named.
-    const result = await stepOnce(c1r, "1500", "0.05", { fractionalShares: false, allowSelling: false });
-    expect(result.proposal.actionType).toBe("DATA_REQUIRED");
-    expect(result.assessment?.kind).toBe("PREFERENCE_BLOCKED");
+  it("C1-R (A 1x2500, B 3x2000, cash 1500): never a HOLD at 25% drift", () => {
+    // Targets 5000 / 5000. A is 2500 under (band 1250); B is 1000 over, exactly half its 2000 unit (band 1000),
+    // so B is at target and nothing is sold. A needs one 2500 share but 1500 is spendable.
+    for (const c of [{}, { allowSelling: false }, { cashBufferAmount: "1600" }] as Constraints[]) {
+      const out = size(c1r, "1500", "0.05", c);
+      expect(out.kind).toBe("CASH_SHORTFALL");
+      if (out.kind === "CASH_SHORTFALL") {
+        expect(out.exposure).toBe("A");
+        expect(out.needed.toFixed(2)).toBe("2500.00");
+      }
+    }
+    // With a 1600 buffer spendable is max(1500 - 1600, 0) = 0.
+    const buffered = size(c1r, "1500", "0.05", { cashBufferAmount: "1600" });
+    if (buffered.kind === "CASH_SHORTFALL") expect(buffered.spendable.toFixed(2)).toBe("0.00");
   });
 
-  it("C1-R with selling allowed sells one B share, buys one A share, then closes at 10%", async () => {
-    // After SELL B 2000 (cash 3500) the engine itself buys A: min(2500, 3500) = 2500 -> 1 share.
-    // Then A 5000, B 4000, cash 1000: worst deviation 1000 (10%) > 5%, B's capped buy floor(1000 / 2000) = 0,
-    // buying one more B costs 2000 > 1000, nothing is overweight: a local optimum, so it closes.
-    const result = await iterate({ legs: c1r, cash: "1500" }, "0.05", WHOLE);
-    expect(result.trades).toEqual([["SELL", "B", "2000.00"], ["BUY", "A", "2500.00"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    expect(result.sSeries.map((s) => s.toFixed(0))).toEqual(["7250000", "7250000", "1000000"]);
+  it("H-A: sells one expensive A share; the sell-only variant stops within half a unit", () => {
+    // A 5x980 = 4900 (4000 target, 900 over), B and C 2550 (3000 target, 450 under), cash 0, total 10000.
+    // threshold 5% (tolerance 500): A 900 > 490 band -> SELL round(0.918) = 1 share = 980.
+    const ha = (priceBC: string): Spec[] => [
+      { exposure: "A", weight: "0.4", value: "4900", price: "980" },
+      { exposure: "B", weight: "0.3", value: "2550", price: priceBC, held: "1" },
+      { exposure: "C", weight: "0.3", value: "2550", price: priceBC, held: "1" }
+    ];
+    const five = run(ha("50"), "0", "0.05");
+    // Then A 3920 (80 under), B and C 450 under (4.5% <= 5%): every leg within the threshold.
+    expect(five.trades).toEqual([["SELL", "A", "980.00"]]);
+    expect(five.out?.kind).toBe("HOLD");
+    if (five.out?.kind === "HOLD") expect(five.out.reason).toBe("WITHIN_THRESHOLD");
+    // threshold 2% (tolerance 200), B and C priced 2000 (band 1000): after the sale B and C are 450 under = within
+    // half a unit, A 80 under: at target.
+    const two$ = run(ha("2000"), "0", "0.02");
+    expect(two$.trades).toEqual([["SELL", "A", "980.00"]]);
+    expect(two$.out?.kind).toBe("HOLD");
+    if (two$.out?.kind === "HOLD") expect(two$.out.reason).toBe("WITHIN_HALF_UNIT");
   });
 
-  it("C1-R2: a cash buffer that is what blocks the pair is named", async () => {
-    // Same portfolio, selling allowed, buffer 1600: spendable = max(1500 - 1600, 0) = 0 and after selling
-    // B (cash 3500) spendable 1900 < 2500. Without the buffer sell-then-buy improves S 7,250,000 -> 1,000,000.
-    const result = await stepOnce(c1r, "1500", "0.05", { fractionalShares: false, allowSelling: true, cashBufferAmount: "1600" });
-    expect(result.proposal.actionType).toBe("DATA_REQUIRED");
-    expect(result.assessment?.kind).toBe("PREFERENCE_BLOCKED");
-    expect(result.proposal.instruction).toContain("cash buffer");
-  });
-
-  const ha = (priceBC: string): Leg[] => [
-    { exposure: "A", weight: "0.4", value: "4900", price: "980" },
-    { exposure: "B", weight: "0.3", value: "2550", price: priceBC },
-    { exposure: "C", weight: "0.3", value: "2550", price: priceBC }
-  ];
-
-  it("H-A: sells one expensive A share, which brings the drift inside the threshold", async () => {
-    // total 10000, targets 4000 / 3000 / 3000, threshold 5%, cash 0. A is 900 over (9%), B and C 450 under.
-    // S = 900^2 + 450^2 + 450^2 = 1,215,000. The capped sale floor(900 / 980) = 0 shares is refused, so SELL A 1 share
-    // (980) is proposed: A 3920 (80 under), S = 6400 + 202500 + 202500 = 411,400, cash 980, worst deviation 450 = 4.5%
-    // <= 5%, so the engine then reports a HOLD (the buys of B and C stay available for the next review).
-    const result = await iterate({ legs: ha("50"), cash: "0" }, "0.05", WHOLE);
-    expect(result.trades).toEqual([["SELL", "A", "980.00"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    expect(result.sSeries[0].toFixed(0)).toBe("1215000");
-    expect(result.sSeries[1].toFixed(0)).toBe("411400");
-  });
-
-  it("H-A sell-only variant: B and C at 2000 each still sell one A share", async () => {
-    // threshold 2%: SELL A 980 -> S 1,215,000 -> 411,400 (worst deviation 450). Afterwards cash 980 cannot buy a
-    // 2000 share of B or C, buying A (980) gives A 900 over: S = 810,000 + 405,000 = 1,215,000 (not lower), and
-    // nothing is overweight, so it closes at 4.5%.
-    const result = await iterate({ legs: ha("2000"), cash: "0" }, "0.02", WHOLE);
-    expect(result.trades).toEqual([["SELL", "A", "980.00"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    expect(result.sSeries[1].toFixed(0)).toBe("411400");
-  });
-
-  it("H-B: sells one X and one Z share, then buys one Y share", async () => {
-    // Y .4 / X .3 / Z .3, threshold 5%, cash 600: X 10 x 320 = 3200, Z 3200 (200 over each), Y 3 x 1000 = 3000
-    // (1000 under), total 10000. S = 1000^2 + 200^2 + 200^2 = 1,080,000.
-    // SELL X 320 (X 2880, 120 under): S = 1,000,000 + 14,400 + 40,000 = 1,054,400. SELL Z 320: 1,028,800.
-    // Cash 1240: BUY Y 1000 (1 share). Final Y 4000, X 2880, Z 2880, cash 240: worst deviation 120 (1.2%) <= 5%.
-    const legs: Leg[] = [
+  it("H-B: sells one X and one Z share, then buys one Y share", () => {
+    // Y .4 3x1000, X .3 10x320, Z .3 10x320, cash 600, total 10000, threshold 5% (tolerance 500).
+    // X, Z 200 over (band 160): SELL round(0.625) = 1 share = 320 each (cash 600 -> 1240).
+    // Y 1000 under (band 500): BUY round(1.0) = 1 share = 1000 <= 1240. Then X, Z are 120 under, Y on target.
+    const legs: Spec[] = [
       { exposure: "Y", weight: "0.4", value: "3000", price: "1000" },
       { exposure: "X", weight: "0.3", value: "3200", price: "320" },
       { exposure: "Z", weight: "0.3", value: "3200", price: "320" }
     ];
-    const result = await iterate({ legs, cash: "600" }, "0.05", WHOLE);
+    const result = run(legs, "600", "0.05");
     expect(result.trades).toEqual([["SELL", "X", "320.00"], ["SELL", "Z", "320.00"], ["BUY", "Y", "1000.00"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    expect(result.sSeries.map((s) => s.toFixed(0))).toEqual(["1080000", "1054400", "1028800", "28800"]);
+    expect(result.out?.kind).toBe("HOLD");
   });
 
-  it("M-A: fractional with a 50 minimum trade sells 50, buys 80, then leaves a 10 residue", async () => {
-    // 60/40, minimum trade 50, threshold 0: EQUITY 5920 (80 under), BONDS 4040 (40 over), cash 40, total 10000.
-    // S = 80^2 + 40^2 = 8000. BUY 40 < 50 and SELL 40 < 50 are refused, so the order is sized up to the minimum:
-    // SELL BONDS 50 -> BONDS 3990 (10 under): S = 6400 + 100 = 6500 < 8000. Cash 90: BUY EQUITY min(80, 90) = 80.
-    // Then EQUITY 6000, BONDS 3990 (10 under), cash 10: a 10 purchase is below the 50 minimum: closes, worst 10.
-    const result = await iterate({ legs: two("5920", "4040", { EQUITY: "100", BONDS: "40" }), cash: "40" }, "0",
-      { fractionalShares: true, minimumTradeAmount: "50" });
-    expect(result.trades).toEqual([["SELL", "BONDS", "50.00"], ["BUY", "EQUITY", "80.00"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    const byLabel = Object.fromEntries((result.final?.explanation ?? []).map((row) => [row.label, row.value]));
-    expect(byLabel["Residual cash"]).toBe("10.00");
-    expect(byLabel["Residual drift BONDS"]).toBe("under target by 10.00 GBP");
-    expect(result.final?.instruction).not.toContain("whole");
-    expect(byLabel["Why the review closes"]).not.toContain("whole shares");
-    expect(result.sSeries.map((s) => s.toFixed(0))).toEqual(["8000", "6500", "100"]);
+  it("H1: a pair is never pre-empted into a worse portfolio: all legs at target, no trade", () => {
+    // A 7000@700 (target 6890), B 4800@600 (5390), C 4000@400 (4600), D 5000@2500 (3920), cash 0, total 20800,
+    // threshold 5% (tolerance 1040). Deviations: A 110 over, B 590 under, C 600 under, D 1080 over.
+    // D exceeds the tolerance but 1080 <= its band 1250 (half of 2500), so every leg is at target.
+    const legs: SizingLeg[] = [
+      { exposure: "A", current: new Decimal(7000), target: new Decimal(6890), price: new Decimal(700), buyCash: new Decimal(0), heldUnits: new Decimal(10) },
+      { exposure: "B", current: new Decimal(4800), target: new Decimal(5390), price: new Decimal(600), buyCash: new Decimal(0), heldUnits: new Decimal(8) },
+      { exposure: "C", current: new Decimal(4000), target: new Decimal(4600), price: new Decimal(400), buyCash: new Decimal(0), heldUnits: new Decimal(10) },
+      { exposure: "D", current: new Decimal(5000), target: new Decimal(3920), price: new Decimal(2500), buyCash: new Decimal(0), heldUnits: new Decimal(2) }
+    ];
+    const out = sizeNextTrade({ legs, total: new Decimal(20800), threshold: new Decimal("0.05"), constraints: constraintsOf({}) });
+    expect(out.kind).toBe("HOLD");
+    if (out.kind === "HOLD") expect(out.reason).toBe("WITHIN_HALF_UNIT");
   });
 
-  it("M-C: buys one overshooting A share and then holds", async () => {
-    // 50/50 threshold 5%: A 4 x 1000 (900 under), B 12 x 400 = 4800 (100 under), cash 1000, total 9800, targets 4900.
-    // S = 900^2 + 100^2 = 820,000. BUY A min(900, 1000) -> floor(0.9) = 0 shares; buying one A (1000) overshoots by 100:
-    // A 5000 (100 over): S = 10,000 + 10,000 = 20,000. Then cash 0, worst deviation 100 (1.02%) <= 5%.
-    const legs: Leg[] = [
+  it("H2: the minimum trade size is a preference and is named, alone and with selling disabled", () => {
+    // 50/50, A 4100 / B 5900 at 100, cash 0, threshold 5%, fractional, minimum trade 2000. 900 gaps are below it.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.5", value: "4100", price: "100" },
+      { exposure: "B", weight: "0.5", value: "5900", price: "100" }
+    ];
+    const alone = size(specs, "0", "0.05", { fractionalShares: true, minimumTradeAmount: "2000" });
+    expect(alone.kind).toBe("PREFERENCE_BLOCKED");
+    if (alone.kind === "PREFERENCE_BLOCKED") expect(alone.blockers).toEqual(["MINIMUM_TRADE"]);
+    const both = size(specs, "0", "0.05", { fractionalShares: true, minimumTradeAmount: "2000", allowSelling: false });
+    expect(both.kind).toBe("PREFERENCE_BLOCKED");
+    if (both.kind === "PREFERENCE_BLOCKED") expect(both.blockers).toEqual(["SELLING_DISABLED", "MINIMUM_TRADE"]);
+  });
+
+  it("H3a: a flat fee of 5 is not burnt on small trades", () => {
+    // 50/50, A 4000 / B 6000, cash 0, threshold 0, fractional, fee 5: unit = max(0.005, 50) = 50, band = 25 + 2 x 5 = 35.
+    // SELL B 1000 (cash 995, total 9995, targets 4997.50): B is 2.50 over (inside band). BUY A min(997.50, 995 - 5 = 990)
+    // = 990 (cash 0, total 9990, targets 4995): A 5 under, B 5 over: at target.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.5", value: "4000", price: "100" },
+      { exposure: "B", weight: "0.5", value: "6000", price: "100" }
+    ];
+    const result = run(specs, "0", "0", { fractionalShares: true, flatFee: "5" });
+    expect(result.trades).toEqual([["SELL", "B", "1000.00"], ["BUY", "A", "990.00"]]);
+    expect(result.out?.kind).toBe("HOLD");
+    expect(result.cash.toFixed(2)).toBe("0.00");
+  });
+
+  const permanent: Spec[] = [
+    { exposure: "A", weight: "0.25", value: "3000", price: "1000" },
+    { exposure: "B", weight: "0.25", value: "3500.6", price: "0.10" },
+    { exposure: "C", weight: "0.25", value: "3200.6", price: "3200.6" },
+    { exposure: "D", weight: "0.25", value: "3200.6", price: "3200.6" }
+  ];
+
+  it("H3b: Permanent Portfolio with a fee of 5 does not loop small sales (whole shares)", () => {
+    // total 3000 + 3500.6 + 3200.6 + 3200.6 + 1100.6 = 14002.4, targets 3500.6. A 500.6 under (band 500 + 4 x 5 = 520),
+    // C and D 300 under (band 1600.3 + 20): all within their bands, so a HOLD and no trade.
+    const out = size(permanent, "1100.6", "0", { flatFee: "5" });
+    expect(out.kind).toBe("HOLD");
+  });
+
+  it("H3b fractional: three purchases, no sales", () => {
+    // Fee 5, unit 50, band 25 + 20 = 45. A 500.60 under: BUY 500.60 (cash 595.00, total 13997.40, targets 3499.35).
+    // C 298.75 under: BUY 298.75 (cash 291.25, total 13992.40, targets 3498.10). D 297.50 under: spendable 291.25 - 5 =
+    // 286.25: BUY 286.25 (cash 0). B and the others end 1.25 to 3.75 over (inside the band): no sale is ever proposed.
+    const result = run(permanent, "1100.6", "0", { fractionalShares: true, flatFee: "5" });
+    expect(result.trades).toEqual([["BUY", "A", "500.60"], ["BUY", "C", "298.75"], ["BUY", "D", "286.25"]]);
+    expect(result.out?.kind).toBe("HOLD");
+    expect(result.cash.toFixed(2)).toBe("0.00");
+  });
+
+  it("M1 multi-trade path: reports the cash needed and the remaining drift", () => {
+    // A .3 2x1000 (1000 under), D1 .25 5x550 and D2 (250 over, band 275), E .2 5x440 (200 over, band 220), cash 300.
+    // Nothing outside its band can be sold; A needs one 1000 share but 300 is spendable.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.3", value: "2000", price: "1000" },
+      { exposure: "D1", weight: "0.25", value: "2750", price: "550" },
+      { exposure: "D2", weight: "0.25", value: "2750", price: "550" },
+      { exposure: "E", weight: "0.2", value: "2200", price: "440" }
+    ];
+    const out = size(specs, "300", "0.05");
+    expect(out.kind).toBe("CASH_SHORTFALL");
+    if (out.kind === "CASH_SHORTFALL") {
+      expect(out.needed.toFixed(2)).toBe("1000.00");
+      expect(openOutcomeNote(out, "GBP").instruction).toContain("about 700.00 GBP");
+    }
+  });
+
+  it("M2: a portfolio smaller than one unit of a leg is TOO_SMALL, not a HOLD", () => {
+    // A 100 / B 60 / C 40, cash 100, total 300, weights .5/.3/.2, prices 100: targets 150 / 90 / 60.
+    // B's unit (100) exceeds its target 90; minimum investable = 100 x 300 / 90 = 333.33.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.5", value: "100", price: "100" },
+      { exposure: "B", weight: "0.3", value: "60", price: "100" },
+      { exposure: "C", weight: "0.2", value: "40", price: "100" }
+    ];
+    const out = size(specs, "100", "0.05");
+    expect(out.kind).toBe("TOO_SMALL");
+    if (out.kind === "TOO_SMALL") {
+      expect(out.exposure).toBe("B");
+      expect(out.minimumInvestable.toFixed(2)).toBe("333.33");
+    }
+  });
+
+  it("M3: sizes with the execution account's cash and holdings", () => {
+    // Strategy total 1800: A target 800 (0 held, price 100), B on target. The execution account has 500 cash
+    // (the rest is in another account): BUY min(round(8.0) = 8, floor(500 / 100) = 5) = 5 shares = 500.
+    const buyLegs: SizingLeg[] = [
+      { exposure: "A", current: new Decimal(0), target: new Decimal(800), price: new Decimal(100), buyCash: new Decimal(500), heldUnits: new Decimal(0) },
+      { exposure: "B", current: new Decimal(1000), target: new Decimal(1000), price: new Decimal(100), buyCash: new Decimal(500), heldUnits: new Decimal(10) }
+    ];
+    const buy = sizeNextTrade({ legs: buyLegs, total: new Decimal(1800), threshold: new Decimal("0.05"), constraints: constraintsOf({}) });
+    expect(buy.kind).toBe("TRADE");
+    if (buy.kind === "TRADE") expect(buy.trade.amount.toFixed(2)).toBe("500.00");
+    // A is 500 over (1000 vs 500) but the sale line holds only 4 of its 10 shares: SELL min(5, 4) = 4 shares = 400.
+    const sellLegs: SizingLeg[] = [
+      { exposure: "A", current: new Decimal(1000), target: new Decimal(500), price: new Decimal(100), buyCash: new Decimal(0), heldUnits: new Decimal(4) },
+      { exposure: "B", current: new Decimal(500), target: new Decimal(1000), price: new Decimal(100), buyCash: new Decimal(0), heldUnits: new Decimal(5) }
+    ];
+    const sell = sizeNextTrade({ legs: sellLegs, total: new Decimal(1500), threshold: new Decimal("0.05"), constraints: constraintsOf({}) });
+    expect(sell.kind).toBe("TRADE");
+    if (sell.kind === "TRADE") {
+      expect(sell.trade.side).toBe("SELL");
+      expect(sell.trade.amount.toFixed(2)).toBe("400.00");
+    }
+  });
+
+  it("M4: never buys and then sells the same leg", () => {
+    // .35005 / .33 / .31995, A 3x1000, B 33x100, C 2x1300, cash 1100, fee 2, threshold 0, whole shares:
+    // total 10000, targets 3500.50 / 3300 / 3199.50. A 500.50 under (band 500 + 3 x 2 = 506), C 599.50 under
+    // (band 650 + 6 = 656): both inside their bands, so a HOLD and no trade at all.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.35005", value: "3000", price: "1000" },
+      { exposure: "B", weight: "0.33", value: "3300", price: "100" },
+      { exposure: "C", weight: "0.31995", value: "2600", price: "1300" }
+    ];
+    const result = run(specs, "1100", "0", { flatFee: "2" });
+    expect(result.trades).toEqual([]);
+    expect(result.out?.kind).toBe("HOLD");
+  });
+
+  it("M-A: fractional minimum trade 50, EQUITY 5920 / BONDS 4040, cash 40, names the minimum trade", () => {
+    // Targets 6000 / 4000: EQUITY 80 under, BONDS 40 over. The 40 sale and the 40 purchase (spendable 40) are
+    // below the 50 minimum; with it lowered the 40 sale is permitted.
+    const out = size(two("5920", "4040", { EQUITY: "100", BONDS: "40" }), "40", "0", { fractionalShares: true, minimumTradeAmount: "50" });
+    expect(out.kind).toBe("PREFERENCE_BLOCKED");
+    if (out.kind === "PREFERENCE_BLOCKED") {
+      expect(out.blockers).toEqual(["MINIMUM_TRADE"]);
+      expect(out.trade.side).toBe("SELL");
+      expect(out.trade.amount.toFixed(2)).toBe("40.00");
+    }
+  });
+
+  it("M-C: buys one overshooting A share and then holds inside the threshold", () => {
+    // 50/50, A 4x1000 (900 under), B 12x400 = 4800 (100 under), cash 1000, total 9800, targets 4900, threshold 5%
+    // (tolerance 490). A: round(0.9) = 1 share = 1000 <= 1000. Then A 100 over, B 100 under: within the threshold.
+    const specs: Spec[] = [
       { exposure: "A", weight: "0.5", value: "4000", price: "1000" },
       { exposure: "B", weight: "0.5", value: "4800", price: "400" }
     ];
-    const result = await iterate({ legs, cash: "1000" }, "0.05", WHOLE);
+    const result = run(specs, "1000", "0.05");
     expect(result.trades).toEqual([["BUY", "A", "1000.00"]]);
-    expect(result.final?.actionType).toBe("HOLD");
-    expect(result.sSeries.map((s) => s.toFixed(0))).toEqual(["820000", "20000"]);
+    expect(result.out?.kind).toBe("HOLD");
+    if (result.out?.kind === "HOLD") expect(result.out.reason).toBe("WITHIN_THRESHOLD");
   });
 
-  it("M-D: a portfolio too small to fund one unit of A is not closed", async () => {
-    // 50/50, total 1000 (B 1 x 500, cash 500), A costs 600 and none is held: A 0 < 50% of its 500 target.
-    // No purchase fits (500 < 600) and nothing is overweight to sell (B is exactly on target).
-    const legs: Leg[] = [
+  it("M-D: half the strategy cannot be funded: TOO_SMALL, never a HOLD", () => {
+    // 50/50, total 1000: A costs 600 and none is held, B 1 x 500, cash 500. A's target 500 < its 600 unit.
+    const specs: Spec[] = [
       { exposure: "A", weight: "0.5", value: "0", price: "600" },
       { exposure: "B", weight: "0.5", value: "500", price: "500" }
     ];
-    const result = await stepOnce(legs, "500", "0.05", WHOLE);
-    expect(result.proposal.actionType).toBe("DATA_REQUIRED");
-    expect(result.assessment?.kind).toBe("TOO_SMALL");
-    // minimum investable = 600 / 0.5 = 1200.
-    expect(result.proposal.explanation.find((row) => row.label === "Portfolio too small")?.value)
-      .toBe("Portfolio too small to fund one unit of A: minimum investable amount about 1200.00 GBP");
+    const out = size(specs, "500", "0.05");
+    expect(out.kind).toBe("TOO_SMALL");
+    if (out.kind === "TOO_SMALL") {
+      expect(out.exposure).toBe("A");
+      expect(out.minimumInvestable.toFixed(2)).toBe("1200.00");
+    }
   });
 
-  it("M1: a blocked funding sale does not hide another overweight leg", async () => {
-    // 0.4 / 0.3 / 0.3, total 10000, threshold 0, whole shares, cash 0: A 76 x 50 = 3800 (200 under),
-    // B 15 x 210 = 3150 (150 over), C 305 x 10 = 3050 (50 over). SELL B 150 -> floor(150 / 210) = 0 (marked),
-    // then SELL C 50 -> 5 shares = 50.00.
-    const legs: Leg[] = [
+  it("M1 (3 legs): a sale too small for one share no longer blocks the review", () => {
+    // 0.4 / 0.3 / 0.3, cash 0, threshold 0: A 76x50 = 3800 (200 under), B 15x210 = 3150 (150 over), C 305x10 = 3050
+    // (50 over). B: round(0.714) = 1 share = 210 (B ends 60 under, inside band 105). C: 5 shares = 50. A: 4 shares = 200.
+    const specs: Spec[] = [
       { exposure: "A", weight: "0.4", value: "3800", price: "50" },
       { exposure: "B", weight: "0.3", value: "3150", price: "210" },
       { exposure: "C", weight: "0.3", value: "3050", price: "10" }
     ];
-    const first = await stepOnce(legs, "0", "0", WHOLE);
-    expect(first.proposal.actionType).toBe("SELL");
-    expect(first.proposal.economicExposure).toBe("C");
-    expect(first.proposal.amount?.toFixed(2)).toBe("50.00");
+    const result = run(specs, "0", "0");
+    expect(result.trades).toEqual([["SELL", "B", "210.00"], ["SELL", "C", "50.00"], ["BUY", "A", "200.00"]]);
+    expect(result.out?.kind).toBe("HOLD");
   });
 });
 
-describe("alerts, minimum investable and small details", () => {
-  it("gives the residue outcome its own alert class and keeps data problems separate", () => {
-    expect(alertClassFor("HOLD", "CLOSED")).toBe("RESIDUE");
-    expect(alertClassFor("DATA_REQUIRED", "OPEN")).toBe("RESIDUE");
-    expect(alertClassFor("DATA_REQUIRED", null)).toBe("DATA_REQUIRED");
-    expect(alertClassFor("BUY", null)).toBe("REVIEW");
-    expect(alertClassFor("HOLD", null)).toBe("REVIEW");
-    expect(alertClassFor("DATA_REQUIRED", null)).not.toBe(alertClassFor("DATA_REQUIRED", "OPEN"));
-  });
+describe("termination", () => {
+  const portfolios: Array<{ name: string; specs: Spec[]; cash: string; threshold: string; c: Constraints }> = [
+    { name: "headline whole shares", specs: two("0", "0"), cash: "10000", threshold: "0", c: {} },
+    {
+      name: "fee 5, fractional, 50/50", cash: "0", threshold: "0", c: { fractionalShares: true, flatFee: "5" },
+      specs: [{ exposure: "A", weight: "0.5", value: "4000", price: "100" }, { exposure: "B", weight: "0.5", value: "6000", price: "100" }]
+    },
+    {
+      name: "permanent portfolio fractional with fee", cash: "1100.6", threshold: "0", c: { fractionalShares: true, flatFee: "5" },
+      specs: [
+        { exposure: "A", weight: "0.25", value: "3000", price: "1000" },
+        { exposure: "B", weight: "0.25", value: "3500.6", price: "0.10" },
+        { exposure: "C", weight: "0.25", value: "3200.6", price: "3200.6" },
+        { exposure: "D", weight: "0.25", value: "3200.6", price: "3200.6" }
+      ]
+    },
+    {
+      name: "3 legs whole shares with fee 2", cash: "0", threshold: "0", c: { flatFee: "2" },
+      specs: [
+        { exposure: "A", weight: "0.4", value: "3800", price: "50" },
+        { exposure: "B", weight: "0.3", value: "3150", price: "210" },
+        { exposure: "C", weight: "0.3", value: "3050", price: "10" }
+      ]
+    },
+    {
+      name: "fractional with a minimum trade of 25", cash: "7777.77", threshold: "0", c: { fractionalShares: true, minimumTradeAmount: "25" },
+      specs: two("0", "0")
+    }
+  ];
 
-  it("fails closed when a leg has no verified price", () => {
-    const { legs, total } = residueOf(two("5000", "4000"), "1000");
-    const assessment = assessStuckResidue({
-      legs: legs.map((leg) => ({ ...leg, price: leg.exposure === "EQUITY" ? null : new Decimal("40") })),
-      cash: new Decimal("1000"), constraints: normalizeExecutionConstraints(WHOLE), total, threshold: new Decimal("0.05")
+  for (const p of portfolios) {
+    it("ends within 12 steps without a round trip: " + p.name, () => {
+      const result = run(p.specs, p.cash, p.threshold, p.c, 12);
+      expect(result.exhausted).toBe(false);
+      expect(result.trades.length).toBeLessThanOrEqual(8);
+      // No leg is bought and sold (or sold and bought) in the same review.
+      for (const exposure of new Set(result.trades.map((t) => t[1]))) {
+        const sides = new Set(result.trades.filter((t) => t[1] === exposure).map((t) => t[0]));
+        expect(sides.size).toBe(1);
+      }
+      expect(result.cash.gte(0)).toBe(true);
+      expect(["HOLD", "CASH_SHORTFALL", "PREFERENCE_BLOCKED", "TOO_SMALL", "NOTHING_TO_SELL"]).toContain(result.out?.kind);
     });
-    expect(assessment.kind).toBe("UNPRICED");
+  }
+});
+
+describe("small details", () => {
+  it("sizedTradeRows states the overshoot truthfully", () => {
+    const out = size(two("0", "0"), "10000", "0");
+    expect(out.kind).toBe("TRADE");
+    if (out.kind === "TRADE") {
+      const rows = sizedTradeRows(out.trade, "GBP", false);
+      expect(rows[0].value).toContain("exact gap 6000.00 GBP, order 6023.70 GBP (overshoots by 23.70 GBP)");
+    }
   });
 
-  it("a sub-penny fractional residue is already converged, never a micro-trade", () => {
+  it("sub-penny fractional residue is a HOLD, never a micro-trade", () => {
     // EQUITY 68.728522 x 87.30 = 5999.9999706, BONDS 95.923261 x 41.70 = 3999.9999837, cash 0.0000457.
-    // Worst delta 0.0000294 < 0.005, so the engine reports a HOLD, not "Buy 0 units for about 0.00".
     const equity = new Decimal("68.728522").mul("87.30");
     const bonds = new Decimal("95.923261").mul("41.70");
     const cash = new Decimal(10000).minus(equity).minus(bonds);
-    expect(cash.toFixed(7)).toBe("0.0000457");
-    const result = fixedAllocationEngine.calculate(context(two(equity.toString(), bonds.toString()), cash.toString(), "0"));
-    expect(result.actionType).toBe("HOLD");
-    expect(result.amount).toBeUndefined();
+    const out = size(two(equity.toString(), bonds.toString()), cash.toString(), "0", { fractionalShares: true });
+    expect(out.kind).toBe("HOLD");
+    const engine = fixedAllocationEngine.calculate({
+      strategyInstanceId: "i", strategyVersionId: "v", now: new Date("2026-10-07T12:00:00Z"), baseCurrency: "GBP", cash,
+      exposures: [{ economicExposure: "EQUITY", value: equity }, { economicExposure: "BONDS", value: bonds }],
+      contributionsSinceReview: new Decimal(0), state: {}, settings: {},
+      config: { allocations: [{ exposure: "EQUITY", weight: "0.6" }, { exposure: "BONDS", weight: "0.4" }], rebalanceThreshold: "0" },
+      reviewDue: true, dataHealth: { status: "CURRENT" as const }
+    });
+    expect(engine.actionType).toBe("HOLD");
   });
 
-  it("does not turn cash below the smallest unit into a purchase", () => {
-    // Holdings 5000 / 5000 + cash 0.003: total 10000.003, EQUITY target 6000.0018 (delta +1000.0018).
-    // Cash 0.003 < 0.005, so no purchase is proposed; the overweight BONDS leg funds it.
-    const result = fixedAllocationEngine.calculate(context(two("5000", "5000"), "0.003", "0"));
-    expect(result.actionType).toBe("SELL");
-    expect(result.economicExposure).toBe("BONDS");
+  it("an unpriced leg fails closed", () => {
+    const { sizing, total } = build(two("5000", "4000"), "1000");
+    sizing[0] = { ...sizing[0], price: null };
+    const out = sizeNextTrade({ legs: sizing, total, threshold: new Decimal("0.05"), constraints: constraintsOf({}) });
+    expect(out.kind).toBe("UNPRICED");
   });
 
   it("never plans an order that rounds to 0.00", () => {
@@ -377,74 +470,4 @@ describe("alerts, minimum investable and small details", () => {
     expect(edge.status).toBe("EXECUTABLE");
     expect(SMALLEST_TRADE_UNIT.toString()).toBe("0.005");
   });
-
-  it("marks a skipped sale once and terminates", async () => {
-    let calls = 0;
-    const result = await settleCashBuyFallback(async () => { calls += 1; return { blockedCashBuyExposure: null, blockedSellExposure: "B" }; }, new Decimal("1"));
-    expect(result.blockedSellExposure).toBe("B");
-    expect(calls).toBe(2);
-    for (const reason of ["BELOW_ONE_SHARE", "BELOW_MINIMUM_TRADE", "SELLING_DISABLED"]) expect(isSkippableSellBlock(reason)).toBe(true);
-    for (const reason of ["NO_HOLDINGS", "INSUFFICIENT_SPENDABLE_CASH", ""]) expect(isSkippableSellBlock(reason)).toBe(false);
-  });
-
-  it("starts the next review normally after closure when new money arrives", async () => {
-    // Closed: the review is not due. The next review with a 1000 contribution: cash 1014.80, EQUITY 6023.70,
-    // BONDS 3961.50, total 11000, targets 6600 / 4400 (EQUITY 576.30 under). BUY EQUITY min(576.30, 1014.80)
-    // -> floor(576.30 / 87.30) = 6 shares = 523.80.
-    const idle = fixedAllocationEngine.calculate(context(two("6023.70", "3961.50"), "14.80", "0", { reviewDue: false }));
-    expect(idle.actionType).toBe("NO_ACTION");
-    const next = (await stepOnce(two("6023.70", "3961.50"), "1014.80", "0", WHOLE)).proposal;
-    expect(next.actionType).toBe("BUY");
-    expect(next.economicExposure).toBe("EQUITY");
-    expect(next.amount?.toFixed(2)).toBe("523.80");
-  });
-
-  it("threshold above zero is unchanged", () => {
-    const within = fixedAllocationEngine.calculate(context(two("6200", "3800"), "0", "0.05"));
-    expect(within.actionType).toBe("HOLD");
-    expect(within.instruction).toBe("All configured exposures are within the strategy rebalance threshold.");
-    // 6800 / 3200, total 10000: drift 8% > 5%, no cash, so SELL EQUITY |6000 - 6800| = 800.
-    const sell = fixedAllocationEngine.calculate(context(two("6800", "3200"), "0", "0.05"));
-    expect(sell.actionType).toBe("SELL");
-    expect(sell.amount?.toFixed(2)).toBe("800.00");
-  });
-});
-
-describe("recalculation terminates and strictly improves", () => {
-  const cases: Array<{ name: string; legs: Leg[]; cash: string; threshold: string; constraints: Constraints }> = [
-    { name: "2-leg whole shares from cash", legs: two("0", "0"), cash: "10000", threshold: "0", constraints: WHOLE },
-    {
-      name: "expensive legs", cash: "1500", threshold: "0.05", constraints: WHOLE,
-      legs: [{ exposure: "A", weight: "0.5", value: "2500", price: "2500" }, { exposure: "B", weight: "0.5", value: "6000", price: "2000" }]
-    },
-    {
-      name: "3 legs, a blocked sale first", cash: "0", threshold: "0", constraints: WHOLE,
-      legs: [
-        { exposure: "A", weight: "0.4", value: "3800", price: "50" },
-        { exposure: "B", weight: "0.3", value: "3150", price: "210" },
-        { exposure: "C", weight: "0.3", value: "3050", price: "10" }
-      ]
-    },
-    {
-      name: "3 legs, two overweight", cash: "600", threshold: "0", constraints: WHOLE,
-      legs: [
-        { exposure: "Y", weight: "0.4", value: "3000", price: "1000" },
-        { exposure: "X", weight: "0.3", value: "3200", price: "320" },
-        { exposure: "Z", weight: "0.3", value: "3200", price: "320" }
-      ]
-    },
-    { name: "fractional with minimum trade", legs: two("0", "0"), cash: "7777.77", threshold: "0", constraints: { fractionalShares: true, minimumTradeAmount: "25" } }
-  ];
-
-  for (const c of cases) {
-    it("ends within 25 steps with a strictly lower S: " + c.name, async () => {
-      const result = await iterate({ legs: c.legs, cash: c.cash }, c.threshold, c.constraints, 25);
-      expect(result.exhausted).toBe(false);
-      expect(result.final?.actionType === "HOLD" || result.final?.actionType === "DATA_REQUIRED").toBe(true);
-      const first = result.sSeries[0];
-      const last = result.sSeries[result.sSeries.length - 1];
-      if (result.trades.length > 0) expect(last.lt(first)).toBe(true);
-      else expect(last.eq(first)).toBe(true);
-    });
-  }
 });

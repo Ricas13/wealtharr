@@ -3,41 +3,37 @@ import { SMALLEST_TRADE_UNIT, type NormalizedExecutionConstraints } from "../exe
 import type { ExplanationRow, ProposedAction } from "./types";
 
 /**
- * EXECUTION CONVENTION (Wealtharr implementation, NOT a strategy rule): what to do when the fixed-allocation
- * engine has no executable step although the portfolio is outside its threshold.
+ * EXECUTION CONVENTION (Wealtharr implementation, NOT a strategy rule): how a fixed-allocation review that is
+ * outside its threshold is turned into tradable orders, and when it may close with a HOLD.
  *
- * Objective: S = sum over legs of (current_i - target_i)^2, in the account currency, at the current total
- * (units x validated price, plus cash). A trade is "improving" only if it STRICTLY decreases S.
+ * Trade unit u_i of a leg: whole shares -> the validated price of one share of that leg;
+ * fractional -> max(0.005, 10 x flat fee). (The 10x fee materiality stops a fee being burnt on a trade that is
+ * worth less than ten fees.) The minimum trade size and the cash buffer are PREFERENCES, never part of u_i.
  *
- * `bestImprovingTrade` searches a small bounded neighbourhood and returns the best trade:
- *   1. SINGLE trades that strictly decrease S. Whole shares: k units for k in {1, floor(gap/p), ceil(gap/p)}
- *      (each clipped to what cash or holdings allow). Fractional: amount in {min(gap, spendable), minimum
- *      trade}. A trade must respect the minimum trade size, the cash buffer and the flat fee, a purchase must
- *      be affordable, and a sale needs allowSelling and an overweight, held leg.
- *   2. Only if no single trade improves: a SELL of an overweight leg followed by a BUY of another leg is judged
- *      by S AFTER BOTH. The sale is proposed first when the pair strictly decreases S, because a sale that
- *      overshoots its gap may leave S unchanged on its own. The next recalculation then finds the purchase as
- *      a strictly improving single trade, so S at the start of each pair strictly decreases and the loop ends.
- *   Ties: smaller worst deviation, then fewer units traded, then the order of the strategy's legs.
+ * A leg is AT TARGET when |deviation_i| <= threshold x total, or |deviation_i| <= band_i = u_i / 2 + (number of
+ * legs) x flat fee (the fee headroom keeps a leg that was just traded inside its band after the fees of the
+ * other trades have moved the targets). If every leg is at target the review closes with a HOLD.
  *
- * `assessStuckResidue` then decides: PROPOSE the best trade under the user's actual constraints; else, if
- * relaxing a PREFERENCE (selling disabled, cash buffer) would allow an improving trade, stay open and name the
- * preference; else the portfolio is a local optimum and the review CLOSES as residue, unless the portfolio is
- * too small to fund a leg (a leg below half its target value) or a leg has no validated price (fail closed).
- * The minimum trade size is treated as part of the sizing granularity, not as a preference to relax.
+ * Otherwise every leg outside its band is traded, to the NEAREST unit (ties round down, at least one unit):
+ *   - sales first, largest deviation first, only if selling is allowed, never more than the execution account
+ *     holds, never below the minimum trade size;
+ *   - then purchases, largest deviation first, limited by the execution account's spendable cash
+ *     (cash - buffer - fee): the nearest whole count if affordable, else the largest affordable count.
+ * One trade is returned per call; the next one comes from the recalculation after the fill.
  *
- * Orders are sized to the exact gap or to the nearest permitted overshoot; SMALLEST_TRADE_UNIT assumes a
- * 2-decimal currency.
+ * Why it terminates (prices fixed): an overweight leg is only sold and an underweight leg only bought. A trade to
+ * the nearest unit leaves the leg within u_i / 2 of its target, which is inside its band, so the leg is not
+ * traded again (no buy-then-sell round trip). A purchase capped by cash leaves the leg underweight, so it is
+ * only ever bought again. Every executed trade therefore ends a leg's trading or reduces its deviation, and the
+ * number of trades is bounded by the number of legs plus the number of cash-capped purchases.
+ *
+ * Nothing permitted and legs not at target: the reason is reported, in this order: unpriced leg; a preference
+ * that blocks (selling disabled / cash buffer / minimum trade size, each alone then together); a portfolio too
+ * small to fund one unit; no holding to sell; a structural cash shortfall. A HOLD is emitted ONLY when every leg
+ * is at target. Orders respect SMALLEST_TRADE_UNIT, which assumes a 2-decimal currency.
  */
 
-/** Practical-trade refusals after which the closure assessment runs once the fallback is exhausted. */
-export const RESIDUE_CLOSURE_REASONS = ["BELOW_ONE_SHARE", "BELOW_MINIMUM_TRADE", "INSUFFICIENT_SPENDABLE_CASH", "SELLING_DISABLED", "NO_PRACTICAL_STEP"] as const;
-
-export function isResidueClosureReason(reason: string) {
-  return (RESIDUE_CLOSURE_REASONS as readonly string[]).includes(reason);
-}
-
-/** User-facing text for a refused practical trade (single source for the service and the tests). */
+/** User-facing text for a refused practical trade (single source for the service). */
 export const PRACTICAL_BLOCK_MESSAGES = {
   SELLING_DISABLED: "Selling is disabled in your trade preferences. Change that preference or add new money before the strategy can proceed.",
   INSUFFICIENT_SPENDABLE_CASH: "Your cash buffer and estimated fee leave no spendable cash for this action.",
@@ -46,16 +42,49 @@ export const PRACTICAL_BLOCK_MESSAGES = {
   NO_HOLDINGS: "The strategy wants to reduce this exposure, but no matching holding is recorded."
 } as const;
 
-export type ResidueConstraints = Pick<
+export type SizingConstraints = Pick<
   NormalizedExecutionConstraints,
   "fractionalShares" | "minimumTradeAmount" | "cashBufferAmount" | "flatFee" | "allowSelling"
 >;
 
 export type ResidueLeg = { exposure: string; current: Decimal; target: Decimal };
-export type TradeLeg = ResidueLeg & { price: Decimal | null };
+
+export type SizingLeg = ResidueLeg & {
+  /** Validated current price of one unit on the line a trade of this leg would use; null when unknown. */
+  price: Decimal | null;
+  /** Cash in the EXECUTION ACCOUNT a purchase of this leg would use. */
+  buyCash: Decimal;
+  /** Units held on the line/account a sale of this leg would use. */
+  heldUnits: Decimal;
+};
+
+export type SizedTrade = {
+  side: "BUY" | "SELL";
+  exposure: string;
+  /** Money value of the order (units x price, or the rounded amount when fractional). */
+  amount: Decimal;
+  units: Decimal;
+  /** The exact gap this order moves toward. */
+  gap: Decimal;
+  unit: Decimal;
+};
+
+export type PreferenceBlocker = "SELLING_DISABLED" | "CASH_BUFFER" | "MINIMUM_TRADE";
+
+export type LegResidual = { exposure: string; delta: Decimal; unit: Decimal };
+
+export type SizingOutcome =
+  | { kind: "HOLD"; reason: "WITHIN_THRESHOLD" | "WITHIN_HALF_UNIT"; residuals: LegResidual[] }
+  | { kind: "TRADE"; trade: SizedTrade }
+  | { kind: "UNPRICED"; exposures: string[] }
+  | { kind: "TOO_SMALL"; exposure: string; minimumInvestable: Decimal }
+  | { kind: "PREFERENCE_BLOCKED"; blockers: PreferenceBlocker[]; trade: SizedTrade }
+  | { kind: "NOTHING_TO_SELL"; exposure: string }
+  | { kind: "CASH_SHORTFALL"; exposure: string; needed: Decimal; spendable: Decimal };
 
 const UNIT = SMALLEST_TRADE_UNIT;
 const ZERO = new Decimal(0);
+const HALF = new Decimal("0.5");
 
 function money(v: Decimal) {
   return v.toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toFixed(2);
@@ -78,262 +107,229 @@ export function residueLegs(input: {
   return { legs, total };
 }
 
-/** S: sum of squared deviations from target. */
-export function sumOfSquares(legs: ResidueLeg[]): Decimal {
-  return legs.reduce((sum, leg) => sum.plus(leg.current.minus(leg.target).pow(2)), ZERO);
+/** Nearest integer, ties rounded DOWN (0.5 -> 0, 1.5 -> 1). */
+export function roundHalfDown(value: Decimal): Decimal {
+  const base = value.floor();
+  return value.minus(base).gt(HALF) ? base.plus(1) : base;
 }
 
-function worstDeviation(legs: ResidueLeg[]): Decimal {
-  return legs.reduce((max, leg) => Decimal.max(max, leg.current.minus(leg.target).abs()), ZERO);
-}
-
-export type ImprovingTrade = {
-  side: "BUY" | "SELL";
-  exposure: string;
-  /** Money value of the order (units x price). */
-  amount: Decimal;
-  units: Decimal;
-  sBefore: Decimal;
-  /** S after this trade, or after the pair when `pair` is set. */
-  sAfter: Decimal;
-  worstAfter: Decimal;
-  /** How far the order exceeds the exact gap (0 when it does not overshoot). */
-  overshoot: Decimal;
-  /** Set when this sale is only improving together with a following purchase. */
-  pair?: { buyExposure: string; buyAmount: Decimal };
+type Row = {
+  leg: SizingLeg;
+  delta: Decimal;
+  deviation: Decimal;
+  unit: Decimal;
+  band: Decimal;
+  withinThreshold: boolean;
+  withinBand: boolean;
 };
 
-type Step = { side: "BUY" | "SELL"; index: number; amount: Decimal; units: Decimal; overshoot: Decimal };
-
-function uniquePositive(values: Decimal[]): Decimal[] {
-  const out: Decimal[] = [];
-  for (const v of values) if (v.gte(1) && !out.some((o) => o.eq(v))) out.push(v);
-  return out;
+function priced(leg: SizingLeg): Decimal | null {
+  return leg.price && leg.price.isFinite() && leg.price.gt(0) ? leg.price : null;
 }
 
-function stepsFor(legs: TradeLeg[], cash: Decimal, c: ResidueConstraints, sides: { buy: boolean; sell: boolean }): Step[] {
-  const steps: Step[] = [];
+function selectTrade(rows: Row[], c: SizingConstraints): SizedTrade | null {
   const minAmount = Decimal.max(c.minimumTradeAmount, UNIT);
-  const spendable = Decimal.max(cash.minus(c.cashBufferAmount).minus(c.flatFee), 0);
-  legs.forEach((leg, index) => {
-    const price = leg.price;
-    if (!price || !price.isFinite() || price.lte(0)) return;
-    const gap = leg.target.minus(leg.current);
-    if (sides.buy && gap.gt(0) && spendable.gte(minAmount)) {
+  const outside = rows.filter((r) => !r.withinBand);
+  const byDeviation = (a: Row, b: Row) => b.deviation.cmp(a.deviation);
+  const over = outside.filter((r) => r.delta.lt(0)).sort(byDeviation);
+  const under = outside.filter((r) => r.delta.gt(0)).sort(byDeviation);
+
+  if (c.allowSelling) {
+    for (const r of over) {
+      const price = priced(r.leg);
+      if (!price) continue;
+      let amount: Decimal;
+      let units: Decimal;
       if (!c.fractionalShares) {
-        const cap = spendable.div(price).floor();
-        for (const k of uniquePositive([new Decimal(1), Decimal.min(gap.div(price).floor(), cap), Decimal.min(gap.div(price).ceil(), cap), ]).filter((k) => k.lte(cap))) {
-          const amount = k.mul(price);
-          if (amount.gte(minAmount)) steps.push({ side: "BUY", index, amount, units: k, overshoot: Decimal.max(amount.minus(gap), 0) });
-        }
+        const wanted = Decimal.max(1, roundHalfDown(r.deviation.div(price)));
+        units = Decimal.min(wanted, r.leg.heldUnits.floor());
+        if (units.lt(1)) continue;
+        amount = units.mul(price);
       } else {
-        const options: Decimal[] = [];
-        for (const a of [Decimal.min(gap, spendable), minAmount]) if (a.gte(minAmount) && a.lte(spendable) && !options.some((o) => o.eq(a))) options.push(a);
-        for (const amount of options) steps.push({ side: "BUY", index, amount, units: amount.div(price), overshoot: Decimal.max(amount.minus(gap), 0) });
+        amount = Decimal.min(
+          r.deviation.toDecimalPlaces(2, Decimal.ROUND_HALF_DOWN),
+          r.leg.heldUnits.mul(price).toDecimalPlaces(2, Decimal.ROUND_DOWN)
+        );
+        units = amount.div(price);
       }
-    }
-    const excess = leg.current.minus(leg.target);
-    if (sides.sell && c.allowSelling && excess.gt(0) && leg.current.gt(0)) {
-      if (!c.fractionalShares) {
-        const cap = leg.current.div(price).floor();
-        for (const k of uniquePositive([new Decimal(1), Decimal.min(excess.div(price).floor(), cap), Decimal.min(excess.div(price).ceil(), cap)]).filter((k) => k.lte(cap))) {
-          const amount = k.mul(price);
-          if (amount.gte(minAmount)) steps.push({ side: "SELL", index, amount, units: k, overshoot: Decimal.max(amount.minus(excess), 0) });
-        }
-      } else {
-        const options: Decimal[] = [];
-        for (const a of [Decimal.min(excess, leg.current), minAmount]) if (a.gte(minAmount) && a.lte(leg.current) && !options.some((o) => o.eq(a))) options.push(a);
-        for (const amount of options) steps.push({ side: "SELL", index, amount, units: amount.div(price), overshoot: Decimal.max(amount.minus(excess), 0) });
-      }
-    }
-  });
-  return steps;
-}
-
-function applyStep(legs: TradeLeg[], cash: Decimal, step: Step, fee: Decimal): { legs: TradeLeg[]; cash: Decimal } {
-  const signed = step.side === "BUY" ? step.amount : step.amount.neg();
-  return {
-    legs: legs.map((leg, i) => (i === step.index ? { ...leg, current: leg.current.plus(signed) } : leg)),
-    cash: cash.minus(signed).minus(fee)
-  };
-}
-
-/** The single best trade (or sale-then-purchase pair) that strictly decreases S, or null. */
-export function bestImprovingTrade(input: { legs: TradeLeg[]; cash: Decimal; constraints: ResidueConstraints }): ImprovingTrade | null {
-  const { legs, cash, constraints } = input;
-  const sBefore = sumOfSquares(legs);
-  type Scored = { step: Step; s: Decimal; worst: Decimal; units: Decimal; pair?: { buyExposure: string; buyAmount: Decimal } };
-  const better = (a: Scored, b: Scored | null) => {
-    if (!b) return true;
-    if (!a.s.eq(b.s)) return a.s.lt(b.s);
-    if (!a.worst.eq(b.worst)) return a.worst.lt(b.worst);
-    if (!a.units.eq(b.units)) return a.units.lt(b.units);
-    return a.step.index < b.step.index;
-  };
-  const toTrade = (best: Scored): ImprovingTrade => ({
-    side: best.step.side, exposure: legs[best.step.index].exposure, amount: best.step.amount, units: best.step.units,
-    sBefore, sAfter: best.s, worstAfter: best.worst, overshoot: best.step.overshoot, ...(best.pair ? { pair: best.pair } : {})
-  });
-
-  let best: Scored | null = null;
-  const singles = stepsFor(legs, cash, constraints, { buy: true, sell: true });
-  for (const step of singles) {
-    const after = applyStep(legs, cash, step, constraints.flatFee);
-    const s = sumOfSquares(after.legs);
-    if (s.gte(sBefore)) continue;
-    const scored: Scored = { step, s, worst: worstDeviation(after.legs), units: step.units };
-    if (better(scored, best)) best = scored;
-  }
-  if (best) return toTrade(best);
-  if (!constraints.allowSelling) return null;
-
-  for (const sale of singles.filter((s) => s.side === "SELL")) {
-    const afterSale = applyStep(legs, cash, sale, constraints.flatFee);
-    const buys = stepsFor(afterSale.legs, afterSale.cash, constraints, { buy: true, sell: false }).filter((b) => b.index !== sale.index);
-    for (const buy of buys) {
-      const afterBuy = applyStep(afterSale.legs, afterSale.cash, buy, constraints.flatFee);
-      const s = sumOfSquares(afterBuy.legs);
-      if (s.gte(sBefore)) continue;
-      const scored: Scored = {
-        step: sale, s, worst: worstDeviation(afterBuy.legs), units: sale.units.plus(buy.units),
-        pair: { buyExposure: legs[buy.index].exposure, buyAmount: buy.amount }
-      };
-      if (better(scored, best)) best = scored;
+      if (amount.gte(minAmount)) return { side: "SELL", exposure: r.leg.exposure, amount, units, gap: r.deviation, unit: r.unit };
     }
   }
-  return best ? toTrade(best) : null;
+
+  for (const r of under) {
+    const price = priced(r.leg);
+    if (!price) continue;
+    const spendable = Decimal.max(r.leg.buyCash.minus(c.cashBufferAmount).minus(c.flatFee), 0);
+    let amount: Decimal;
+    let units: Decimal;
+    if (!c.fractionalShares) {
+      const wanted = Decimal.max(1, roundHalfDown(r.deviation.div(price)));
+      units = Decimal.min(wanted, spendable.div(price).floor());
+      if (units.lt(1)) continue;
+      amount = units.mul(price);
+    } else {
+      amount = Decimal.min(r.deviation.toDecimalPlaces(2, Decimal.ROUND_HALF_DOWN), spendable.toDecimalPlaces(2, Decimal.ROUND_DOWN));
+      units = amount.div(price);
+    }
+    if (amount.gte(minAmount)) return { side: "BUY", exposure: r.leg.exposure, amount, units, gap: r.deviation, unit: r.unit };
+  }
+  return null;
 }
 
-export type StuckAssessment =
-  | { kind: "CLOSE" }
-  | { kind: "PROPOSE"; trade: ImprovingTrade }
-  | { kind: "PREFERENCE_BLOCKED"; blockers: string[]; trade: ImprovingTrade }
-  | { kind: "TOO_SMALL"; exposure: string; minimumInvestable: Decimal }
-  | { kind: "UNPRICED"; exposures: string[] };
-
-/** Under-funding guard: no leg with a positive target may hold less than this fraction of it. */
-export const UNDER_FUNDED_FRACTION = new Decimal("0.5");
-
-export function assessStuckResidue(input: {
-  legs: TradeLeg[];
-  cash: Decimal;
-  constraints: ResidueConstraints;
+export function sizeNextTrade(input: {
+  legs: SizingLeg[];
   total: Decimal;
   threshold: Decimal;
-}): StuckAssessment {
-  const { legs, cash, constraints } = input;
-  const tolerance = input.threshold.mul(input.total);
-  const unpriced = legs.filter((leg) => leg.target.gt(0) && (!leg.price || !leg.price.isFinite() || leg.price.lte(0))).map((leg) => leg.exposure);
+  constraints: SizingConstraints;
+}): SizingOutcome {
+  const { legs, total, threshold, constraints: c } = input;
+  const unpriced = legs.filter((leg) => leg.target.gt(0) && !priced(leg)).map((leg) => leg.exposure);
   if (unpriced.length) return { kind: "UNPRICED", exposures: unpriced };
 
-  const proposed = bestImprovingTrade({ legs, cash, constraints });
-  if (proposed) return { kind: "PROPOSE", trade: proposed };
-
-  const blockers: string[] = [];
-  let sample: ImprovingTrade | null = null;
-  if (!constraints.allowSelling) {
-    const trade = bestImprovingTrade({ legs, cash, constraints: { ...constraints, allowSelling: true } });
-    if (trade) { blockers.push("selling is disabled in your trade preferences"); sample = sample ?? trade; }
-  }
-  if (constraints.cashBufferAmount.gt(0)) {
-    const trade = bestImprovingTrade({ legs, cash, constraints: { ...constraints, cashBufferAmount: ZERO } });
-    if (trade) { blockers.push("your cash buffer leaves too little spendable cash"); sample = sample ?? trade; }
-  }
-  if (!blockers.length && (!constraints.allowSelling || constraints.cashBufferAmount.gt(0))) {
-    const trade = bestImprovingTrade({ legs, cash, constraints: { ...constraints, allowSelling: true, cashBufferAmount: ZERO } });
-    if (trade) { blockers.push("the combination of your selling and cash buffer preferences"); sample = trade; }
-  }
-  if (sample) return { kind: "PREFERENCE_BLOCKED", blockers, trade: sample };
-
-  const withinThreshold = legs.every((leg) => {
-    const deviation = leg.current.minus(leg.target).abs();
-    return deviation.lt(UNIT) || deviation.lte(tolerance);
+  const tolerance = threshold.mul(total);
+  const feeHeadroom = c.flatFee.mul(legs.length);
+  const rows: Row[] = legs.map((leg) => {
+    const delta = leg.target.minus(leg.current);
+    const deviation = delta.abs();
+    const price = priced(leg);
+    const unit = c.fractionalShares || !price ? Decimal.max(UNIT, c.flatFee.mul(10)) : price;
+    const band = unit.div(2).plus(feeHeadroom);
+    return { leg, delta, deviation, unit, band, withinThreshold: deviation.lte(tolerance) || deviation.lt(UNIT), withinBand: deviation.lte(band) };
   });
-  if (withinThreshold) return { kind: "CLOSE" };
+  const residuals: LegResidual[] = rows.map((r) => ({ exposure: r.leg.exposure, delta: r.delta, unit: r.unit }));
 
-  for (const leg of legs) {
-    if (leg.target.gt(0) && leg.current.lt(leg.target.mul(UNDER_FUNDED_FRACTION))) {
-      // One unit of the leg is worth `price`; its weight is target / total.
-      const minimumInvestable = (leg.price as Decimal).mul(input.total).div(leg.target);
-      return { kind: "TOO_SMALL", exposure: leg.exposure, minimumInvestable };
+  if (rows.every((r) => r.withinThreshold)) return { kind: "HOLD", reason: "WITHIN_THRESHOLD", residuals };
+
+  if (!c.fractionalShares) {
+    const small = rows.find((r) => r.leg.target.gt(0) && r.leg.price && r.leg.price.gt(r.leg.target));
+    if (small) {
+      return { kind: "TOO_SMALL", exposure: small.leg.exposure, minimumInvestable: (small.leg.price as Decimal).mul(total).div(small.leg.target) };
     }
   }
-  return { kind: "CLOSE" };
+
+  if (rows.every((r) => r.withinThreshold || r.withinBand)) return { kind: "HOLD", reason: "WITHIN_HALF_UNIT", residuals };
+
+  const trade = selectTrade(rows, c);
+  if (trade) return { kind: "TRADE", trade };
+
+  // No permitted trade although a leg is not at target: say exactly why.
+  const blockers: PreferenceBlocker[] = [];
+  const attempt = (patch: Partial<SizingConstraints>) => selectTrade(rows, { ...c, ...patch });
+  if (!c.allowSelling && attempt({ allowSelling: true })) blockers.push("SELLING_DISABLED");
+  if (c.cashBufferAmount.gt(0) && attempt({ cashBufferAmount: ZERO })) blockers.push("CASH_BUFFER");
+  if (c.minimumTradeAmount.gt(0) && attempt({ minimumTradeAmount: ZERO })) blockers.push("MINIMUM_TRADE");
+  const relaxed = selectTrade(rows, { ...c, allowSelling: true, cashBufferAmount: ZERO, minimumTradeAmount: ZERO });
+  if (relaxed) {
+    if (!blockers.length) {
+      if (!c.allowSelling) blockers.push("SELLING_DISABLED");
+      if (c.cashBufferAmount.gt(0)) blockers.push("CASH_BUFFER");
+      if (c.minimumTradeAmount.gt(0)) blockers.push("MINIMUM_TRADE");
+    }
+    if (blockers.length) return { kind: "PREFERENCE_BLOCKED", blockers, trade: relaxed };
+  }
+
+  if (!c.fractionalShares) {
+    const small = rows.find((r) => r.leg.target.gt(0) && r.leg.current.lt(r.leg.target.mul(HALF)));
+    if (small) {
+      return { kind: "TOO_SMALL", exposure: small.leg.exposure, minimumInvestable: (small.leg.price as Decimal).mul(total).div(small.leg.target) };
+    }
+  }
+
+  const outside = rows.filter((r) => !r.withinBand);
+  const under = outside.filter((r) => r.delta.gt(0)).sort((a, b) => b.deviation.cmp(a.deviation));
+  const over = outside.filter((r) => r.delta.lt(0)).sort((a, b) => b.deviation.cmp(a.deviation));
+  if (under.length) {
+    const first = under[0];
+    const price = priced(first.leg) as Decimal;
+    const needed = c.fractionalShares
+      ? first.deviation.toDecimalPlaces(2, Decimal.ROUND_HALF_DOWN)
+      : Decimal.max(1, roundHalfDown(first.deviation.div(price))).mul(price);
+    const spendable = Decimal.max(first.leg.buyCash.minus(c.cashBufferAmount).minus(c.flatFee), 0);
+    return { kind: "CASH_SHORTFALL", exposure: first.leg.exposure, needed, spendable };
+  }
+  return { kind: "NOTHING_TO_SELL", exposure: (over[0] ?? rows[0]).leg.exposure };
 }
 
-/** Alert classes: the residue outcome has its own class so it never masks or merges with a data problem. */
-export type ResidueOutcome = "CLOSED" | "OPEN" | null;
-
-export function alertClassFor(actionType: string, outcome: ResidueOutcome): "DATA_REQUIRED" | "REVIEW" | "RESIDUE" {
-  if (outcome === "CLOSED" || (outcome === "OPEN" && actionType === "DATA_REQUIRED")) return "RESIDUE";
-  return actionType === "DATA_REQUIRED" ? "DATA_REQUIRED" : "REVIEW";
-}
-
-export function improvingTradeRows(trade: ImprovingTrade, currency: string): ExplanationRow[] {
-  const rows: ExplanationRow[] = [{
-    label: "Why this order",
-    value: "This is the closest permitted order that reduces the remaining drift (squared deviation from target " +
-      money(trade.sBefore) + " to " + money(trade.sAfter) + ")." +
-      (trade.overshoot.gt(0) ? " It overshoots the exact gap by about " + money(trade.overshoot) + " " + currency + "." : "") +
-      (trade.pair ? " Selling first frees the cash to buy " + trade.pair.buyExposure + " next (about " + money(trade.pair.buyAmount) + " " + currency + ")." : ""),
+/** Explanation rows describing why this order was chosen. */
+export function sizedTradeRows(trade: SizedTrade, currency: string, fractionalShares: boolean): ExplanationRow[] {
+  const diff = trade.amount.minus(trade.gap);
+  return [{
+    label: "Order sizing",
+    value: (fractionalShares
+      ? "Sized to the amount needed to reach the target"
+      : "Sized to the nearest whole share (about " + trade.units.toString() + " x " + money(trade.amount.div(trade.units)) + " " + currency + ")") +
+      ": exact gap " + money(trade.gap) + " " + currency + ", order " + money(trade.amount) + " " + currency +
+      (diff.abs().gte(UNIT) ? " (" + (diff.gt(0) ? "overshoots" : "undershoots") + " by " + money(diff.abs()) + " " + currency + ")" : "") + ".",
     kind: "text"
   }];
-  return rows;
 }
 
 export function residueHoldProposal(
   base: Pick<ProposedAction, "explanation" | "dueAt">,
-  legs: ResidueLeg[],
+  outcome: Extract<SizingOutcome, { kind: "HOLD" }>,
   context: { state: Record<string, unknown>; now: Date; cash: Decimal; currency: string; fractionalShares: boolean }
 ): ProposedAction {
-  const rows: ExplanationRow[] = legs
-    .filter((leg) => leg.current.minus(leg.target).abs().gte(UNIT))
-    .map((leg) => {
-      const delta = leg.target.minus(leg.current);
-      return {
-        label: "Residual drift " + leg.exposure,
-        value: (delta.gt(0) ? "under target by " : "over target by ") + money(delta.abs()) + " " + context.currency,
-        kind: "text" as const
-      };
-    });
+  const rows: ExplanationRow[] = outcome.residuals
+    .filter((r) => r.delta.abs().gte(UNIT))
+    .map((r) => ({
+      label: "Residual drift " + r.exposure,
+      value: (r.delta.gt(0) ? "under target by " : "over target by ") + money(r.delta.abs()) + " " + context.currency,
+      kind: "text" as const
+    }));
   rows.push({ label: "Residual cash", value: money(context.cash), kind: "money" });
   rows.push({
     label: "Why the review closes",
-    value: "No single order that your preferences permit reduces the remaining drift" +
-      (context.fractionalShares ? " (orders must be at least your minimum trade size)" : " (orders are whole shares and must respect your minimum trade size)") +
-      ". The remaining difference is execution residue, not a strategy decision.",
+    value: outcome.reason === "WITHIN_THRESHOLD"
+      ? "Every leg is within the strategy rebalance threshold."
+      : "Every leg is within half a trading unit of its target (" +
+        (context.fractionalShares ? "half of the smallest practical trade" : "half of one share") + ") or within the strategy threshold.",
     kind: "text"
   });
   return {
     actionType: "HOLD",
-    title: "No further practical rebalance step",
-    instruction: "No single permitted order reduces the remaining drift. Confirm to close this review; the residual drift and cash are recorded below.",
-    explanation: [...base.explanation.filter((row) => !row.label.startsWith("Full plan") && row.label !== "Execution constraint"), ...rows],
+    title: outcome.reason === "WITHIN_THRESHOLD" ? "No rebalance required" : "No further practical rebalance step",
+    instruction: outcome.reason === "WITHIN_THRESHOLD"
+      ? "All configured exposures are within the strategy rebalance threshold."
+      : "Every leg is within half a trading unit of its target. Confirm to close this review; the residual drift and cash are recorded below.",
+    explanation: [...base.explanation.filter((row) => !row.label.startsWith("Full plan")), ...rows],
     nextState: { ...context.state, lastCalculatedAt: context.now.toISOString() },
     confidence: "HIGH",
     dueAt: base.dueAt ?? context.now
   };
 }
 
-/** The review stays open: explanation rows and a sentence for the instruction. */
-export function stuckNote(assessment: StuckAssessment, currency: string): { rows: ExplanationRow[]; sentence: string } {
-  if (assessment.kind === "PREFERENCE_BLOCKED") {
-    const t = assessment.trade;
-    const text = "A " + t.side.toLowerCase() + " of " + t.exposure + " (about " + money(t.amount) + " " + currency +
-      ") would reduce the remaining drift, but " + assessment.blockers.join(" and ") + " prevent it";
-    return {
-      rows: [{ label: "A preference blocks improvement", value: text, kind: "text" }],
-      sentence: "The review stays open: " + text + ". Change that preference or add cash, then recalculate."
-    };
+const BLOCKER_TEXT: Record<PreferenceBlocker, string> = {
+  SELLING_DISABLED: "selling is disabled in your trade preferences",
+  CASH_BUFFER: "your cash buffer leaves too little spendable cash",
+  MINIMUM_TRADE: "your minimum trade size is larger than the order"
+};
+
+/** Title, instruction and rows for every outcome that leaves the review open as DATA_REQUIRED. */
+export function openOutcomeNote(outcome: Exclude<SizingOutcome, { kind: "HOLD" } | { kind: "TRADE" }>, currency: string): { title: string; instruction: string; rows: ExplanationRow[] } {
+  switch (outcome.kind) {
+    case "UNPRICED":
+      return {
+        title: "Price needed before you trade",
+        instruction: "A verified current price is needed for " + outcome.exposures.join(", ") + " before the rebalance can be sized.",
+        rows: [{ label: "Price unavailable", value: outcome.exposures.join(", "), kind: "text" }]
+      };
+    case "TOO_SMALL": {
+      const text = "Portfolio too small to fund one unit of " + outcome.exposure + " (minimum investable about " + money(outcome.minimumInvestable) + " " + currency + ")";
+      return { title: "Portfolio too small", instruction: text + ". Add money or choose a strategy with fewer or cheaper legs.", rows: [{ label: "Portfolio too small", value: text, kind: "text" }] };
+    }
+    case "PREFERENCE_BLOCKED": {
+      const t = outcome.trade;
+      const text = "A " + t.side.toLowerCase() + " of " + t.exposure + " (about " + money(t.amount) + " " + currency + ") would move the portfolio toward its target, but " +
+        outcome.blockers.map((b) => BLOCKER_TEXT[b]).join(" and ") + " prevent it";
+      return { title: "A trade preference blocks the rebalance", instruction: text + ". Change that preference or add cash, then recalculate. The review stays open.", rows: [{ label: "A preference blocks the rebalance", value: text, kind: "text" }] };
+    }
+    case "NOTHING_TO_SELL": {
+      const text = "The strategy wants to reduce " + outcome.exposure + " but the execution account holds nothing that can be sold for it";
+      return { title: "Nothing to sell", instruction: text + ". Reconcile your holdings and recalculate.", rows: [{ label: "Nothing to sell", value: text, kind: "text" }] };
+    }
+    case "CASH_SHORTFALL": {
+      const text = "A purchase of " + outcome.exposure + " of about " + money(outcome.needed) + " " + currency + " is needed but only " + money(outcome.spendable) + " " + currency + " is spendable and nothing can be sold to fund it";
+      return { title: "Cash needed to rebalance", instruction: text + ". Add cash (about " + money(outcome.needed.minus(outcome.spendable)) + " " + currency + ") or sell elsewhere; the review stays open.", rows: [{ label: "Cash needed", value: text, kind: "text" }] };
+    }
   }
-  if (assessment.kind === "TOO_SMALL") {
-    const text = "Portfolio too small to fund one unit of " + assessment.exposure + ": minimum investable amount about " +
-      money(assessment.minimumInvestable) + " " + currency;
-    return { rows: [{ label: "Portfolio too small", value: text, kind: "text" }], sentence: "The review stays open: " + text + "." };
-  }
-  if (assessment.kind === "UNPRICED") {
-    const text = "A verified current price is needed for " + assessment.exposures.join(", ") + " before the remaining drift can be judged";
-    return { rows: [{ label: "Price unavailable", value: text, kind: "text" }], sentence: "The review stays open: " + text + "." };
-  }
-  return { rows: [], sentence: "" };
 }

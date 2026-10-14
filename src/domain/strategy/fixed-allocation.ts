@@ -148,12 +148,8 @@ export const fixedAllocationEngine: StrategyEngine = {
     });
     legs.forEach((leg,index)=>explanation.push({label:"Full plan, step "+(index+1),value:(leg.side==="SELL"?"Sell ":"Buy ")+money(leg.amount)+" "+ctx.baseCurrency+" of "+leg.exposure,kind:"text"}));
 
-    // A cash-funded BUY found impracticable must not hide a valid funding sale.
-    const cashBuyBlocked=(exposure:string)=>{
-      const limit=ctx.unaffordableCashBuys?.[exposure];
-      return limit!==undefined&&ctx.cash.lte(limit);
-    };
-    const underweight=[...rows].filter((row)=>row.delta.gte(SMALLEST_TRADE_UNIT)&&!cashBuyBlocked(row.exposure)).sort((a,b)=>b.delta.cmp(a.delta))[0];
+    // This is the exact-gap proposal. The service re-sizes it to tradable units (execution-residue.ts).
+    const underweight=[...rows].filter((row)=>row.delta.gte(SMALLEST_TRADE_UNIT)).sort((a,b)=>b.delta.cmp(a.delta))[0];
     if(underweight&&ctx.cash.gte(SMALLEST_TRADE_UNIT)){
       const amount=Decimal.min(underweight.delta,ctx.cash);
       const projected=rows.map((row)=>row.exposure===underweight.exposure?{...row,current:row.current.plus(amount)}:row);
@@ -174,7 +170,7 @@ export const fixedAllocationEngine: StrategyEngine = {
       };
     }
 
-    const overweight=[...rows].filter((row)=>row.delta.lte(SMALLEST_TRADE_UNIT.neg())&&!(ctx.unsellableExposures??[]).includes(row.exposure)).sort((a,b)=>a.delta.cmp(b.delta))[0];
+    const overweight=[...rows].filter((row)=>row.delta.lte(SMALLEST_TRADE_UNIT.neg())).sort((a,b)=>a.delta.cmp(b.delta))[0];
     if(overweight){
       const amount=overweight.delta.abs();
       return {

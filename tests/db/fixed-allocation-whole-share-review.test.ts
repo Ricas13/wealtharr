@@ -6,9 +6,9 @@ const dbUrl=process.env.DATABASE_URL;
 const db=dbUrl?postgres(dbUrl,{max:2,prepare:false}):null;
 const suffix=Math.random().toString(36).slice(2,10);
 // A GBP stocks-and-shares ISA with whole shares only and NON-round prices, using the 55/45 fixed
-// allocation (rebalance threshold 0.00). Whole-share rounding leaves residue that no order can
-// remove; the review must still close with a confirmed HOLD (execution-residue convention).
-describe.skipIf(!dbUrl)("fixed allocation whole-share review closes on execution residue",()=>{
+// allocation (rebalance threshold 0.00). Orders are sized to the nearest whole share; once every leg is within
+// half a share of its target the review closes with a confirmed HOLD (execution convention).
+describe.skipIf(!dbUrl)("fixed allocation whole-share review closes within half a share of target",()=>{
  let userId="",accountId="",instanceId="";
  const ids:string[]=[];
  const lineIds:string[]=[];
@@ -19,7 +19,7 @@ describe.skipIf(!dbUrl)("fixed allocation whole-share review closes on execution
   return (await db!.unsafe("SELECT state FROM strategy_states WHERE strategy_instance_id=$1",[instanceId]))[0].state;
  }
  beforeAll(async()=>{
-  for(const [exposure,ticker,price] of [["US_EQUITY_3X_LONG","RSQE"+suffix,"91.70"],["LONG_TREASURY_3X_LONG","RSQB"+suffix,"41.70"]]){
+  for(const [exposure,ticker,price] of [["US_EQUITY_3X_LONG","RSQE"+suffix,"91.70"],["LONG_TREASURY_3X_LONG","RSQB"+suffix,"44.40"]]){
    const ins=await db!.unsafe("INSERT INTO instruments (name,economic_exposure,leverage,fund_currency) VALUES ($1,$2,3,'GBP') RETURNING id",
     ["Fixture "+ticker,exposure]);ids.push(String(ins[0].id));
    const line=await db!.unsafe(
@@ -64,51 +64,39 @@ describe.skipIf(!dbUrl)("fixed allocation whole-share review closes on execution
  });
  it("buys whole shares, fills, then closes the review on the residue HOLD",async()=>{
   // Cash 10000, targets 55% = 5500 and 45% = 4500, threshold 0.
-  // Equity at 91.70: floor(5500 / 91.70) = floor(59.97) = 59 shares = 59 x 91.70 = 5410.30.
+  // Orders are sized to the NEAREST whole share: equity at 91.70: 5500 / 91.70 = 59.98 -> 60 shares = 5502.00
+  // (2.00 over the target; half a share is 45.85, so the leg is at target afterwards).
   const first=await calculateAction(instanceId);
   const firstAction=await actionRow(first.actionId);
   expect(firstAction.action_type).toBe("BUY");
   expect(firstAction.ticker).toBe("RSQE"+suffix);
-  expect(Number(firstAction.amount)).toBeCloseTo(5410.30,2);
-  const filledFirst=await executeAction(userId,first.actionId,{price:"91.70",quantity:"59",fee:"0"});
+  expect(Number(firstAction.amount)).toBeCloseTo(5502.00,2);
+  const filledFirst=await executeAction(userId,first.actionId,{price:"91.70",quantity:"60",fee:"0"});
   const afterFirst=await state();
   expect(afterFirst.forceReview).toBe(true);
   expect(afterFirst.lastReviewAt).toBeUndefined();
 
-  // Cash 10000 - 5410.30 = 4589.70. Bonds at 41.70: min(4500, 4589.70) = 4500;
-  // floor(4500 / 41.70) = floor(107.91) = 107 shares = 107 x 41.70 = 4461.90.
+  // Cash 10000 - 5502.00 = 4498.00. Bonds at 44.40: 4500 / 44.40 = 101.35 -> 101 shares = 4484.40 (15.60 under,
+  // inside half a share = 22.20), affordable from 4498.00.
   const secondId=filledFirst.actionId??(await calculateAction(instanceId)).actionId;
   const secondAction=await actionRow(secondId);
   expect(secondAction.action_type).toBe("BUY");
   expect(secondAction.ticker).toBe("RSQB"+suffix);
-  expect(Number(secondAction.amount)).toBeCloseTo(4461.90,2);
-  const filledSecond=await executeAction(userId,secondId,{price:"41.70",quantity:"107",fee:"0"});
+  expect(Number(secondAction.amount)).toBeCloseTo(4484.40,2);
+  const filledSecond=await executeAction(userId,secondId,{price:"44.40",quantity:"101",fee:"0"});
   const afterSecond=await state();
   expect(afterSecond.forceReview).toBe(true);
   expect(afterSecond.lastReviewAt).toBeUndefined();
 
-  // Cash 4589.70 - 4461.90 = 127.80. Remaining gaps: equity 5500 - 5410.30 = 89.70 (< 91.70 one share) and bonds
-  // 4500 - 4461.90 = 38.10 (< 41.70): the engine's capped buys are below one share. S = 89.70^2 + 38.10^2
-  // = 8046.09 + 1451.61 = 9497.70. One more equity share (91.70, affordable) leaves equity 2.00 over:
-  // S = 4.00 + 1451.61 = 1455.61 < 9497.70 (one more bonds share gives 8046.09 + 12.96 = 8059.05), so the
-  // improving order BUY 1 equity share = 91.70 is proposed (it overshoots the 89.70 gap by 2.00).
-  const thirdId=filledSecond.actionId??(await calculateAction(instanceId)).actionId;
-  const third=await actionRow(thirdId);
-  expect(third.action_type).toBe("BUY");
-  expect(third.ticker).toBe("RSQE"+suffix);
-  expect(Number(third.amount)).toBeCloseTo(91.70,2);
-  const filledThird=await executeAction(userId,thirdId,{price:"91.70",quantity:"1",fee:"0"});
-
-  // Cash 127.80 - 91.70 = 36.10; equity 5502.00 (2.00 over), bonds 4461.90 (38.10 under). No purchase fits
-  // (36.10 < 41.70); selling one equity share and buying one bonds share gives S = 8046.09 + 12.96 = 8059.05
-  // > 1455.61. A local optimum: the review closes with a HOLD that records the residue.
-  const holdId=filledThird.actionId??(await calculateAction(instanceId)).actionId;
+  // Cash 4498.00 - 4484.40 = 13.60. Equity is 2.00 over its 5500 target and bonds 15.60 under 4500: both inside
+  // half a share (45.85 / 22.20), so every leg is at target and the review proposes a HOLD that records them.
+  const holdId=filledSecond.actionId??(await calculateAction(instanceId)).actionId;
   const hold=await actionRow(holdId);
   expect(hold.action_type).toBe("HOLD");
   const rows=hold.explanation as Array<{label:string;value:string}>;
-  expect(rows.find(row=>row.label==="Residual cash")?.value).toBe("36.10");
+  expect(rows.find(row=>row.label==="Residual cash")?.value).toBe("13.60");
   expect(rows.find(row=>row.label==="Residual drift US_EQUITY_3X_LONG")?.value).toContain("over target by 2.00");
-  expect(rows.find(row=>row.label==="Residual drift LONG_TREASURY_3X_LONG")?.value).toContain("under target by 38.10");
+  expect(rows.find(row=>row.label==="Residual drift LONG_TREASURY_3X_LONG")?.value).toContain("under target by 15.60");
 
   const beforeClose=Date.now();
   await executeAction(userId,holdId);
@@ -118,8 +106,8 @@ describe.skipIf(!dbUrl)("fixed allocation whole-share review closes on execution
   expect(closedAt).toBeGreaterThanOrEqual(beforeClose-5000);
 
   const ledger=await db!.unsafe("SELECT quantity,cash_amount FROM ledger_events WHERE strategy_instance_id=$1 AND event_type='BUY' ORDER BY occurred_at,created_at",[instanceId]);
-  expect(ledger.map(row=>Number(row.quantity))).toEqual([59,107,1]);
-  expect(ledger.map(row=>Number(row.cash_amount))).toEqual([-5410.3,-4461.9,-91.7]);
+  expect(ledger.map(row=>Number(row.quantity))).toEqual([60,101]);
+  expect(ledger.map(row=>Number(row.cash_amount))).toEqual([-5502,-4484.4]);
 
   // The review is closed: the next calculation is NO_ACTION and the next review is a future quarter end.
   const next=await calculateAction(instanceId);

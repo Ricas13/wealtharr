@@ -6,9 +6,8 @@ import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
-import { isCashBuyShortfall, isSkippableSellBlock, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
-import { alertClassFor, assessStuckResidue, improvingTradeRows, isResidueClosureReason, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, stuckNote, type ResidueOutcome, type TradeLeg } from "@/domain/strategy/execution-residue";
+import { openOutcomeNote, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
@@ -253,19 +252,20 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       preferredCurrency:String(account.currency),asOf:new Date().toISOString().slice(0,10)
     });
   };
-  // Value of one whole share of an exposure's execution line, for the residue-closure materiality test.
-  // Mirrors order sizing (same account ranking, mapping, override and quote rules); null means "unknown".
-  const wholeShareValueFor=async(economicExposure:string,leverageRaw:unknown,side:"BUY"|"SELL"):Promise<Decimal|null>=>{
+  // Unit price, execution-account cash and execution-account holding of one leg, for order sizing
+  // (execution-residue.ts). Mirrors order sizing below (same account ranking, mapping, override and quote
+  // rules); null means "unknown" and fails closed.
+  const legExecutionFor=async(economicExposure:string,leverageRaw:unknown,side:"BUY"|"SELL"):Promise<{price:Decimal;buyCash:Decimal;heldUnits:Decimal}|null>=>{
     try{
       const leverage=exposureLeverage(economicExposure,leverageRaw);
       // A sale is sized on the held line of the largest position (as in resolveProposal), not on the
       // account with the most cash.
-      const candidateLines:string[]=[];
+      const candidateLines:Array<{lineId:string;accountId:string}>=[];
       if(side==="SELL"){
         const held=[...exposurePositions]
           .filter((p)=>p.economicExposure===economicExposure&&p.tradingLineId&&fullyEligibleAccountIds.has(p.accountId))
           .sort((a,b)=>b.value.cmp(a.value))[0];
-        if(held?.tradingLineId)candidateLines.push(held.tradingLineId);
+        if(held?.tradingLineId)candidateLines.push({lineId:held.tradingLineId,accountId:held.accountId});
       }
       if(!candidateLines.length){
         const ranked=accounts
@@ -278,10 +278,10 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           .sort((a,b)=>b.cash.cmp(a.cash));
         for(const candidate of ranked){
           const mapping=await findMapping(economicExposure,leverage,candidate.account);
-          if(mapping){candidateLines.push(mapping.tradingLineId);break;}
+          if(mapping){candidateLines.push({lineId:mapping.tradingLineId,accountId:String(candidate.account.id)});break;}
         }
       }
-      for(const lineId of candidateLines){
+      for(const {lineId,accountId} of candidateLines){
         const quoteRows=await db.unsafe(
           "SELECT tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency,r.observed_at AS rejected_observed_at FROM trading_lines tl LEFT JOIN market_data_rejections r ON r.trading_line_id=tl.id LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
           [lineId]
@@ -302,29 +302,29 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         if(!observedAt||!Number.isFinite(new Date(observedAt).getTime()))return null;
         const ageHours=(Date.now()-new Date(observedAt).getTime())/3600000;
         if(ageHours>36||new Date(observedAt).getTime()>Date.now()+60_000)return null;
-        return new Decimal(price.toString());
+        const scenarioDelta=scenario?.cashDelta&&accountId===primaryAccountId?new Decimal(scenario.cashDelta):new Decimal(0);
+        const position=accountPositions.get(accountId);
+        return {
+          price:new Decimal(price.toString()),
+          buyCash:(position?.cash??new Decimal(0)).plus(scenarioDelta),
+          heldUnits:quote.instrument_id?(position?.quantities.get(String(quote.instrument_id))??new Decimal(0)):new Decimal(0)
+        };
       }
       return null;
     }catch{
       return null;
     }
   };
-  // Every practical-trade refusal seen while settling, in order (the first one is the user-facing cause).
-  const blockedReasons:Array<keyof typeof PRACTICAL_BLOCK_MESSAGES>=[];
-  const resolveProposal=async(
-    unaffordableCashBuys:Record<string,Decimal>,
-    unsellableExposures:string[]=[],
-    forcedTrade?:{side:"BUY"|"SELL";exposure:string;amount:Decimal;leverage?:string;rationale:ExplanationRow[]}
-  )=>{
-  let blockedCashBuyExposure:string|null=null;
-  let blockedSellExposure:string|null=null;
-  let practicalBlockReason:string|null=null;
+  type SizingOverride={trade:{side:"BUY"|"SELL";exposure:string;amount:Decimal;leverage?:string;rationale:ExplanationRow[]}}|{proposal:ProposedAction};
+  const resolveProposal=async(override?:SizingOverride)=>{
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
   let sizingBand:Decimal|null=null;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage},unaffordableCashBuys,unsellableExposures});
-  if(forcedTrade){
-    // The residue convention chose this order; it still goes through mapping, quote and practical-trade checks.
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  if(override&&"proposal" in override)proposal=override.proposal;
+  if(override&&"trade" in override){
+    const forcedTrade=override.trade;
+    // The execution convention chose this order; it still goes through mapping, quote and practical-trade checks.
     proposal={
       actionType:forcedTrade.side,
       title:(forcedTrade.side==="BUY"?"Buy ":"Sell ")+forcedTrade.exposure,
@@ -333,7 +333,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       currency:String(instance.currency),
       economicExposure:forcedTrade.exposure,
       leverage:forcedTrade.leverage,
-      explanation:[...proposal.explanation,...forcedTrade.rationale],
+      explanation:[...proposal.explanation.filter((row)=>!row.label.startsWith("Full plan")),...forcedTrade.rationale],
       nextState:{...state,lastCalculatedAt:new Date().toISOString()},
       confidence:"HIGH",
       dueAt:proposal.dueAt??new Date(),
@@ -445,12 +445,6 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           constraints:scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>)
         });
         if(practical.status==="BLOCKED"){
-          practicalBlockReason=practical.reason;
-          blockedReasons.push(practical.reason);
-          if(proposal.actionType==="BUY"&&calculationEngineKey==="FIXED_ALLOCATION"&&isCashBuyShortfall(practical.reason))
-            blockedCashBuyExposure=proposal.economicExposure??null;
-          if(proposal.actionType==="SELL"&&calculationEngineKey==="FIXED_ALLOCATION"&&isSkippableSellBlock(practical.reason))
-            blockedSellExposure=proposal.economicExposure??null;
           proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:PRACTICAL_BLOCK_MESSAGES[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
         }else{
           sizingPrice=effectivePrice;
@@ -481,28 +475,19 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     }
   }
 
-  const skippedBuys=Object.keys(unaffordableCashBuys);
-  if((skippedBuys.length||unsellableExposures.length)&&proposal.actionType!=="DATA_REQUIRED"){
-    proposal={...proposal,explanation:[
-      ...proposal.explanation,
-      ...skippedBuys.map(exposure=>({label:"Cash purchase of "+exposure+" skipped",value:"Below one whole share, your minimum trade, or spendable cash",kind:"text" as const})),
-      ...unsellableExposures.map(exposure=>({label:"Sale of "+exposure+" skipped",value:"Below one whole share, your minimum trade, or selling is disabled",kind:"text" as const}))
-    ]};
-  }
-  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand,blockedCashBuyExposure,blockedSellExposure,practicalBlockReason};
+  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand};
   };
-  const settled=await settleCashBuyFallback(resolveProposal,effectiveCash);
-  let chosen=settled;
-  let residueProposal:ProposedAction|null=null;
-  let residueOutcome:ResidueOutcome=null;
 
-  // Execution convention (docs/strategy-engines.md "Execution convention for residual drift"): when the
-  // engine and the cash-buy / sale fallback end without a step, propose the best improving permitted
-  // order, name a blocking preference, or close the review as residue. Data problems are never closed.
-  if(calculationEngineKey==="FIXED_ALLOCATION"&&dataStatus==="CURRENT"&&settled.proposal.actionType==="DATA_REQUIRED"){
-    const reason=settled.practicalBlockReason??(settled.proposal.title===REBALANCE_STUCK_TITLE?"NO_PRACTICAL_STEP":null);
+  // Execution convention (docs/strategy-engines.md "Execution convention for order sizing"): once the engine
+  // says a fixed-allocation review has to trade, the order is sized to the nearest tradable unit from the
+  // EXECUTION account's cash and holdings. It returns the next order, a residue HOLD (every leg within half a
+  // unit of target) or a DATA_REQUIRED that names why nothing can be traded.
+  let override:SizingOverride|undefined;
+  if(calculationEngineKey==="FIXED_ALLOCATION"&&dataStatus==="CURRENT"){
+    const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+    const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
     const allocations=effectiveAllocations(config,settings);
-    if(reason&&isResidueClosureReason(reason)&&allocations){
+    if(needsTrade&&allocations){
       const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
       const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});
       if(total.gt(0)){
@@ -511,47 +496,36 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         // Prices resolve with the same mapping + quote rules as order sizing (the held line for an
         // overweight leg, as a sale is sized); any doubt (no mapping, stale, rejected, other currency)
         // is "unknown" and fails closed.
-        const tradeLegs:TradeLeg[]=[];
+        const sizingLegs:SizingLeg[]=[];
         for(const leg of legs){
           const allocation=allocations.find(a=>String(a.exposure)===leg.exposure);
-          const price=await wholeShareValueFor(leg.exposure,allocation?.leverage,leg.target.lt(leg.current)?"SELL":"BUY");
-          tradeLegs.push({...leg,price});
+          const execution=await legExecutionFor(leg.exposure,allocation?.leverage,leg.target.lt(leg.current)?"SELL":"BUY");
+          sizingLegs.push({...leg,price:execution?.price??null,buyCash:execution?.buyCash??new Decimal(0),heldUnits:execution?.heldUnits??new Decimal(0)});
         }
-        const assessment=assessStuckResidue({legs:tradeLegs,cash:effectiveCash,constraints,total,threshold});
-        // The fallback skipped blocked legs until the engine had no step; keep the first real cause visible.
-        const stuckInstruction=settled.proposal.title===REBALANCE_STUCK_TITLE&&blockedReasons[0]
-          ?PRACTICAL_BLOCK_MESSAGES[blockedReasons[0]]:settled.proposal.instruction;
-        if(assessment.kind==="PROPOSE"){
-          const allocation=allocations.find(a=>String(a.exposure)===assessment.trade.exposure);
-          const forced=await resolveProposal({},[],{
-            side:assessment.trade.side,exposure:assessment.trade.exposure,amount:assessment.trade.amount,
+        const outcome=sizeNextTrade({legs:sizingLegs,total,threshold,constraints});
+        if(outcome.kind==="TRADE"){
+          const allocation=allocations.find(a=>String(a.exposure)===outcome.trade.exposure);
+          override={trade:{
+            side:outcome.trade.side,exposure:outcome.trade.exposure,amount:outcome.trade.amount,
             leverage:allocation?.leverage==null?undefined:String(allocation.leverage),
-            rationale:improvingTradeRows(assessment.trade,currency)
-          });
-          if(forced.proposal.actionType==="BUY"||forced.proposal.actionType==="SELL")chosen=forced;
-          else residueProposal=forced.proposal;
-        }else if(assessment.kind==="CLOSE"){
-          residueProposal=residueHoldProposal(settled.proposal,tradeLegs,{state,now:new Date(),cash:effectiveCash,currency,fractionalShares:constraints.fractionalShares});
-          residueOutcome="CLOSED";
+            rationale:sizedTradeRows(outcome.trade,currency,constraints.fractionalShares)
+          }};
+        }else if(outcome.kind==="HOLD"){
+          override={proposal:residueHoldProposal(exact,outcome,{state,now:new Date(),cash:effectiveCash,currency,fractionalShares:constraints.fractionalShares})};
         }else{
-          const note=stuckNote(assessment,currency);
-          residueProposal={...settled.proposal,instruction:stuckInstruction+" "+note.sentence,explanation:[...settled.proposal.explanation,...note.rows]};
-          // Only a preference or a too-small portfolio is a residue outcome; an unpriced leg is a data problem.
-          if(assessment.kind!=="UNPRICED")residueOutcome="OPEN";
+          const note=openOutcomeNote(outcome,currency);
+          override={proposal:{
+            actionType:"DATA_REQUIRED",title:note.title,instruction:note.instruction,
+            explanation:[...exact.explanation.filter((row)=>!row.label.startsWith("Full plan")),...note.rows],
+            nextState:state,confidence:outcome.kind==="UNPRICED"?"LOW":"HIGH",dueAt:exact.dueAt
+          }};
         }
       }
     }
   }
-  const {sizingPrice,instructedQuantity,sizingBand}=chosen;
-  let {tradingLineId,executionTicker,executionAccountId}=chosen;
-  let proposal=chosen.proposal;
-  if(residueProposal){
-    proposal=residueProposal;
-    if(residueOutcome==="CLOSED"){
-      // A HOLD instructs no trade, so it carries no execution line, account or ticker.
-      tradingLineId=null;executionTicker=null;executionAccountId=null;
-    }
-  }
+  const resolved=await resolveProposal(override);
+  const {sizingPrice,instructedQuantity,sizingBand,tradingLineId,executionTicker,executionAccountId}=resolved;
+  const proposal=resolved.proposal;
 
   const stableHoldings=accounts.flatMap((account)=>{
     const accountId=String(account.id);
@@ -584,11 +558,10 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const fingerprint=crypto.createHash("sha256").update(material).digest("hex");
   // Deliver one generic reminder per strategy review cycle and alert class,
   // while the newest calculated action and its precise quantities can change.
-  // The residue outcome (closing HOLD, or the open "a preference / too-small portfolio blocks improvement"
-  // DATA_REQUIRED) has its own class: the two alternate as prices move and share one alert, while a genuine
-  // data problem keeps the DATA_REQUIRED class and still raises its own notification (a new class is a new
-  // review_key, hence a new delivery).
-  const notificationClass=alertClassFor(proposal.actionType,residueOutcome);
+  // A HOLD, BUY or SELL is a REVIEW alert; any DATA_REQUIRED (data problem, blocking preference, portfolio
+  // too small, cash needed) is a DATA_REQUIRED alert whose title and instruction carry the distinct message.
+  // A changed class is a new review_key, hence a new notification row.
+  const notificationClass=proposal.actionType==="DATA_REQUIRED"?"DATA_REQUIRED":"REVIEW";
   const reviewKey=crypto.createHash("sha256")
     .update(strategyInstanceId+"|"+lastReview.toISOString()+"|"+notificationClass).digest("hex");
   // An estimated BUY/SELL is never proof that target weights were achieved.

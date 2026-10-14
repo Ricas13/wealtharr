@@ -63,50 +63,44 @@ Changing an existing strategy:
 
 ## Execution convention for residual drift (fixed-allocation engine)
 
-This is a Wealtharr **implementation convention**, not a strategy rule. A fixed-allocation review closes only on a
-HOLD, and a HOLD needs drift <= threshold. Order sizing (whole shares, minimum trade size, cash buffer, selling
-preference) can leave drift that the engine's capped orders cannot remove; previously the engine returned
-`DATA_REQUIRED` "no executable rebalance step" and the review never closed.
+This is a Wealtharr **implementation convention** (order sizing), not a strategy rule. The engine proposes exact
+gaps; whole shares, a minimum trade, a cash buffer, a fee or a selling preference then make part of that gap
+untradable. Code: `src/domain/strategy/execution-residue.ts` (`sizeNextTrade`), `src/domain/execution.ts`,
+`src/lib/action-service.ts`.
 
-Code: `src/domain/strategy/execution-residue.ts`, `src/domain/execution.ts`, `src/lib/action-service.ts`.
+**Unit.** Whole shares: the validated price of one share of the leg. Fractional: `max(0.005, 10 x flat fee)`
+(a trade worth less than ten fees is not made). The minimum trade size and the cash buffer are *preferences*, not
+part of the unit. `0.005` assumes a 2-decimal currency.
 
-**Objective.** `S = sum over legs of (current_i - target_i)^2`, at the current total (units x validated price plus
-cash). A trade is *improving* only if it strictly decreases `S`.
+**At target.** A leg is at target when `|deviation| <= threshold x total`, or `|deviation| <= unit / 2 +
+(number of legs) x flat fee`. If every leg is at target the review closes with a HOLD whose explanation lists the
+residual deviation per leg and the residual cash. A HOLD is emitted only this way.
 
-**1. Sub-unit amounts.** Anything below 0.005 of the account currency (assumes a 2-decimal currency) is never traded:
-the engine ignores such legs and `planPracticalTrade` refuses such an order.
+**Sizing (one trade per recalculation).** Every leg outside its band is traded to the nearest unit (ties round
+down, at least one unit):
+1. Sales first, largest deviation first, only if selling is allowed, at most what the *execution account* holds,
+   not below the minimum trade.
+2. Then purchases, largest deviation first, limited by the *execution account's* spendable cash
+   (`cash - buffer - fee`): the nearest count if affordable, else the largest affordable whole count.
 
-**2. Fallback.** After the engine's capped proposal, PR #61's cash-buy fallback runs, and a blocked funding sale
-(`BELOW_ONE_SHARE`, `BELOW_MINIMUM_TRADE`, `SELLING_DISABLED`) is marked too so the next overweight leg is tried.
+**Termination.** An overweight leg is only sold and an underweight leg only bought; a trade to the nearest unit
+leaves the leg within `unit / 2` of target (inside its band, which also absorbs the fee-driven drift of targets),
+so it is not traded again and a buy-then-sell of the same leg cannot occur. Cash-capped purchases only repeat as
+purchases.
 
-**3. When the engine still has no step** (data status `CURRENT`, every leg priced):
+**When no permitted trade exists** but a leg is not at target, the review stays `DATA_REQUIRED`, in this order:
+an unpriced leg; a preference that blocks (selling disabled / cash buffer / minimum trade size, each alone then
+together, evaluated on the execution account); a portfolio too small (a whole-share leg whose unit exceeds its
+target, or a leg below 50% of its target) with the minimum investable amount; nothing to sell; a structural cash
+shortfall (cash needed shown).
 
-a. `bestImprovingTrade` under the user's actual constraints searches a bounded neighbourhood of single trades:
-   whole shares `k in {1, floor(gap/p), ceil(gap/p)}` clipped to cash or holdings; fractional amounts
-   `{min(gap, spendable), minimum trade}`; a purchase must be affordable after buffer and flat fee, a sale needs
-   `allowSelling` and an overweight held leg, and every order respects the minimum trade. The best strictly
-   improving trade is **proposed** as the next BUY/SELL and may overshoot the exact gap (the explanation says by how
-   much). If no single trade improves, a sale of an overweight leg followed by a purchase is judged by `S` after
-   both; the sale is proposed first, and the next recalculation finds the purchase as a strictly improving single
-   trade. Ties: smaller worst deviation, fewer units, leg order. `S` at the start of each pair strictly decreases,
-   so recalculation terminates.
-b. Otherwise the same search with selling allowed and/or the cash buffer removed (each preference individually, then
-   together). If it finds an improving trade the proposal stays **DATA_REQUIRED** and names the blocking preference.
-   The minimum trade size is part of the sizing granularity and is not relaxed (a residue below it is closable).
-c. Otherwise the portfolio is a local optimum. If a leg with a positive target holds less than 50% of it the
-   proposal stays **DATA_REQUIRED** ("portfolio too small to fund one unit of X: minimum investable amount about
-   price / weight"). Otherwise the review **closes** with a HOLD that records residual drift and cash.
+**Known consequence.** With a threshold of 0 and whole shares, purchases that overshoot (nearest unit) can leave
+the last leg a fraction of a unit short with less cash than one unit: the review then reports the cash needed
+instead of closing. Adding about one unit of cash, or a non-zero threshold, closes it.
 
-A leg without a validated current price fails closed (ordinary `DATA_REQUIRED`). Stale, rejected or
-foreign-currency prices, missing mappings and unclassified holdings are never closed.
+**Alerts.** A HOLD / BUY / SELL is a `REVIEW` alert; every `DATA_REQUIRED` is a `DATA_REQUIRED` alert whose title
+and instruction carry the specific reason. A change of class is a new `review_key` and therefore a new
+notification; a change of message within a class updates the existing notification (and resets it to unread).
 
-**4. Alerts.** The closing HOLD and the "preference / too small" DATA_REQUIRED use their own alert class `RESIDUE`
-(a separate `review_key`, so one notification per review cycle that is updated in place as the outcome alternates).
-A genuine data problem keeps the `DATA_REQUIRED` class and raises its own notification.
-
-**5. Price used.** A sale is priced on the held line of the largest position (as in order sizing); a purchase on the
-mapped line of the account with the most cash.
-
-Known limits: the search is bounded (single trades and one sale-then-purchase pair), not a global optimiser; fees do
-not change the targets; confirming the HOLD closes the review even though a larger, unconstrained trade sequence
-might reduce drift further.
+**Pricing.** A sale is priced on the held line of the largest position (as in order sizing); a purchase on the mapped
+line of the account with the most cash; both must be validated, current and in the account currency.

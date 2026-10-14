@@ -186,7 +186,8 @@ export function planPracticalTrade(input: {
 
   const amount = quantity.mul(price);
   // An order that rounds to 0.00 in the account currency is not a trade: it is residue (see execution-residue.ts).
-  if (amount.lt(Decimal.max(constraints.minimumTradeAmount, SMALLEST_TRADE_UNIT))) {
+  // (1e-9 of tolerance: quantity x price re-derives the amount through a 20-digit division.)
+  if (amount.plus("0.000000001").lt(Decimal.max(constraints.minimumTradeAmount, SMALLEST_TRADE_UNIT))) {
     return { status:"BLOCKED", reason:"BELOW_MINIMUM_TRADE", estimatedFee:constraints.flatFee };
   }
 
