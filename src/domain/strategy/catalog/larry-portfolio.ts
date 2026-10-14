@@ -11,5 +11,6 @@ export const plugin:StrategyPlugin={
     research:["https://www.bogleheads.org/forum/viewtopic.php?t=169285","https://portfoliocharts.com/portfolios/larry-portfolio/"],
     risks:["Concentrated factor risk","Emerging-markets value fund availability","Five-year Treasury maturity and currency exposure"]
   },
-  seedDefinition:null,specCard:"docs/strategy-specs/larry-portfolio.md",goldenTests:"tests/group-3-reference.test.ts"
+  seedDefinition:{name:"Larry Portfolio — 2014 28/72 example",family:"FIXED_ALLOCATION",description:"Source-locked Group 3 reference with precise economic exposures and annual Wealtharr rebalance",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:true},specCard:"docs/strategy-specs/larry-portfolio.md",goldenTests:"tests/group-3-static-engine.test.ts"
+  ,releaseStatus:"COMPLETE"
 };
