@@ -248,7 +248,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const tacticalUniverse=calculationEngineKey==="TACTICAL_ALLOCATION"&&
     Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)
-    ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String))]:null;
+    ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String)])]:null;
   const tacticalReviewMonth=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)).toISOString().slice(0,7);
   const trustedHistory=tacticalUniverse
     ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,new Date(),db)
