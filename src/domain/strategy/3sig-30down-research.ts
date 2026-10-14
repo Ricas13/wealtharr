@@ -43,7 +43,7 @@ export function evaluateHistoricalThreeSig30Down(input:{
   // same drawdown threshold; caller must deliberately reconcile a new regime.
   const alreadyStarted=state.initiatedQuarterIndex!==null;
   const withinTwoYears=alreadyStarted && quarterIndex-state.initiatedQuarterIndex!<8;
-  const activated=!alreadyStarted&&underThirty;
+  // A renewed crash after expiry may constitute a new protected period, but\n  // public comments do not pin down the re-arm event precisely. Fail closed.\n  if(alreadyStarted&&!withinTwoYears&&underThirty)\n    throw new Error("3SIG_PROTECTION_REARM_NEEDS_RECONCILIATION");\n  const activated=!alreadyStarted&&underThirty;
   const active=activated||withinTwoYears&&state.skippedSellSignals<4;
   const suppressSell=active&&proposedDirection==="SELL";
   const skips=state.skippedSellSignals+(suppressSell?1:0);
