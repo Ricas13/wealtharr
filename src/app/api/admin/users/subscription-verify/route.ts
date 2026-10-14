@@ -51,17 +51,14 @@ export async function POST(request:Request){
   }
   const remoteCustomerId=typeof remote.customer==="string"?remote.customer:remote.customer?.id??"";
   const priceId=remote.items.data[0]?.price?.id??null;
-  let matchingPlans:Awaited<ReturnType<typeof sql.unsafe>>=[];
   // Price mapping is checked against local provider-mapping tables, never mutable metadata.
-  if(priceId){
-   matchingPlans=await sql.unsafe(
-    "SELECT DISTINCT p.id FROM plans p WHERE p.id IN ("+
-    "SELECT plan_id FROM stripe_price_mappings WHERE stripe_price_id=$1 "+
-    "UNION SELECT plan_id FROM plan_prices WHERE stripe_price_id=$1) "+
-    "OR p.stripe_monthly_price_id=$1 OR p.stripe_annual_price_id=$1 LIMIT 2",
-    [priceId]
-   );
-  }
+  const matchingPlans=priceId?await sql.unsafe(
+   "SELECT DISTINCT p.id FROM plans p WHERE p.id IN ("+
+   "SELECT plan_id FROM stripe_price_mappings WHERE stripe_price_id=$1 "+
+   "UNION SELECT plan_id FROM plan_prices WHERE stripe_price_id=$1) "+
+   "OR p.stripe_monthly_price_id=$1 OR p.stripe_annual_price_id=$1 LIMIT 2",
+   [priceId]
+  ):[];
   const recurring=remote.items.data[0]?.price?.recurring;
   const period=remote.items.data[0]?.current_period_end??(remote as unknown as {current_period_end?:number}).current_period_end??null;
   const local:SubscriptionObservation={
