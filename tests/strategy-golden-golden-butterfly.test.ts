@@ -14,8 +14,8 @@ const plugin=getStrategyPlugin(KEY)!;
 const config=plugin.profile!.config!;
 const positions:ResolvedPosition[]=EXPECTED.map(([economicExposure],i)=>({economicExposure,leverage:"1",direction:"LONG",ticker:"FIXTURE"+i,exchange:"FIXTURE",currency:"USD",tradingLineId:"fixture-"+i}));
 const amount=(w:string)=>new Decimal("10000").mul(w).toFixed(2);
-const referenceRows=(overweight=0,cash=0)=>EXPECTED.map(([exposure,weight],i)=>({exposure,weight:new Decimal(weight),current:new Decimal(amount(weight)).plus(i===0?overweight:i===1?-overweight:0)}));
-const calc=(overweight=0,cash=0)=>planRebalance({rows:referenceRows(overweight,cash),cash:new Decimal(cash),threshold:new Decimal(0)});
+const referenceRows=(overweight=0)=>EXPECTED.map(([exposure,weight],i)=>({exposure,weight:new Decimal(weight),current:new Decimal(amount(weight)).plus(i===0?overweight:i===1?-overweight:0)}));
+const calc=(overweight=0,cash=0)=>planRebalance({rows:referenceRows(overweight),cash:new Decimal(cash),threshold:new Decimal(0)});
 function ctx(reviewDue:boolean,dataStatus:"CURRENT"|"STALE"="CURRENT"):EngineContext{return {strategyInstanceId:"fixture",strategyVersionId:"fixture",now:new Date("2027-01-04T00:00:00Z"),baseCurrency:"USD",cash:new Decimal(0),exposures:referenceRows(1000).map(r=>({economicExposure:r.exposure,value:r.current})),contributionsSinceReview:new Decimal(0),state:{},config,settings:{},reviewDue,nextReviewAt:new Date("2027-01-04T00:00:00Z"),dataHealth:{status:dataStatus}};}
 describe(KEY+" golden release",()=>{
  it("matches independent fixed weights, exact source-specific exposures, annual zero-band method",()=>{
