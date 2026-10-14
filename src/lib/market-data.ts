@@ -15,6 +15,7 @@ export type PriceObservation = {
   /** Provider-signed exchange-calendar identity for this completed session. */
   sourceCalendar?: string;
   sessionCalendarCertified?: boolean;
+  monthTerminalCertified?: boolean;
   /** Must explicitly cover split AND dividends reinvestment, not merely split adjustment. */
   totalReturnCertified?: boolean;
   providerCorporateActionsRevision?: string;
@@ -45,6 +46,7 @@ const quoteSchema = z.object({
   corporateActionsAdjusted: z.boolean().optional(),
   sourceCalendar:z.string().min(1).max(128).optional(),
   sessionCalendarCertified:z.boolean().optional(),
+  monthTerminalCertified:z.boolean().optional(),
   totalReturnCertified:z.boolean().optional(),
   providerCorporateActionsRevision:z.string().min(1).max(128).optional()
 });
@@ -63,6 +65,7 @@ function validatedObservation(raw: unknown, provider: string): PriceObservation 
     corporateActionsAdjusted: parsed.corporateActionsAdjusted,
     sourceCalendar:parsed.sourceCalendar,
     sessionCalendarCertified:parsed.sessionCalendarCertified,
+    monthTerminalCertified:parsed.monthTerminalCertified,
     totalReturnCertified:parsed.totalReturnCertified,
     providerCorporateActionsRevision:parsed.providerCorporateActionsRevision
   };
