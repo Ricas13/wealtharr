@@ -4,6 +4,7 @@ import { InlineMessage, MessageView, useMessage } from "@/components/InlineMessa
 import { postJson, requestJson } from "@/lib/http";
 import { useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
+import {invoiceAmountMinor} from "@/domain/admin-stripe-invoices";
 
 export function DiscordForm(){
   const status=useMessage();const[busy,setBusy]=useState(false);
@@ -87,11 +88,11 @@ export function BillingButtons({
         const channels=Array.isArray(raw.notificationChannels)?raw.notificationChannels.filter((value):value is string=>typeof value==="string"):[];
         return <div className={"billing-plan "+(slug==="pro"?"featured":"")} key={slug}>
           <div><span className="billing-plan-name">{plan.meta.planName}</span>{slug==="pro"&&<span className="pill good">MOST FLEXIBLE</span>}</div>
-          <strong>{plan.monthly?new Intl.NumberFormat("en-GB",{style:"currency",currency}).format(plan.monthly.amountMinor/100)+"/mo":"Paid plan"}</strong>
+          <strong>{plan.monthly?invoiceAmountMinor(plan.monthly.amountMinor,currency)+"/mo":"Paid plan"}</strong>
           <p>{limit}{channels.length?" · "+channels.map((channel)=>channel[0]+channel.slice(1).toLowerCase()).join(" + ")+" alerts":""}</p>
           <div className="billing-plan-actions">
             {plan.monthly&&<button className="button primary" disabled={Boolean(busy)} onClick={()=>checkout(slug,"monthly")}>{busy===slug+"monthly"?"Opening…":"Choose monthly"}</button>}
-            {plan.annual&&<button className="button" disabled={Boolean(busy)} onClick={()=>checkout(slug,"annual")}>{busy===slug+"annual"?"Opening…":"Annual · "+new Intl.NumberFormat("en-GB",{style:"currency",currency,maximumFractionDigits:0}).format(plan.annual.amountMinor/100)}</button>}
+            {plan.annual&&<button className="button" disabled={Boolean(busy)} onClick={()=>checkout(slug,"annual")}>{busy===slug+"annual"?"Opening…":"Annual · "+invoiceAmountMinor(plan.annual.amountMinor,currency)}</button>}
           </div>
         </div>;
       })}
