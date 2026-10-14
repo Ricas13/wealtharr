@@ -4,7 +4,7 @@ import { getMarketDataProvider, type MarketDataProvider } from "@/lib/market-dat
 import { acceptHistoryObservation } from "@/domain/trusted-history";
 import { runBounded } from "@/lib/work-pool";
 
-const LOOKBACK_DAYS = 450;
+const LOOKBACK_DAYS = 540;
 const MAX_DAYS_PER_LINE_PER_RUN = 40;
 
 /**
@@ -36,7 +36,7 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
     async (line) => {
       const days = await sql.unsafe(
         "SELECT to_char(d::date,'YYYY-MM-DD') AS day FROM generate_series(current_date-$1::int, current_date-1, interval '1 day') d " +
-        "WHERE extract(isodow FROM d) < 6 AND NOT EXISTS (SELECT 1 FROM price_history h WHERE h.trading_line_id=$2 AND h.trading_day=d::date AND h.licensed=true AND h.adjustment_verified=true) " +
+        "WHERE extract(isodow FROM d) < 6 AND NOT EXISTS (SELECT 1 FROM price_history h WHERE h.trading_line_id=$2 AND h.trading_day=d::date AND h.licensed=true AND h.adjustment_verified=true AND h.session_calendar_certified=true AND h.total_return_certified=true) " +
         "ORDER BY d DESC LIMIT $3",
         [LOOKBACK_DAYS, line.id, MAX_DAYS_PER_LINE_PER_RUN]
       );
