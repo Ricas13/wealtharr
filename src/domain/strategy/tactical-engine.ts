@@ -13,7 +13,7 @@ function parse(config:Record<string,unknown>):TacticalConfig{
    config.rebalanceThreshold!=="0")throw new Error("TACTICAL_INVALID_CONFIG");
  const v=config.variant as TacticalVariant;
  if(riskAssets.length!==(v==="TREND_200_DAILY"?1:v==="GEM_CLASSIC"?2:v==="IVY_GTAA5"?5:v==="PAA_12_A2"?12:v==="VAA_G4"?4:v==="VAA_G12"?12:riskAssets.length)||
-    defensiveAssets.length!==(v==="GEM_CLASSIC"||v==="PAA_12_A2"?2:v==="VAA_G4"||v==="VAA_G12"?3:1))throw new Error("TACTICAL_INVALID_UNIVERSE");
+    defensiveAssets.length!==(v==="GEM_CLASSIC"?2:v==="VAA_G4"||v==="VAA_G12"?3:1))throw new Error("TACTICAL_INVALID_UNIVERSE");
  if(v==="RISK_PARITY_ERC_252"&&(riskAssets.length<2||riskAssets.length>32))throw new Error("RP_INVALID_UNIVERSE");
  return {variant:v,riskAssets:[...riskAssets],defensiveAssets:[...defensiveAssets],reviewFrequency:"MONTHLY",rebalanceThreshold:"0"};
 }
