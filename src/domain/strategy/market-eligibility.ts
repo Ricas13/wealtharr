@@ -22,6 +22,13 @@ export function requiredPositions(engine: string, config: Record<string, unknown
       direction: "LONG"
     };
   };
+  if (engine === "TRINITY_HYBRID") {
+    const trade=Array.isArray(config.staticAllocations)?config.staticAllocations.map((r:unknown)=>one((r as {exposure?:unknown})?.exposure)):[];
+    const scored=Array.isArray(config.signalUniverse)?config.signalUniverse.map(x=>one(x)):[];
+    const defensive=one(config.defensiveAsset);
+    const unique=[...new Map([...trade,...scored,defensive].filter((p):p is RequiredPosition=>Boolean(p)).map(p=>[p.economicExposure,p])).values()];
+    return unique;
+  }
   if (engine === "TWO_FUNDS_MODERATE") {
     const tdf=one(config.targetDateExposure);
     const small=one(config.smallCapValueExposure);
@@ -91,6 +98,9 @@ export function assessStrategyMarket(
        new Set([...config.riskAssets, config.defensiveAsset]).size !== config.riskAssets.length + 1)) {
     return { available: false, positions: [], missingExposures: ["Unverified strategy rules"], supportedMarkets: [] };
   }
+  if(engine==="TRINITY_HYBRID"&&(!Array.isArray(config.signalUniverse)||config.signalUniverse.length!==10||
+    !Array.isArray(config.staticAllocations)||config.staticAllocations.length!==11||
+    typeof config.defensiveAsset!=="string"))return {available:false,positions:[],missingExposures:["Unverified Trinity model"],supportedMarkets:[]};
   // Repeated allocation sleeves can resolve to the same trading line, causing
   // double-counted holdings and ambiguous execution. Reject before resolving.
   if (engine === "FIXED_ALLOCATION" && Array.isArray(config.allocations)) {
