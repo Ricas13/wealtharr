@@ -33,8 +33,10 @@ export function trinityGlobalTrendSignal(series:readonly TrustedHistoricalSeries
       if((b.getUTCFullYear()-a.getUTCFullYear())*12+b.getUTCMonth()-a.getUTCMonth()!==1)
         throw new Error("TRINITY_MISSING_MONTH");
     }
-    if(end.at.getUTCFullYear()!==reviewClose.getUTCFullYear()||
-      end.at.getUTCMonth()!==reviewClose.getUTCMonth())throw new Error("TRINITY_STALE_MONTH_END");
+    if(reviewClose.getTime()-end.at.getTime()>7*86400_000 || end.at.getTime()>reviewClose.getTime())
+      throw new Error("TRINITY_STALE_MONTH_END");
+    // The signal closes at the last observed market session. A result from a
+    // future observation is forbidden, but a next-day manual review remains possible.
     const px=last12.map(p=>p.adjustedClose);
     const last=px[12];
     const momentum=[1,3,6,12].reduce((total,n)=>total.plus(last.div(px[12-n]).minus(1)),new Decimal(0)).div(4);
