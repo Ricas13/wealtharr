@@ -39,10 +39,10 @@ describe("Master Admin strategy readiness cannot invent approvals",()=>{
   expect(researchGate(profile,{...release,attestedAt:null},[equities,treasuries],"2026-10-09").state)
     .toBe("Ready for global enablement");
  });
- it("research profiles without complete canonical code remain visibly blocked",()=>{
+ it("Merriman has executable rules but still needs a published release and exact instruments",()=>{
   const research=RESEARCH_STRATEGIES.find(p=>p.key==="merriman-ultimate")!;
   expect(researchGate(research,undefined,[equities,treasuries],"2026-10-09").state)
-   .toBe("Research method incomplete");
+   .toBe("Release not installed");
   expect(strategyReadiness([],[],"2026-10-09")).toHaveLength(RESEARCH_STRATEGIES.length);
  });
 });
