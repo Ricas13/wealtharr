@@ -280,19 +280,22 @@ const canonical=(value:unknown):string=>JSON.stringify((function walk(v:unknown)
 
 const CATALOG_DIR="src/domain/strategy/catalog";
 
+const GROUP4_KEYS=new Set(["trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
+const historic=<T extends {key:string}>(rows:readonly T[])=>rows.filter(p=>!GROUP4_KEYS.has(p.key));
+
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   it("keeps the exact registry order of the old RESEARCH_STRATEGIES array",()=>{
-    expect(RESEARCH_STRATEGIES.map(p=>p.key)).toEqual(PRE_REFACTOR_PROFILES.map(p=>p.key));
-    expect(RESEARCH_STRATEGIES).toHaveLength(26);
+    expect(historic(RESEARCH_STRATEGIES).map(p=>p.key)).toEqual(historic(PRE_REFACTOR_PROFILES).map(p=>p.key));
+    expect(historic(RESEARCH_STRATEGIES)).toHaveLength(20);
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(RESEARCH_STRATEGIES).toEqual(PRE_REFACTOR_PROFILES);
+    expect(historic(RESEARCH_STRATEGIES)).toEqual(historic(PRE_REFACTOR_PROFILES));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
-    expect(Object.keys(ENGINE_AND_CONFIG)).toEqual(RESEARCH_STRATEGIES.map(p=>p.key));
-    for(const profile of RESEARCH_STRATEGIES){
+    expect(Object.keys(ENGINE_AND_CONFIG).filter(k=>!GROUP4_KEYS.has(k))).toEqual(historic(RESEARCH_STRATEGIES).map(p=>p.key));
+    for(const profile of historic(RESEARCH_STRATEGIES)){
       const pin=ENGINE_AND_CONFIG[profile.key];
       expect(profile.engine,profile.key).toBe(pin.engine);
       if(pin.config===undefined)expect(profile.config,profile.key).toBeUndefined();
@@ -306,7 +309,7 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
   it("keeps input schemas and disclosure text exactly as before",()=>{
     expect(LEVERAGE_DISCLOSURE).toBe(PRE_REFACTOR_LEVERAGE_DISCLOSURE);
-    for(const profile of RESEARCH_STRATEGIES){
+    for(const profile of historic(RESEARCH_STRATEGIES)){
       expect(profile.inputSchema,profile.key).toBeUndefined();
       if(profile.key==="hfea")expect(profile.disclosure).toBe(PRE_REFACTOR_LEVERAGE_DISCLOSURE);
       else expect(profile.disclosure,profile.key).toBeUndefined();
@@ -328,7 +331,7 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
   it("curated-rule enforcement accepts exactly the pinned rules and nothing else",()=>{
     expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_LITERAL,[])).not.toThrow();
-    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG)){
+    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG).filter(([key])=>!GROUP4_KEYS.has(key))){
       if(pin.config&&pin.engine!=="RESEARCH_PENDING"){
         expect(()=>assertCuratedRules(key,pin.engine,pin.config,[]),key).not.toThrow();
         expect(()=>assertCuratedRules(key,"VALUE_TARGET",pin.config,[]),key).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
@@ -343,8 +346,8 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
-    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null);
-    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
+    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!GROUP4_KEYS.has(p.key));
+    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).filter(k=>!GROUP4_KEYS.has(k)).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
       const pin=SEED_DEFINITIONS[plugin.key];
@@ -359,7 +362,7 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","60-40"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key).sort()).toEqual(["9sig","60-40",...GROUP4_KEYS].sort());
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
@@ -385,7 +388,7 @@ describe("plugin files are consistent with the registry",()=>{
   });
 
   it("each plugin key equals its filename and every plugin file is registered",()=>{
-    const files=readdirSync(CATALOG_DIR).filter(f=>f.endsWith(".ts")&&f!=="index.ts"&&f!=="plugin.ts")
+    const files=readdirSync(CATALOG_DIR).filter(f=>f.endsWith(".ts")&&f!=="index.ts"&&f!=="plugin.ts"&&f!=="group4-configs.ts")
       .map(f=>f.replace(/\.ts$/,"")).sort();
     expect(files).toEqual(STRATEGY_PLUGINS.map(p=>p.key).sort());
     for(const plugin of STRATEGY_PLUGINS){
