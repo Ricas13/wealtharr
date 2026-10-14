@@ -32,7 +32,7 @@ export function AdminPromotionForm(){
   </div></header>
   <p className="admin-data-caveat">This grants broad Admin access, including financial configuration. Confirm the recipient agrees before continuing. You must have used MFA to sign in within the last 10 minutes. Existing sessions for the promoted account will be revoked. A second admin can then independently approve high-risk corporate actions.</p>
   <div className="inline">
-   <label htmlFor="promote-admin-email">Existing user's verified email</label>
+   <label htmlFor="promote-admin-email">Existing user&apos;s verified email</label>
    <input id="promote-admin-email" type="email" autoComplete="off" value={email} required maxLength={254}
     onChange={event=>setEmail(event.target.value)} placeholder="colleague@example.com"/>
   </div>
