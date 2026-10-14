@@ -93,14 +93,19 @@ async function main(){
         await sql.begin(async tx=>{
           const locked=await tx.unsafe("SELECT id,enabled FROM strategy_definitions WHERE id=$1 FOR UPDATE",[id]);
           if(!locked[0]||locked[0].enabled)return;
-          const alreadyPublished=await tx.unsafe(
-            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND lifecycle_status='PUBLISHED' LIMIT 1",[id]
+          // No-op only when a canonical published version already exists. A legacy operator-
+          // published v1.0 with old rules must stay immutable, not block a new correct v2.0.
+          const canonical=await tx.unsafe(
+            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 "+
+            "AND lifecycle_status='PUBLISHED' AND engine_key=$2 AND config=$3::jsonb "+
+            "AND input_schema=$4::jsonb LIMIT 1",
+            [id,engine,JSON.stringify(config),JSON.stringify(inputSchema)]
           );
-          if(alreadyPublished.length)return;
-          const existingDraft=await tx.unsafe(
-            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version='1.0' AND lifecycle_status='DRAFT' LIMIT 1",[id]
+          if(canonical.length)return;
+          const historical=await tx.unsafe(
+            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version='1.0' LIMIT 1",[id]
           );
-          if(!existingDraft.length)return;
+          if(!historical.length)return;
           const conflicting=await tx.unsafe(
             "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version='2.0' LIMIT 1",[id]
           );
