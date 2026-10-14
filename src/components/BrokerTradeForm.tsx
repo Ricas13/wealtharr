@@ -1,6 +1,7 @@
 "use client";
 import { Field } from "@/components/Field";
 import {Trading212CsvAssistant} from "@/components/Trading212CsvAssistant";
+import {Trading212ReadOnlyCheck} from "@/components/Trading212ReadOnlyCheck";
 import type {Trading212CsvTrade} from "@/domain/brokerage/trading212-csv";
 import {useRef,useState} from "react";
 import {useRouter} from "next/navigation";
@@ -32,7 +33,7 @@ export function BrokerTradeForm({strategyId,accounts}:{strategyId:string;account
     // The broker CSV often omits exchange and timezone. Never guess either.
     setExchange("");setExecutedAt("");
     setNote("Trading 212 CSV transaction "+trade.id+" · ISIN "+trade.isin);
-  }}/><form className="glass form-card" onSubmit={async(event)=>{
+  }}/><Trading212ReadOnlyCheck strategyId={strategyId}/><form className="glass form-card" onSubmit={async(event)=>{
     event.preventDefault();
     setBusy(true);setMessage("");
     const form=event.currentTarget;
