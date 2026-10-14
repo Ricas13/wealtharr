@@ -74,7 +74,13 @@ export type PreferenceBlocker = "SELLING_DISABLED" | "CASH_BUFFER" | "MINIMUM_TR
 export type LegResidual = { exposure: string; delta: Decimal; unit: Decimal };
 
 export type SizingOutcome =
-  | { kind: "HOLD"; reason: "WITHIN_THRESHOLD" | "WITHIN_HALF_UNIT"; residuals: LegResidual[] }
+  | {
+      kind: "HOLD";
+      reason: "WITHIN_THRESHOLD" | "WITHIN_HALF_UNIT" | "WITHIN_ONE_UNIT";
+      residuals: LegResidual[];
+      /** WITHIN_ONE_UNIT only: the leg that cannot be bought and what it would take. */
+      shortfall?: { exposure: string; unitPrice: Decimal; spendable: Decimal };
+    }
   | { kind: "TRADE"; trade: SizedTrade }
   | { kind: "UNPRICED"; exposures: string[] }
   | { kind: "TOO_SMALL"; exposure: string; minimumInvestable: Decimal }
@@ -238,6 +244,40 @@ export function sizeNextTrade(input: {
   const outside = rows.filter((r) => !r.withinBand);
   const under = outside.filter((r) => r.delta.gt(0)).sort((a, b) => b.deviation.cmp(a.deviation));
   const over = outside.filter((r) => r.delta.lt(0)).sort((a, b) => b.deviation.cmp(a.deviation));
+  // U4(e): whole shares only. Every underweight leg is less than ONE unit short, no unit of any of them is
+  // affordable, and no overweight leg outside its band exists (otherwise a sale would already have been
+  // chosen). A sale of one unit of an in-band overweight leg that would fund a purchase is proposed instead;
+  // a sale that would push that leg more than half a unit below target is not a funding path.
+  if (!c.fractionalShares && under.length && over.length === 0) {
+    const spendableOf = (r: Row) => Decimal.max(r.leg.buyCash.minus(c.cashBufferAmount).minus(c.flatFee), 0);
+    const belowOneUnit = under.every((r) => r.deviation.lt(priced(r.leg) as Decimal));
+    const noneAffordable = under.every((r) => spendableOf(r).lt(priced(r.leg) as Decimal));
+    if (belowOneUnit && noneAffordable) {
+      const minAmount = Decimal.max(c.minimumTradeAmount, UNIT);
+      const funding = rows.find((s) => {
+        const price = priced(s.leg);
+        if (!price || s.delta.gte(0) || s.leg.heldUnits.lt(1) || price.lt(minAmount)) return false;
+        const below = price.minus(s.deviation);
+        if (below.gt(s.unit.div(2))) return false;
+        return under.some((r) => spendableOf(r).plus(price).minus(c.flatFee).gte(priced(r.leg) as Decimal));
+      });
+      if (funding) {
+        if (c.allowSelling) {
+          const price = priced(funding.leg) as Decimal;
+          return { kind: "TRADE", trade: { side: "SELL", exposure: funding.leg.exposure, amount: price, units: new Decimal(1), gap: funding.deviation, unit: funding.unit } };
+        }
+      } else {
+        const first = under[0];
+        return {
+          kind: "HOLD",
+          reason: "WITHIN_ONE_UNIT",
+          residuals,
+          shortfall: { exposure: first.leg.exposure, unitPrice: priced(first.leg) as Decimal, spendable: spendableOf(first) }
+        };
+      }
+    }
+  }
+
   if (under.length) {
     const first = under[0];
     const price = priced(first.leg) as Decimal;
@@ -277,12 +317,19 @@ export function residueHoldProposal(
       kind: "text" as const
     }));
   rows.push({ label: "Residual cash", value: money(context.cash), kind: "money" });
+  const oneUnitText = outcome.shortfall
+    ? "Every holding is within one trading unit of its target. Your cash (" + money(outcome.shortfall.spendable) + " " + context.currency +
+      ") is less than the cost of one more unit of " + outcome.shortfall.exposure + " (" + money(outcome.shortfall.unitPrice) + " " + context.currency +
+      "); add about " + money(outcome.shortfall.unitPrice.minus(outcome.shortfall.spendable)) + " " + context.currency + " to buy it, or keep this allocation."
+    : "";
   rows.push({
     label: "Why the review closes",
     value: outcome.reason === "WITHIN_THRESHOLD"
       ? "Every leg is within the strategy rebalance threshold."
-      : "Every leg is within half a trading unit of its target (" +
-        (context.fractionalShares ? "half of the smallest practical trade" : "half of one share") + ") or within the strategy threshold.",
+      : outcome.reason === "WITHIN_ONE_UNIT"
+        ? oneUnitText
+        : "Every leg is within half a trading unit of its target (" +
+          (context.fractionalShares ? "half of the smallest practical trade" : "half of one share") + ") or within the strategy threshold.",
     kind: "text"
   });
   return {
@@ -290,7 +337,9 @@ export function residueHoldProposal(
     title: outcome.reason === "WITHIN_THRESHOLD" ? "No rebalance required" : "No further practical rebalance step",
     instruction: outcome.reason === "WITHIN_THRESHOLD"
       ? "All configured exposures are within the strategy rebalance threshold."
-      : "Every leg is within half a trading unit of its target. Confirm to close this review; the residual drift and cash are recorded below.",
+      : outcome.reason === "WITHIN_ONE_UNIT"
+        ? oneUnitText + " Confirm to close this review; the residual drift and cash are recorded below."
+        : "Every leg is within half a trading unit of its target. Confirm to close this review; the residual drift and cash are recorded below.",
     explanation: [...base.explanation.filter((row) => !row.label.startsWith("Full plan")), ...rows],
     nextState: { ...context.state, lastCalculatedAt: context.now.toISOString() },
     confidence: "HIGH",

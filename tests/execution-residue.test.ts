@@ -67,22 +67,73 @@ describe("nearest-unit sizing", () => {
     expect(roundHalfDown(new Decimal("6.985")).toString()).toBe("7");
   });
 
-  it("headline whole-share example: two buys, then a named cash shortfall (never a silent HOLD)", () => {
+  it("headline whole-share example: two buys, then a HOLD within one unit that states what one more unit costs", () => {
     // 60/40, cash 10000, prices 87.30 / 41.70, threshold 0. Targets 6000 / 4000.
     // 1. EQUITY gap 6000 / 87.30 = 68.73 -> 69 shares = 6023.70 (overshoots by 23.70), affordable from 10000.
     // 2. cash 3976.30: BONDS gap 4000 / 41.70 = 95.92 -> 96 shares = 4003.20 > 3976.30, so the largest
     //    affordable count floor(3976.30 / 41.70) = 95 shares = 3961.50.
     // 3. cash 14.80: EQUITY is 23.70 over (inside its band 43.65); BONDS is 38.50 under (band 20.85, outside).
-    //    The nearest unit is 1 share = 41.70 > 14.80 spendable and nothing outside its band can be sold, so the
-    //    review reports the cash shortfall (needed 41.70, spendable 14.80). It does NOT close silently.
+    //    The nearest unit is 1 share = 41.70 > 14.80 spendable and nothing outside its band can be sold. U4(e):
+    //    BONDS is 38.50 < one unit (41.70) short, no unit is affordable, and selling one EQUITY share (87.30)
+    //    would leave EQUITY 63.60 under (more than half its unit, 43.65), so it is not a funding path: HOLD
+    //    (WITHIN_ONE_UNIT) with the statement of what one more unit costs.
     const result = run(two("0", "0"), "10000", "0");
     expect(result.trades).toEqual([["BUY", "EQUITY", "6023.70"], ["BUY", "BONDS", "3961.50"]]);
-    expect(result.out?.kind).toBe("CASH_SHORTFALL");
-    if (result.out?.kind === "CASH_SHORTFALL") {
-      expect(result.out.exposure).toBe("BONDS");
-      expect(result.out.needed.toFixed(2)).toBe("41.70");
-      expect(result.out.spendable.toFixed(2)).toBe("14.80");
+    expect(result.out?.kind).toBe("HOLD");
+    if (result.out?.kind === "HOLD") {
+      expect(result.out.reason).toBe("WITHIN_ONE_UNIT");
       expect(result.cash.toFixed(2)).toBe("14.80");
+      const hold = residueHoldProposal({ explanation: [], dueAt: null }, result.out,
+        { state: {}, now: new Date("2026-10-07T12:00:00Z"), cash: result.cash, currency: "GBP", fractionalShares: false });
+      // 41.70 - 14.80 = 26.90.
+      expect(hold.instruction).toContain("Every holding is within one trading unit of its target.");
+      expect(hold.instruction).toContain("Your cash (14.80 GBP) is less than the cost of one more unit of BONDS (41.70 GBP); add about 26.90 GBP");
+      expect(hold.explanation.find((row) => row.label === "Residual cash")?.value).toBe("14.80");
+    }
+  });
+
+  it("an in-band overweight sale that would fund one unit is proposed instead of closing", () => {
+    // 50/50, A 4930 @100, B 5060 @120 (42 shares), cash 10, total 10000, targets 5000, threshold 0.
+    // A is 70 under (< one unit 100, outside its band 50), spendable 10 < 100. B is 60 over = exactly its band
+    // 60 (half of 120). Selling one B share (120) leaves B 60 under (not more than half a unit) and frees
+    // 10 + 120 = 130 >= 100: SELL B 120 first; then BUY A 100 (A 30 over, B 60 under, cash 30): HOLD.
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.5", value: "4930", price: "100" },
+      { exposure: "B", weight: "0.5", value: "5060", price: "120", held: "42" }
+    ];
+    const first = size(specs, "10", "0");
+    expect(first.kind).toBe("TRADE");
+    if (first.kind === "TRADE") {
+      expect(first.trade.side).toBe("SELL");
+      expect(first.trade.exposure).toBe("B");
+      expect(first.trade.amount.toFixed(2)).toBe("120.00");
+    }
+    const result = run(specs, "10", "0");
+    expect(result.trades).toEqual([["SELL", "B", "120.00"], ["BUY", "A", "100.00"]]);
+    expect(result.out?.kind).toBe("HOLD");
+    if (result.out?.kind === "HOLD") expect(result.out.reason).toBe("WITHIN_HALF_UNIT");
+    expect(result.cash.toFixed(2)).toBe("30.00");
+  });
+
+  it("a cash buffer that is what blocks the purchase stays DATA_REQUIRED, not a HOLD", () => {
+    // 50/50, A and B 4940 @100, cash 120, targets 5000: both 60 under (band 50). Buffer 50: spendable 70 < 100,
+    // but without the buffer 120 buys one share: PREFERENCE_BLOCKED [CASH_BUFFER].
+    const specs: Spec[] = [
+      { exposure: "A", weight: "0.5", value: "4940", price: "100" },
+      { exposure: "B", weight: "0.5", value: "4940", price: "100" }
+    ];
+    const out = size(specs, "120", "0", { cashBufferAmount: "50" });
+    expect(out.kind).toBe("PREFERENCE_BLOCKED");
+    if (out.kind === "PREFERENCE_BLOCKED") expect(out.blockers).toEqual(["CASH_BUFFER"]);
+  });
+
+  it("fractional mode never uses the one-unit exception", () => {
+    // The headline end state in fractional mode trades the exact gap: EQUITY 23.70 over is sold first.
+    const out = size(two("6023.70", "3961.50"), "14.80", "0", { fractionalShares: true });
+    expect(out.kind).toBe("TRADE");
+    if (out.kind === "TRADE") {
+      expect(out.trade.side).toBe("SELL");
+      expect(out.trade.amount.toFixed(2)).toBe("23.70");
     }
   });
 
@@ -386,6 +437,10 @@ describe("regression scenarios from the independent reviews", () => {
 describe("termination", () => {
   const portfolios: Array<{ name: string; specs: Spec[]; cash: string; threshold: string; c: Constraints }> = [
     { name: "headline whole shares", specs: two("0", "0"), cash: "10000", threshold: "0", c: {} },
+    // Fee 2: BUY E 69 sh = 6023.70 (cash 3974.30); B nearest 96 = 4003.20 unaffordable, spendable 3972.30 -> 95 sh
+    // = 3961.50 (cash 10.80, total 9996, targets 5997.60 / 3998.40). E is 26.10 over (band 47.65), B 36.90 under
+    // (< 41.70, outside band 24.85), spendable 8.80: U4(e) HOLD.
+    { name: "headline whole shares with fee 2", specs: two("0", "0"), cash: "10000", threshold: "0", c: { flatFee: "2" } },
     {
       name: "fee 5, fractional, 50/50", cash: "0", threshold: "0", c: { fractionalShares: true, flatFee: "5" },
       specs: [{ exposure: "A", weight: "0.5", value: "4000", price: "100" }, { exposure: "B", weight: "0.5", value: "6000", price: "100" }]

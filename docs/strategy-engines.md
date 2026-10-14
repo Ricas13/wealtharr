@@ -94,9 +94,20 @@ together, evaluated on the execution account); a portfolio too small (a whole-sh
 target, or a leg below 50% of its target) with the minimum investable amount; nothing to sell; a structural cash
 shortfall (cash needed shown).
 
-**Known consequence.** With a threshold of 0 and whole shares, purchases that overshoot (nearest unit) can leave
-the last leg a fraction of a unit short with less cash than one unit: the review then reports the cash needed
-instead of closing. Adding about one unit of cash, or a non-zero threshold, closes it.
+**One-unit exception (whole shares only).** With a threshold of 0, nearest-unit purchases can leave the last leg
+less than one unit short while the cash cannot buy one unit. The review then closes with a HOLD ("WITHIN_ONE_UNIT":
+"Every holding is within one trading unit of its target. Your cash is less than the cost of one more unit of X; add
+about Z to buy it, or keep this allocation") only when ALL hold: every price is validated; no preference (selling,
+cash buffer, minimum trade, alone or together) would enable a trade; the portfolio is not too small; no overweight
+leg is outside its band; every underweight leg is less than one unit (its price) short; no unit of any underweight
+leg is affordable from the execution account's spendable cash; and no one-unit sale of an overweight leg would fund
+one. If such a sale would (and does not push that leg more than half a unit below target) it is proposed instead of
+closing; otherwise the review stays `DATA_REQUIRED` with the cash needed. Fractional mode never uses it.
+
+Decision order for a review the engine says has to trade: (1) unpriced leg; (2) every leg within threshold, HOLD;
+(3) a whole-share leg whose unit exceeds its target, TOO_SMALL; (4) every leg within threshold or half a unit,
+HOLD; (5) a permitted nearest-unit trade; (6) blocking preference named; (7) a leg below 50% of target, TOO_SMALL;
+(8) the one-unit exception (HOLD, or the funding sale); (9) cash needed / nothing to sell.
 
 **Alerts.** A HOLD / BUY / SELL is a `REVIEW` alert; every `DATA_REQUIRED` is a `DATA_REQUIRED` alert whose title
 and instruction carry the specific reason. A change of class is a new `review_key` and therefore a new
