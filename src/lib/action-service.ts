@@ -21,7 +21,7 @@ import { actionFingerprintMaterial } from "@/domain/action-fingerprint";
 import { validatedEffectivePrice } from "@/domain/manual-override";
 import { loadTrustedHistory } from "@/lib/trusted-history-loader";
 import {loadTacticalCertifiedHistory} from "@/lib/tactical-history-loader";
-import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
+import { assessStrategyMarket, StrategyMarketUnavailableError, type ResolvedPosition } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { nextCalendarQuarterDueAt,nextCompletedMonthReviewDueAt } from "@/domain/schedule";
 import { alertKeyClass, buildStrategyAlert } from "@/domain/strategy-alert";
@@ -225,6 +225,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const contributionsSinceReview=new Decimal(String(contributionRows[0]?.amount??0)).plus(new Decimal(scenario?.contributionDelta??0));
   const engine=getStrategyEngine(calculationEngineKey);
   const fullyEligibleAccountIds=new Set<string>();
+  let tacticalSignalMapping:ResolvedPosition[]=[];
   // Do not start a partial implementation. The next leg alone may map (e.g. SPY3 in a
   // UK ISA), while another mandatory leg has no faithful equivalent (TMF duration).
   // Only complete verified implementations are eligible for action instructions.
@@ -237,6 +238,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       })),new Date().toISOString().slice(0,10));
     for(const accountIndex of market.eligibleAccountIndices)
       fullyEligibleAccountIds.add(String(accounts[accountIndex].id));
+    if(calculationEngineKey==="TACTICAL_ALLOCATION"&&market.eligibleAccountIndices.length){
+      const account=accounts[market.eligibleAccountIndices[0]];
+      const verifiedMarket=assessStrategyMarket(calculationEngineKey,config,candidateMappings,
+        {country:String(account.country),wrapper:String(account.wrapper),
+         currency:String(account.currency),broker:account.broker_name?String(account.broker_name):null},
+        new Date().toISOString().slice(0,10));
+      if(verifiedMarket.available)tacticalSignalMapping=verifiedMarket.positions;
+    }
     if(!market.available){
       dataStatus="MISSING";
       dataMessage="This strategy cannot be implemented in your linked accounts with the currently verified trading lines. "+
@@ -253,7 +262,8 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String)])]:null;
   const tacticalReviewMonth=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)).toISOString().slice(0,7);
   const trustedHistory=tacticalUniverse
-    ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,new Date(),db)
+    ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,
+      tacticalSignalMapping.map(m=>({exposure:m.economicExposure,tradingLineId:m.tradingLineId})),new Date(),db)
     :momentumUniverse
       ?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db)
       :undefined;
