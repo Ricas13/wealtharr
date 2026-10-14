@@ -50,6 +50,6 @@ export default async function OperationsPage(){
  </section>
  <div style={{marginTop:18}}><IntegrationTests/></div>
  <div style={{marginTop:18}}><RetryDeliveries/></div>
- <section className="card" style={{marginTop:18}}><h3>Latest worker executions</h3>{jobs.length?jobs.map((job:any)=><div className="why-row" key={job.worker_key}><span>{job.worker_key}<small> · {new Date(job.started_at).toLocaleString("en-GB")}</small></span><strong>{job.status}</strong></div>):<p className="help">No runs recorded. Verify the scheduler service is running.</p>}</section>
+ <section className="card" style={{marginTop:18}}><h3>Latest worker executions</h3>{jobs.length?jobs.map((job:any)=><div className="why-row" key={job.worker_key}><span>{job.worker_key}<small> · {new Date(job.started_at).toLocaleString("en-GB",{timeZone:"UTC"})+" UTC"}</small></span><strong>{job.status}</strong></div>):<p className="help">No runs recorded. Verify the scheduler service is running.</p>}</section>
  <section className="card" style={{marginTop:18}}><h3>Provider credentials</h3><p className="help">Configure Stripe, email and market-data credentials in Master Admin → Settings. Sensitive values are encrypted at rest, never read back into the browser, and changes are audited. Provider tests use fixed operations rather than arbitrary URLs. Docker credentials and the scheduler secret remain deployment settings.</p><a className="button" href="/admin/settings">Edit integrations and secrets</a></section></>;
 }
