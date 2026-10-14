@@ -31,8 +31,6 @@ export type EngineContext = {
   dataHealth: DataHealth;
   /** Must be populated by an authenticated licensed market-data adapter, never user settings. */
   trustedHistory?: TrustedHistoricalSeries[];
-  /** Exposures already found unaffordable to buy at the indicated available-cash balance. */
-  unaffordableCashBuys?: Record<string, Decimal>;
 };
 
 export type ExplanationRow = {
@@ -54,6 +52,8 @@ export type ProposedAction = {
   confidence: "HIGH" | "MEDIUM" | "LOW";
   dueAt?: Date | null;
   completesReview?: boolean;
+  /** Machine code of a DATA_REQUIRED outcome from the execution convention (alert text and notification key). */
+  reasonCode?: string;
 };
 
 export interface StrategyEngine {
