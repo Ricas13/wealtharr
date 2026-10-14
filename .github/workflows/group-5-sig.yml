@@ -5,9 +5,11 @@ on:
     paths:
       - "src/domain/strategy/sig-*.ts"
       - "src/domain/strategy/3sig-30down-research.ts"
+      - "src/domain/strategy/3sig-workbook-research.ts"
       - "src/domain/strategy/income-sig-research.ts"
       - "tests/sig-*.test.ts"
       - "tests/3sig-30down-research.test.ts"
+      - "tests/3sig-workbook-research.test.ts"
       - "tests/income-sig-research.test.ts"
       - "docs/strategy-specs/3sig.md"
       - "docs/strategy-specs/6sig.md"
@@ -31,7 +33,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Group 5 scope lint
-        run: npx eslint src/domain/strategy/3sig-30down-research.ts src/domain/strategy/sig-research.ts src/domain/strategy/sig-timeline-research.ts src/domain/strategy/sig-buy-budget-research.ts src/domain/strategy/income-sig-research.ts tests/3sig-30down-research.test.ts tests/sig-research.test.ts tests/sig-timeline-research.test.ts tests/sig-buy-budget-research.test.ts tests/income-sig-research.test.ts
+        run: npx eslint src/domain/strategy/3sig-workbook-research.ts tests/3sig-workbook-research.test.ts src/domain/strategy/3sig-30down-research.ts src/domain/strategy/sig-research.ts src/domain/strategy/sig-timeline-research.ts src/domain/strategy/sig-buy-budget-research.ts src/domain/strategy/income-sig-research.ts tests/3sig-30down-research.test.ts tests/sig-research.test.ts tests/sig-timeline-research.test.ts tests/sig-buy-budget-research.test.ts tests/income-sig-research.test.ts
       - name: TypeScript
         run: npm run typecheck
       - name: Source-confirmed arithmetic tests
