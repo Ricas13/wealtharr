@@ -36,8 +36,8 @@ export function calculateTacticalAllocation(req:TacticalRequest):TacticalAllocat
   case "TREND_200_DAILY":{
    if(risk.length!==1||def.length!==1)throw new Error("TREND_INVALID_UNIVERSE");
    const points=series(risk[0]).points;
-   if(points.length!==200)throw new Error("TREND_REQUIRES_200_SESSIONS");
-   return alloc(trend200Decision(points,req.asOf).invested?risk[0]:def[0]);
+   if(points.length<200)throw new Error("TREND_REQUIRES_200_SESSIONS");
+   return alloc(trend200Decision(points.slice(-200),req.asOf).invested?risk[0]:def[0]);
   }
   case "GEM_CLASSIC":{
    if(risk.length!==2||def.length!==2)throw new Error("GEM_INVALID_UNIVERSE");
@@ -83,7 +83,7 @@ export function calculateTacticalAllocation(req:TacticalRequest):TacticalAllocat
   case "RISK_PARITY_ERC_252":{
    if(risk.length<2||def.length!==1)throw new Error("RP_INVALID_UNIVERSE");
    monthly(def[0],13);
-   const estimate=estimateDailyRiskParity(risk.map(id=>({exposure:id,points:series(id).points})),req.asOf,252);
+   const estimate=estimateDailyRiskParity(risk.map(id=>({exposure:id,points:series(id).points.slice(-253)})),req.asOf,252);
    return risk.map((exposure,i)=>({exposure,weight:estimate.weights[i]}));
   }
   default:throw new Error("TACTICAL_UNSUPPORTED_VARIANT");
