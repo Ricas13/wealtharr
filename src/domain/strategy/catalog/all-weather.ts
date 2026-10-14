@@ -16,6 +16,6 @@ export const plugin:StrategyPlugin={
     supportedRegions:[],supportedWrappers:[],
     initialVersion:"DRAFT",realignsResearchOnlyDefinition:false
   },
-  specCard:"docs/strategy-specs/all-weather.md",
-  goldenTests:null
+  specCard:"docs/strategy-specs/group-2-all-weather.md",
+  goldenTests:"tests/strategy-group-2-golden.test.ts"
 };
