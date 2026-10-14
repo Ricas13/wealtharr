@@ -13,7 +13,7 @@ export type CurrencyPolicy = "UNHEDGED" | "GBP_HEDGED" | "LOCAL";
 
 export type ExposureDefinition = {
   id: string;
-  assetClass: "EQUITY" | "BOND" | "CASH" | "COMMODITY";
+  assetClass: "EQUITY" | "BOND" | "CASH" | "COMMODITY" | "MULTI_ASSET";
   /** Nominal daily leverage multiple the exposure is defined with. */
   leverage: number;
   description: string;
@@ -50,6 +50,7 @@ export function isFullyDescribedExposure(exposure: ExposureDefinition | undefine
 }
 
 export const EXPOSURES: readonly ExposureDefinition[] = [
+  {id:"G3_TDF_2050",assetClass:"MULTI_ASSET",leverage:1,description:"Unleveraged target retirement-date 2050 multi-asset fund with its own managed equity/bond glide path",region:"GLOBAL",maturityBand:"ALL_MATURITIES",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Single target-date retirement fund explicitly labelled 2050 vintage; holds global equities and bonds and adjusts internal risk mix by its verified 2050 fund glide path",domicileRequirement:"Only a 2050 target-date fund independently verified eligible for customer wrapper, country and broker; never another retirement vintage"},
   // Group 3 reference-specific, exact economic exposures (no default trading instruments).
   {id:"G3_US_LARGE_CAP_BLEND",assetClass:"EQUITY",leverage:1,description:"United States large-capitalisation blend equities",region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"US large-cap blend market, not total US stocks",domicileRequirement:"Only a fund/security independently verified eligible for the investor's country, wrapper and broker; no ticker substitution or assumed listing"},
   {id:"G3_US_SMALL_CAP_BLEND",assetClass:"EQUITY",leverage:1,description:"United States small-capitalisation blend equities",region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"US small-cap blend, not mid/large-cap stocks",domicileRequirement:"Only a fund/security independently verified eligible for the investor's country, wrapper and broker; no ticker substitution or assumed listing"},
