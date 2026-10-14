@@ -54,16 +54,70 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const accountId = String(locked[0].account_id);
       const primaryAccountId = locked[0].primary_account_id ? String(locked[0].primary_account_id) : null;
 
+      // A split must not be recorded twice for the same account and instrument: the second would
+      // restate units the first already restated (two 2:1 splits turn 10 into 40). Refused when an
+      // unreversed SPLIT already exists inside the window of the confirmed action this one belongs to
+      // ([effective date - 1 day, the next confirmed action's effective date)), and in general when an
+      // unreversed SPLIT of the same ratio exists at or after this instant.
+      const existingSplits = await tx.unsafe(
+        "SELECT s.occurred_at,s.metadata FROM ledger_events s WHERE s.strategy_instance_id=$1 AND s.instrument_id=$2 AND s.event_type='SPLIT' " +
+        "AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=s.id) AND (s.account_id=$3 OR (s.account_id IS NULL AND $3=$4))",
+        [id, input.instrumentId, accountId, primaryAccountId]
+      );
+      if (existingSplits.length) {
+        const priorSplits = existingSplits.map((row) => {
+          const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+          return { atMs: new Date(String(row.occurred_at)).getTime(), to: Number(metadata.to), from: Number(metadata.from) };
+        });
+        const sameRatioAtOrAfter = priorSplits.some((prior) =>
+          Number.isFinite(prior.to) && Number.isFinite(prior.from) && prior.to * input.from === prior.from * input.to && prior.atMs >= occurredAt.getTime());
+        const windows = await tx.unsafe(
+          "SELECT effective_date::text AS effective_date FROM corporate_actions WHERE instrument_id=$1 AND kind='SPLIT' AND status='CONFIRMED' ORDER BY effective_date",
+          [input.instrumentId]
+        );
+        const starts = windows.map((row) => Date.parse(String(row.effective_date).slice(0, 10) + "T00:00:00.000Z")).filter((ms) => Number.isFinite(ms));
+        const inSameWindow = starts.some((start, index) => {
+          const next = starts.slice(index + 1).find((candidate) => candidate > start);
+          const from = start - 86_400_000;
+          const until = next === undefined ? Infinity : next;
+          const at = occurredAt.getTime();
+          return at >= from && at < until && priorSplits.some((prior) => prior.atMs >= from && prior.atMs < until);
+        });
+        if (sameRatioAtOrAfter || inSameWindow) throw new Error("SPLIT_ALREADY_RECORDED");
+      }
+
       // Units already restated by activity after the effective time would be double counted or mixed
       // between pre- and post-split units; refuse rather than guess.
+      // Corrections and the rows they reverse are not activity: a reversed trade must not block a
+      // split, and a reversal row (dated when it was entered) must not look like a later entry.
       const later = await tx.unsafe(
-        "SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND instrument_id=$2 AND occurred_at>$3 AND (account_id=$4 OR (account_id IS NULL AND $4=$5)) LIMIT 1",
+        "SELECT e.occurred_at FROM ledger_events e WHERE e.strategy_instance_id=$1 AND e.instrument_id=$2 AND e.occurred_at>$3 " +
+        "AND e.event_type<>'CORRECTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=e.id) " +
+        "AND (e.account_id=$4 OR (e.account_id IS NULL AND $4=$5))",
         [id, input.instrumentId, occurredAt, accountId, primaryAccountId]
       );
-      if (later[0]) throw new Error("SPLIT_HAS_LATER_ACTIVITY");
+      if (later.length) {
+        // One safe path: a split dated at the effective instant of an administrator-CONFIRMED action
+        // with exactly its ratio, when every later entry is already in post-split units (dated on or
+        // after that instant). The units restated are those held as of the effective instant.
+        const confirmed = await tx.unsafe(
+          "SELECT ratio_to,ratio_from,effective_date::text AS effective_date FROM corporate_actions WHERE instrument_id=$1 AND kind='SPLIT' AND status='CONFIRMED'",
+          [input.instrumentId]
+        );
+        const allowed = confirmed.some((action) => {
+          const effectiveMs = Date.parse(String(action.effective_date).slice(0, 10) + "T00:00:00.000Z");
+          if (!Number.isFinite(effectiveMs)) return false;
+          if (occurredAt.getTime() < effectiveMs - 86_400_000 || occurredAt.getTime() > effectiveMs) return false;
+          if (input.to * Number(action.ratio_from) !== input.from * Number(action.ratio_to)) return false;
+          return later.every((row) => new Date(String(row.occurred_at)).getTime() >= effectiveMs);
+        });
+        if (!allowed) throw new Error("SPLIT_HAS_LATER_ACTIVITY");
+      }
 
+      // Units as of the split's instant: reversed rows and the reversals themselves are left out.
       const rows = await tx.unsafe(
-        "SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events WHERE strategy_instance_id=$1 AND occurred_at<=$2 ORDER BY occurred_at,created_at,id",
+        "SELECT e.account_id,e.event_type,e.currency,e.cash_amount,e.fee_amount,e.instrument_id,e.quantity FROM ledger_events e WHERE e.strategy_instance_id=$1 AND e.occurred_at<=$2 " +
+        "AND e.event_type<>'CORRECTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=e.id) ORDER BY e.occurred_at,e.created_at,e.id",
         [id, occurredAt]
       );
       const position = foldAccountLedger(rows, accountId, primaryAccountId, String(locked[0].currency));
@@ -110,6 +164,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       SPLIT_RATIO_INVALID: ["Enter the split as two different whole numbers: new units for every old units, such as 2 for 1, or 1 for 10 for a reverse split.", 400],
       SPLIT_NOT_EXACT: ["That split would leave a fractional unit count that is not exact to 8 decimal places (brokers pay cash in lieu of the fraction). Enter the quantity your broker shows after the split through a reconciliation or adjustment instead.", 409],
       SPLIT_PRECISION_UNSUPPORTED: ["That split would leave a unit count larger than the ledger stores.", 409],
+      SPLIT_ALREADY_RECORDED: ["This split is already recorded for this account. Reverse it with a correction before recording it again.", 409],
       SPLIT_HAS_LATER_ACTIVITY: ["There are later entries for this instrument. Record the split at the time it took effect, or reverse the later entries first.", 409],
       LEDGER_WOULD_OVERDRAW_CASH: ["That would take cash below zero on that date.", 409],
       LEDGER_WOULD_OVERSELL: ["That would leave a later sale without the units it sold.", 409]

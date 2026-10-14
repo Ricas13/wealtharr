@@ -54,6 +54,22 @@ describe.skipIf(!url)("admin two-step requirement",()=>{
     await expect(requireAdmin()).resolves.toMatchObject({id:adminId});
   });
 
+  it("requireAdminWithMfa demands enrolled two-step sign-in passed in this session, whatever the setting",async()=>{
+    delete process.env.ADMIN_MFA_REQUIRED;
+    const { requireAdmin,requireAdminWithMfa }=await import("@/lib/session");
+    // Not enrolled: an ordinary admin gate lets them through while the setting is off, this one does not.
+    await sql!.unsafe("UPDATE users SET mfa_enabled_at=NULL WHERE id=$1",[adminId]);
+    current.mfa=false;
+    await expect(requireAdmin()).resolves.toMatchObject({id:adminId});
+    await expect(requireAdminWithMfa()).rejects.toThrow("MFA_REQUIRED");
+    // Enrolled but the session never passed the second factor.
+    await sql!.unsafe("UPDATE users SET mfa_enabled_at=now() WHERE id=$1",[adminId]);
+    await expect(requireAdminWithMfa()).rejects.toThrow();
+    // Enrolled and passed in this session.
+    current.mfa=true;
+    await expect(requireAdminWithMfa()).resolves.toMatchObject({id:adminId});
+  });
+
   it("still refuses an ordinary user, whatever the setting",async()=>{
     process.env.ADMIN_MFA_REQUIRED="true";
     await sql!.unsafe("UPDATE users SET role='USER' WHERE id=$1",[adminId]);

@@ -2,6 +2,17 @@ import {describe,expect,it} from "vitest";
 import {readFileSync} from "node:fs";
 
 describe("Oracle Compose scheduler boundary",()=>{
+  it("repairs public routing without restarting the existing database",()=>{
+    const script=readFileSync("scripts/repair-public-routing.sh","utf8");
+    expect(script).toContain("docker-compose.oracle-public.yml");
+    expect(script).toContain("--no-deps --no-build --force-recreate app");
+    expect(script).toContain("docker network inspect media_net");
+    expect(script).toContain("traefik.http.routers.wealtharr.rule");
+    expect(script).not.toContain("db:migrate");
+    const localhost=readFileSync("docker-compose.oracle-localhost3001.yml","utf8");
+    expect(localhost).toContain("NEVER use it to upgrade the public hostname");
+  });
+
   it("does not inject all application credentials into the scheduler",()=>{
     const config=readFileSync("docker-compose.oracle.yml","utf8");
     const scheduler=config.split("\n  scheduler:\n")[1]?.split("\n  backup:\n")[0];

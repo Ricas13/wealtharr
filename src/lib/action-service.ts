@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import Decimal from "decimal.js";
 import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
+import { assessCorporateActions, corporateActionMessage } from "@/lib/corporate-action-guard";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
@@ -111,6 +112,13 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   if(requiredRelease[0]){dataStatus="MISSING";dataMessage="Strategy version "+String(requiredRelease[0].version)+" is a required rules update. Update this strategy before new financial actions are calculated.";}
   if(effectiveCash.lt(0)){dataStatus="MISSING";dataMessage="This scenario needs more cash than is currently available. Reduce the withdrawal or sell investments first.";}
 
+  // Administrator-confirmed splits (per account, per action): see src/lib/corporate-action-guard.ts.
+  // `priceObservedAt` is when the price about to be used was observed.
+  const confirmedSplitBlock=async(instrumentId:string,priceObservedAt:Date|null):Promise<string|null>=>{
+    const verdict=await assessCorporateActions(db,{strategyInstanceId,instrumentId,primaryAccountId,priceObservedAt});
+    return verdict.kind==="OK"?null:corporateActionMessage(verdict);
+  };
+
   for(const account of accounts){
     const accountId=String(account.id);
     const accountName=String(account.name);
@@ -151,6 +159,13 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         (!manualPrice||!manualAt||manualAt<=rejectedAt)){
         dataStatus="MISSING";
         dataMessage="The latest provider quote was rejected as implausible. Verify the price, corporate action and units before trading.";
+        continue;
+      }
+      const usedPriceAt=manualPrice?manualAt:acceptedAt;
+      const splitBlock=await confirmedSplitBlock(instrumentId,usedPriceAt&&Number.isFinite(usedPriceAt.getTime())?usedPriceAt:null);
+      if(splitBlock){
+        dataStatus="MISSING";
+        dataMessage=splitBlock;
         continue;
       }
       // A split changes the unit basis: never value post-split units using older prices or overrides.
@@ -255,9 +270,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // Unit price, execution-account cash and execution-account holding of one leg, for order sizing
   // (execution-residue.ts). Mirrors order sizing below (same account ranking, mapping, override and quote
   // rules); null means "unknown" and fails closed.
-  // NOTE for the stock-split guard (PR #94): whichever of that PR and this one merges second must apply the
-  // split guard to the price returned here, exactly as the order-sizing path below does, so a post-split quote
-  // is never used to size a unit.
+  // Residual-order sizing retains the administrator-confirmed split guard.
   const legExecutionFor=async(economicExposure:string,leverageRaw:unknown,side:"BUY"|"SELL"):Promise<{price:Decimal;buyCash:Decimal;heldUnits:Decimal;accountId:string}|null>=>{
     try{
       const leverage=exposureLeverage(economicExposure,leverageRaw);
@@ -301,6 +314,10 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         const quoteAt=quote.observed_at?new Date(quote.observed_at):null;
         const overrideAt=override?.observed_at?new Date(override.observed_at):null;
         if(rejectedAt&&(!quoteAt||rejectedAt>=quoteAt)&&(!override||!overrideAt||overrideAt<=rejectedAt))return null;
+        // Residual order sizing enforces the same per-account confirmed-split guard as final sizing.
+        const sizingDate=override?.manual_value!=null?overrideAt:quoteAt;
+        if(quote.instrument_id&&await confirmedSplitBlock(String(quote.instrument_id),
+          sizingDate&&Number.isFinite(sizingDate.getTime())?sizingDate:null))return null;
         if(!price||String(quote.observation_currency??quote.currency)!==String(instance.currency))return null;
         if(!observedAt||!Number.isFinite(new Date(observedAt).getTime()))return null;
         const ageHours=(Date.now()-new Date(observedAt).getTime())/3600000;
@@ -424,8 +441,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       const overrideAt=chosenOverride?.observed_at?new Date(chosenOverride.observed_at):null;
       const rejectedNewer=Boolean(rejectedAt&&(!quoteAt||rejectedAt>=quoteAt)&&
         (!chosenOverride||!overrideAt||overrideAt<=rejectedAt));
+      const sizingPriceAt=chosenOverride?.manual_value!=null?overrideAt:quoteAt;
+      const sizingUnrecordedSplit=quote?.instrument_id
+        ?await confirmedSplitBlock(String(quote.instrument_id),sizingPriceAt&&Number.isFinite(sizingPriceAt.getTime())?sizingPriceAt:null)
+        :null;
       if(rejectedNewer){
         proposal={actionType:"DATA_REQUIRED",title:"Verify rejected price",instruction:"The latest provider quote was rejected as implausible. Resolve the discrepancy before recording any trade.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
+      }else if(sizingUnrecordedSplit){
+        proposal={actionType:"DATA_REQUIRED",title:"Record the stock split",instruction:sizingUnrecordedSplit,explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(!effectivePrice){
         proposal={actionType:"DATA_REQUIRED",title:"Price needed before you trade",instruction:"A current price is not available for the instrument this strategy would use.",explanation:proposal.explanation,nextState:state,confidence:"LOW",dueAt:proposal.dueAt};
       }else if(String(quote.observation_currency??quote.currency)!==String(instance.currency)){

@@ -1,3 +1,6 @@
+# WARNING: HOST-ONLY reverse-proxy mode, NOT Wealtharr's Traefik Docker router.
+# This overlay omits media_net/Traefik labels. NEVER use it to upgrade the public hostname.
+# Restore the original public route: bash scripts/repair-public-routing.sh
 # Oracle upgrade compatibility overlay for existing Wealtharr on 127.0.0.1:3001.
 # Combine ONLY with docker-compose.oracle.yml; do not layer the old untracked
 # docker-compose.staging.yml or the network-attached Traefik overlay over this file.

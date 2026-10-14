@@ -17,7 +17,8 @@
     "db:verify-roles": "tsx scripts/verify-db-roles.ts",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build",
     "test:e2e": "playwright test",
-    "launch:preflight": "tsx scripts/launch-preflight.ts"
+    "launch:preflight": "tsx scripts/launch-preflight.ts",
+    "release:smoke": "node scripts/release-acceptance.mjs"
   },
   "dependencies": {
     "bcryptjs": "3.0.2",
