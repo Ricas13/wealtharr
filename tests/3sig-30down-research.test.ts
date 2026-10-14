@@ -20,7 +20,10 @@ describe("historical 3Sig 30 Down source evidence, research only",()=>{
     const result=evaluateHistoricalThreeSig30Down({quarterIndex:16,spyQuarterClose:"90",precedingEightQuarterCloses:closes,proposedDirection:"SELL",state:{initiatedQuarterIndex:8,skippedSellSignals:1}});
     expect(result.suppressSell).toBe(false);
   });
-  it("fails closed on an ambiguous new crash after the historical two-year protection expires",()=>{\n    expect(()=>evaluateHistoricalThreeSig30Down({quarterIndex:17,spyQuarterClose:"65",precedingEightQuarterCloses:closes,proposedDirection:"SELL",state:{initiatedQuarterIndex:8,skippedSellSignals:4}})).toThrow("3SIG_PROTECTION_REARM_NEEDS_RECONCILIATION");\n  });\n  it("fails closed without the required full priced history",()=>{
+  it("fails closed on an ambiguous new crash after the historical two-year protection expires",()=>{
+    expect(()=>evaluateHistoricalThreeSig30Down({quarterIndex:17,spyQuarterClose:"65",precedingEightQuarterCloses:closes,proposedDirection:"SELL",state:{initiatedQuarterIndex:8,skippedSellSignals:4}})).toThrow("3SIG_PROTECTION_REARM_NEEDS_RECONCILIATION");
+  });
+  it("fails closed without the required full priced history",()=>{
     expect(()=>evaluateHistoricalThreeSig30Down({quarterIndex:9,spyQuarterClose:"65",precedingEightQuarterCloses:["100"],proposedDirection:"SELL",state})).toThrow("3SIG_REQUIRES_EIGHT");
   });
 });
