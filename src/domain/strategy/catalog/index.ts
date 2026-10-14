@@ -26,6 +26,7 @@ import {plugin as dualMomentum} from "./dual-momentum";
 import {plugin as gtaaIvy} from "./gtaa-ivy";
 import {plugin as paa} from "./paa";
 import {plugin as vaa} from "./vaa";
+import {plugin as vaaG12} from "./vaa-g12";
 import {plugin as threeSig} from "./3sig";
 import {plugin as sixSig} from "./6sig";
 
@@ -43,7 +44,7 @@ export const STRATEGY_PLUGINS:readonly StrategyPlugin[]=[
   coffeehouse,coreFour,swensen,
   merrimanUltimate,incomeSig,twoFundsForLife,bernsteinNoBrainer,larryPortfolio,pinwheel,trinity,
   trend200d,riskParity,
-  dualMomentum,gtaaIvy,paa,vaa,
+  dualMomentum,gtaaIvy,paa,vaa,vaaG12,
   threeSig,sixSig
 ];
 
