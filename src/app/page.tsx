@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {sql} from "@/lib/db";
 import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
+import {exactPriceString} from "@/domain/currency-money";
 import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
 import {assertCuratedRules} from "@/domain/strategy/curated-release";
 import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-market-mappings";
@@ -90,7 +91,7 @@ export default async function HomePage(){
   const brand=process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr";
   const origin=siteOrigin(process.env.NEXT_PUBLIC_APP_URL).toString();
   const offered=plans.find(plan=>plan.monthlyMinor!==null&&plan.monthlyMinor>0);
-  const offer=offered?{offers:{"@type":"Offer",price:(offered.monthlyMinor!/100).toFixed(2),priceCurrency:offered.currency}}:{};
+  const offer=offered?{offers:{"@type":"Offer",price:exactPriceString(offered.monthlyMinor!,offered.currency),priceCurrency:offered.currency}}:{};
   const schema={"@context":"https://schema.org","@graph":[
     {"@type":"WebSite",name:brand,url:origin},
     {"@type":"SoftwareApplication",name:brand,applicationCategory:"FinanceApplication",
