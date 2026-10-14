@@ -21,7 +21,7 @@ export async function POST(request:Request){
   const total=Number(totals[0]?.c??0);
   const window=customerLookupWindow(total,input.page);
   const matches=total?await sql.unsafe(
-   "SELECT u.email,u.country,u.role,coalesce(p.display_name,'No subscription') AS plan,"+
+   "SELECT u.id,u.email,u.country,u.role,coalesce(p.display_name,'No subscription') AS plan,"+
    "coalesce(s.status,'Unassigned') AS status FROM users u "+
    "LEFT JOIN subscriptions s ON s.user_id=u.id LEFT JOIN plans p ON p.id=s.plan_id "+
    "WHERE u.deleted_at IS NULL AND strpos(lower(u.email),lower($1::text))>0 "+
@@ -31,7 +31,7 @@ export async function POST(request:Request){
   return Response.json({
    total,page:window.page,totalPages:window.pages,
    customers:matches.map(r=>({
-    email:String(r.email),country:String(r.country??"—"),role:String(r.role??"USER"),
+    id:String(r.id),email:String(r.email),country:String(r.country??"—"),role:String(r.role??"USER"),
     plan:String(r.plan),status:String(r.status)
    }))
   },{headers:{"cache-control":"no-store"}});
