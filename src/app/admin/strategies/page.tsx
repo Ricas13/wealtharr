@@ -2,6 +2,7 @@ import Link from "next/link";
 import {requireAdminPage} from "@/lib/session";
 import {sql} from "@/lib/db";
 import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
+import {isMethodComplete} from "@/domain/strategy/method-complete";
 import {assertCuratedRules} from "@/domain/strategy/curated-release";
 import {assertCustomerPublishableEngine} from "@/domain/strategy/registry";
 import {assessStrategyMarket} from "@/domain/strategy/market-eligibility";
@@ -40,6 +41,7 @@ export default async function StrategiesAdmin(){
    const engine=String(def?.engine??profile?.engine??"UNAVAILABLE");
    const base={key,name,family:String(def?.family??"RESEARCH"),engine,enabled:def?.enabled===true,
      version:release?.version==null?null:String(release.version),rules:profile?.rules??(plugin?curatedRelease(plugin)?.summary:undefined)??null};
+   if(!isMethodComplete(plugin))return {...base,status:"RESEARCH",reason:"The strategy rules and independent release evidence are not yet complete."};
    if(engine==="RESEARCH_PENDING"||!profile&&!def)return {...base,status:"RESEARCH",reason:"Source rules or calculation engine not yet implemented."};
    if(!release)return {...base,status:"NO_RELEASE",reason:"No executable published version is installed."};
    try{
@@ -51,7 +53,7 @@ export default async function StrategiesAdmin(){
    const market=assessStrategyMarket(String(release.engine_key),
      (release.config??{}) as Record<string,unknown>,candidates,
      {country:"GB",wrapper:"ISA",currency:"GBP"},asOf);
-   if(!market.supportedMarkets.length)return {...base,status:"NO_MARKET",reason:"A complete UK ISA instrument mapping is required before customer access."};
+   if(!market.supportedMarkets.length)return {...base,status:"NO_MARKET",reason:"At least one complete, verified country/account instrument mapping is required before customer access."};
    return {...base,status:base.enabled?"ENABLED":"READY",reason:base.enabled?"Enabled. User-plan and exact trading eligibility controls remain enforced.":"Code rules match; enable when a complete trading-account mapping exists."};
  }) as CatalogEntry[];
  const published=versions.filter(v=>v.lifecycle_status==="PUBLISHED").length;
