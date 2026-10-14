@@ -30,7 +30,7 @@ function trade(key:string,values:string[],cash="0"){
 
 describe("group 2 independently calculated reference outcomes",()=>{
  it("all-weather: 30/40/15/7.5/7.5, including five-way £10k allocation",()=>{
-   expect(weights("all-weather").map(x=>x.weight)).toEqual(["0.30","0.40","0.15","0.075","0.075"]);
+   expect(weights("all-weather").map(x=>[x.exposure,x.weight])).toEqual([["US_LARGE_CAP","0.30"],["LONG_TREASURY","0.40"],["INTERMEDIATE_TREASURY","0.15"],["GOLD","0.075"],["BROAD_COMMODITIES","0.075"]]);
    expect(initial("all-weather")).toEqual(["3000.00","4000.00","1500.00","750.00","750.00"]);
    expect(trade("all-weather",["3000","4000","1500","750","750"])).toEqual([]);
  });
