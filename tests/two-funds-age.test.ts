@@ -1,20 +1,17 @@
 import {describe,expect,it} from "vitest";
-import {classicTwoFundsAgeWeights} from "../src/domain/strategy/two-funds-age";
+import {moderateTwoFundsWeights} from "../src/domain/strategy/two-funds-age";
 
-describe("Merriman classic age glide-path reference (not trade executable)",()=>{
+describe("Merriman 2FFL Moderate years-to-retirement glide path (research only)",()=>{
   it.each([
-    [20,"0.3000","0.7000"],
-    [30,"0.4500","0.5500"],
-    [40,"0.6000","0.4000"],
-    [50,"0.7500","0.2500"],
-    [60,"0.9000","0.1000"],
-    [66,"0.9900","0.0100"],
-    [67,"1.0000","0.0000"],
-    [70,"1.0000","0.0000"]
-  ])("age %i has exact split", (age,targetDateFund,smallCapValue)=>{
-    expect(classicTwoFundsAgeWeights(age)).toEqual({targetDateFund,smallCapValue});
+    [0,"1.0000","0.0000"],[1,"0.9850","0.0150"],
+    [10,"0.8500","0.1500"],[20,"0.7000","0.3000"],
+    [30,"0.5500","0.4500"],[40,"0.4000","0.6000"],
+    [60,"0.1000","0.9000"],[66,"0.0100","0.9900"],
+    [67,"0.0000","1.0000"],[80,"0.0000","1.0000"]
+  ])("%i years until retirement splits correctly",(years,targetDateFund,smallCapValue)=>{
+    expect(moderateTwoFundsWeights(years)).toEqual({targetDateFund,smallCapValue});
   });
-  it.each([-1,0,19,NaN,21.5,Infinity])("rejects invalid age %s",age=>{
-    expect(()=>classicTwoFundsAgeWeights(age)).toThrow("TWO_FUNDS_AGE_OUT_OF_RANGE");
+  it.each([-1,101,20.5,NaN,Infinity])("invalid years %s fail closed",(years)=>{
+    expect(()=>moderateTwoFundsWeights(years)).toThrow("TWO_FUNDS_YEARS_UNTIL_RETIREMENT_OUT_OF_RANGE");
   });
 });
