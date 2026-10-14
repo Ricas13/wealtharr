@@ -15,7 +15,7 @@ Unleveraged S&P SmallCap 600 exposure (IJR in Kelly's public discussion). Region
 
 ## Owner-decision list
 - Obtain and record dated, legitimately accessed first-party guide for the selected 3Sig revision, with explicit permission/rights analysis for commercial representation.
-- Historical book plan and current Kelly Letter may differ. '30 Down' sell skips, safe-fund selection, buy-budget, post-fill anchor, reset and withdrawal rules require version-specific source verification.
+- The author's freely available 3Sig Quick Start distinguishes the book's 70/30 stock/bond rebalancing trigger from its quarterly 3% target: https://www.jasonkelly.com/reports/3Sig-Quick-Start.pdf . Near-retirement allocation changes are described in the book but not specified by the public summary; therefore do not treat 70/30 as a universal fixed allocation. Historical book plan and current Kelly Letter may differ. '30 Down' sell skips, safe-fund selection, buy-budget, post-fill anchor, reset and withdrawal rules require version-specific source verification.
 - Confirm starting and reset allocations, income/distribution accounting, contribution and withdrawal treatment, partial fills, fees, precision and calendar scheduling.
 - Verify the regional instrument and reserve sleeve; preserve existing immutable versions and historical fills without silent backfills.
 - Until each point is resolved, leave method completeness **INCOMPLETE** and prohibit new activation.
