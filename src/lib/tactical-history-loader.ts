@@ -45,17 +45,19 @@ function certifiedSeries(exposure:string,rows:Row[],currency:string,reviewMonth:
  * ambiguous economic exposure maps to no history. The engine then refuses the trade.
  */
 export async function loadTacticalCertifiedHistory(
- exposures:readonly string[],currency:string,reviewMonth:string,now=new Date(),db:Pick<Sql,"unsafe">=sql
+ exposures:readonly string[],currency:string,reviewMonth:string,mappedLines:readonly {exposure:string;tradingLineId:string}[],now=new Date(),db:Pick<Sql,"unsafe">=sql
 ):Promise<TrustedHistoricalSeries[]>{
  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(reviewMonth)||new Set(exposures).size!==exposures.length)
   throw new Error("TACTICAL_BAD_HISTORY_QUERY");
  const result:TrustedHistoricalSeries[]=[];
  for(const exposure of exposures){
+  const mapped=mappedLines.filter(m=>m.exposure===exposure);
+  if(mapped.length!==1||!mapped[0].tradingLineId)continue;
   const lines=await db.unsafe(
-   "SELECT DISTINCT tl.id FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id "+
-   "WHERE i.economic_exposure=$1 AND upper(tl.currency)=upper($2) AND EXISTS "+
-   "(SELECT 1 FROM price_history h WHERE h.trading_line_id=tl.id AND h.licensed=true)",
-   [exposure,currency]);
+   "SELECT tl.id FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id "+
+   "WHERE tl.id=$1 AND i.economic_exposure=$2 AND upper(tl.currency)=upper($3) "+
+   "AND tl.effective_from<=$4::date AND (tl.effective_to IS NULL OR tl.effective_to>=$4::date)",
+   [mapped[0].tradingLineId,exposure,currency,now.toISOString().slice(0,10)]);
   if(lines.length!==1)continue;
   const rows=await db.unsafe(
    "SELECT to_char(trading_day,'YYYY-MM-DD') AS trading_day,adjusted_close::text AS adjusted_close,"+
