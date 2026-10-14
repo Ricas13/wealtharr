@@ -15,8 +15,9 @@ export const plugin:StrategyPlugin={
     name:"Four-Fund Stocks/Bonds/REIT Reference",family:"FIXED_ALLOCATION",description:"Research-only four-asset profile; source name requires brand licensing",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"DRAFT",realignsResearchOnlyDefinition:true
+    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:true
   },
   specCard:"docs/strategy-specs/group-2-core-four.md",
-  goldenTests:"tests/strategy-group-2-golden.test.ts"
+  goldenTests:"tests/strategy-group-2-golden.test.ts",
+releaseStatus:"COMPLETE"
 };
