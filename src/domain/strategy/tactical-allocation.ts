@@ -64,7 +64,7 @@ export function calculateTacticalAllocation(req:TacticalRequest):TacticalAllocat
     {exposure:def[0],weight:new Decimal(5-active.length).div(5).toString()}].filter(x=>new Decimal(x.weight).gt(0));
   }
   case "PAA_12_A2":{
-   if(risk.length!==12||def.length!==2)throw new Error("PAA_INVALID_UNIVERSE");
+   if(risk.length!==12||def.length!==1)throw new Error("PAA_INVALID_UNIVERSE");
    const allHistory=all.map(id=>({...series(id),points:monthly(id,13).map((p,i)=>{
     const [y,m]=req.reviewMonth.split("-").map(Number);
     return {at:new Date(Date.UTC(y,m-13+i,1)),adjustedClose:p};
