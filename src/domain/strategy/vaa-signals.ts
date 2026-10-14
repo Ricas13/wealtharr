@@ -5,7 +5,7 @@ export type TargetWeight={exposure:string;weight:string};
 export type BreadthVariant="VAA_G4"|"VAA_G12";
 const VARIANTS={
  VAA_G4:{top:1,breadth:1},
- VAA_G12:{top:5,breadth:4}
+ VAA_G12:{top:2,breadth:4}
 } as const;
 export function weighted13612(prices:readonly Decimal[]):Decimal{
  if(prices.length!==13||prices.some(x=>!x.isFinite()||x.lte(0)))throw new Error("INVALID_VAA_HISTORY");
@@ -31,7 +31,7 @@ function seriesPrices(series:TrustedHistoricalSeries,reviewMonth:string):Decimal
   return value;
  });
 }
-/** Research-only reference allocation; never publishes a customer strategy. */
+/** Exact named 2017 VAA-G4/G12 Easy Trading (ET) portfolio allocation. */
 export function vaaAllocation(args:{
  variant:BreadthVariant;offensive:string[];defensive:string[];history:TrustedHistoricalSeries[];
  currency:string;reviewMonth:string;
@@ -50,12 +50,14 @@ export function vaaAllocation(args:{
  const risky=args.offensive.map(exposure=>({exposure,score:score(exposure)})).sort((a,b)=>b.score.cmp(a.score)||a.exposure.localeCompare(b.exposure));
  const safe=args.defensive.map(exposure=>({exposure,score:score(exposure)})).sort((a,b)=>b.score.cmp(a.score)||a.exposure.localeCompare(b.exposure));
  const bad=risky.filter(x=>x.score.lte(0)).length;
- const protective=Decimal.min(1,new Decimal(bad).div(rule.breadth));
- const aggressive=new Decimal(1).minus(protective);
+ // Paper Section 4: CF_ET=(1/T)*floor(bad*T/B), saturated at 1.
+ // Replace the weakest of the initial Top-T slots, do not fractionally shrink them.
+ const safeSlots=Math.min(rule.top,Math.floor(bad*rule.top/rule.breadth));
+ const protective=new Decimal(safeSlots).div(rule.top);
  const weights=new Map<string,Decimal>();
- for(const item of risky.slice(0,rule.top))if(aggressive.gt(0))
-  weights.set(item.exposure,(weights.get(item.exposure)??new Decimal(0)).plus(aggressive.div(rule.top)));
- if(protective.gt(0)){
+ for(const item of risky.slice(0,rule.top-safeSlots))
+  weights.set(item.exposure,(weights.get(item.exposure)??new Decimal(0)).plus(new Decimal(1).div(rule.top)));
+ if(safeSlots>0){
   const winner=safe[0].exposure;
   weights.set(winner,(weights.get(winner)??new Decimal(0)).plus(protective));
  }
