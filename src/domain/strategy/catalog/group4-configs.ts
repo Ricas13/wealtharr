@@ -22,5 +22,6 @@ export type Q4Key=keyof typeof TACTICAL_VERSIONS;
 export function q4Config(key:Q4Key):Record<string,unknown>{
  const row=TACTICAL_VERSIONS[key];
  return {variant:row.variant,riskAssets:[...row.riskAssets],defensiveAssets:[...row.defensiveAssets],
-  reviewFrequency:"MONTHLY",rebalanceThreshold:"0"};
+  reviewFrequency:"MONTHLY",rebalanceThreshold:"0",reviewSchedule:"CALENDAR_MONTH_COMPLETE",
+  reviewTimezone:"America/New_York",reviewCutoffLocal:"09:00"};
 }
