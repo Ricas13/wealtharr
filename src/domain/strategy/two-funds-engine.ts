@@ -40,7 +40,7 @@ export const twoFundsEngine:StrategyEngine={
       instruction:"Review annually as the retirement horizon shortens.",explanation:[],nextState:ctx.state,
       confidence:"HIGH",dueAt:ctx.nextReviewAt};
     const targets=allocations.map(a=>({...a,w:new Decimal(a.weight)}));
-    const allowed=new Set(targets.map(a=>a.exposure));
+    const allowed=new Set<string>(targets.map(a=>a.exposure));
     if(ctx.exposures.some(p=>!allowed.has(p.economicExposure)&&!p.value.eq(0)))
       return blocked(ctx,"Unclassified holdings must be reconciled.");
     if(ctx.exposures.some(p=>!p.value.isFinite()||p.value.lt(0))||!ctx.cash.isFinite()||ctx.cash.lt(0))
