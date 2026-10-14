@@ -1,5 +1,6 @@
 "use client";
 import {useMemo,useState} from "react";
+import Link from "next/link";
 import {filterAdminCustomerRows,type AdminCustomerRow,type CustomerQuickFilter} from "@/domain/admin-customer-filters";
 
 export function AdminCustomersTable({rows}:{rows:AdminCustomerRow[]}){
@@ -31,7 +32,7 @@ export function AdminCustomersTable({rows}:{rows:AdminCustomerRow[]}){
   <div className="admin-studio-table-wrap" role="region" tabIndex={0} aria-label="Customer directory table">
    <table className="admin-studio-table"><thead><tr><th scope="col">CUSTOMER</th><th scope="col">PLAN</th><th scope="col">STATUS</th><th scope="col">STRATEGIES</th><th scope="col">REVIEW</th></tr></thead>
    <tbody>{visible.map(user=><tr key={user.email}>
-    <td><strong>{user.email}</strong><small>{user.country} · {user.role}</small></td>
+    <td><strong>{user.id?<Link href={"/admin/users/"+user.id} aria-label={"Manage "+user.email}>{user.email}</Link>:user.email}</strong><small>{user.country} · {user.role}</small></td>
     <td>{user.plan}</td><td>{user.status}</td>
     <td>{user.active}</td><td>{user.attention>0?<span className="admin-studio-release-state is-review">{user.attention} need attention</span>:<span className="admin-studio-release-state is-live">No alerts</span>}</td>
    </tr>)}</tbody></table>
