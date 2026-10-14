@@ -48,6 +48,8 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
   const notes: Array<{ tradingLineId: string; code: string; corporateActionId: string }> = [];
 
   try {
+    // A proposed corporate action that no second admin approved within its window lapses.
+    await sql.unsafe("UPDATE corporate_actions SET status='REVOKED',revoked_at=now() WHERE status='PENDING' AND expires_at<=now()");
     const lines = await sql.unsafe(
       // Least recently attempted first (never-attempted lines lead). Every attempt is stamped, so a
       // deadline-cut run resumes with the lines it did not reach and a symbol that keeps failing rotates
@@ -117,13 +119,18 @@ export async function refreshMarketData(options: { deadline?: number; concurrenc
                 [line.id, effectiveStart]
               );
               const post = await sql.unsafe(
-                "SELECT price FROM market_data_observations WHERE trading_line_id=$1 AND observed_at>=$2::timestamptz ORDER BY observed_at DESC LIMIT 1",
+                "SELECT price FROM market_data_observations WHERE trading_line_id=$1 AND observed_at>=$2::timestamptz ORDER BY observed_at DESC LIMIT 500",
                 [line.id, effectiveStart]
+              );
+              const already = await sql.unsafe(
+                "SELECT 1 FROM market_data_observations WHERE trading_line_id=$1 AND explained_by_corporate_action_id=$2 LIMIT 1",
+                [line.id, r.id]
               );
               candidates.push({
                 action: { id: String(r.id), to: Number(r.ratio_to), from: Number(r.ratio_from), effectiveDate },
                 preReference: pre[0] ? { price: String(pre[0].price), observedAt: new Date(pre[0].observed_at) } : null,
-                latestOnOrAfterEffective: post[0] ? { price: String(post[0].price) } : null
+                postEffectivePrices: post.map((p) => String(p.price)),
+                alreadyExplained: already.length > 0
               });
             }
             explained = explainingCorporateAction(observation.price, observation.observedAt, candidates);

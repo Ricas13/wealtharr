@@ -281,16 +281,19 @@ export const corporateActions = pgTable("corporate_actions", {
   effectiveDate: date("effective_date").notNull(),
   status: text("status").notNull().default("CONFIRMED"),
   evidence: jsonb("evidence").notNull().default(sql`'{}'::jsonb`),
+  // PENDING (high-risk ratio awaiting a DIFFERENT admin) | CONFIRMED | REVOKED; see migration 0057.
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
-  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull().defaultNow(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => [
   // Also in SQL: CHECK ratio_to/ratio_from BETWEEN 1 AND 1000, ratio_to <> ratio_from, gcd(ratio_to, ratio_from) = 1.
-  uniqueIndex("corporate_actions_confirmed_unique")
+  uniqueIndex("corporate_actions_open_unique")
     .on(t.instrumentId, t.kind, t.effectiveDate, t.ratioTo, t.ratioFrom)
-    .where(sql`${t.status} = 'CONFIRMED'`),
+    .where(sql`${t.status} IN ('PENDING','CONFIRMED')`),
   index("corporate_actions_instrument_idx").on(t.instrumentId, t.effectiveDate).where(sql`${t.status} = 'CONFIRMED'`),
   check("corporate_actions_ratio_range", sql`${t.ratioTo} BETWEEN 1 AND 1000 AND ${t.ratioFrom} BETWEEN 1 AND 1000`),
   check("corporate_actions_ratio_differs", sql`${t.ratioTo} <> ${t.ratioFrom}`),

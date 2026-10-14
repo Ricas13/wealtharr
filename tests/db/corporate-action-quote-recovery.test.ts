@@ -416,4 +416,83 @@ describe.skipIf(!url)("corporate-action-explained quote recovery through the mar
     expect(await observations(f), await runInfo()).toEqual([100, 50]);
     await resumed(recorder.instanceId);
   });
+
+  // ---- revocation keeps the restored reference in force, however old --------------------------------
+
+  const ageEverything = async (f: Fixture) =>
+    sql!.unsafe("UPDATE market_data_observations SET observed_at=observed_at-interval '9 days' WHERE trading_line_id=$1", [f.lineId]);
+
+  it("after a mistaken 1:100 is revoked 9 days later, the same 8000 quote is still rejected", async () => {
+    const f = await makeFixture("80", { refObservedSql: "now()-interval '1 day'" });
+    await makeHolder(f.instrumentId);
+    const actionId = await confirmAction(f.instrumentId, 1, 100);
+    feed.prices[f.symbol] = "8000";
+    await refresh();
+    expect(await observations(f), await runInfo()).toEqual([80, 8000]);
+    // Nine days pass: the pre-split reference is now older than the 7-day reference window.
+    await ageEverything(f);
+    const revoked = await callRoute({ action: "revoke", id: actionId, reason: "The notice described a currency change, not a split." });
+    expect(revoked.status, JSON.stringify(revoked.json)).toBe(200);
+    expect(await observations(f)).toEqual([80]);
+    expect((await rejection(f))[0].reason).toBe("CORPORATE_ACTION_REVOKED");
+    await refresh();
+    expect(await observations(f), await runInfo()).toEqual([80]);
+    expect((await rejection(f))[0].reason).toBe("IMPLAUSIBLE_MOVE");
+  });
+
+  it("after a genuine 2:1 is revoked by mistake 9 days later, the post-split price is rejected until it is re-confirmed", async () => {
+    const f = await makeFixture("100", { refObservedSql: "now()-interval '1 day'" });
+    const bystander = await makeHolder(f.instrumentId);
+    const actionId = await confirmAction(f.instrumentId, 2, 1);
+    feed.prices[f.symbol] = "50";
+    await refresh();
+    expect(await observations(f)).toEqual([100, 50]);
+    await ageEverything(f);
+    const revoked = await callRoute({ action: "revoke", id: actionId, reason: "Revoked by mistake while reviewing the list." });
+    expect(revoked.status).toBe(200);
+    await refresh();
+    expect(await observations(f), await runInfo()).toEqual([100]);
+    expect((await rejection(f))[0].reason).toBe("IMPLAUSIBLE_MOVE");
+    // The bystander is not valued at 50 x 10 (500 instead of 1000): the rejected quote blocks it.
+    const action = await decide(bystander.instanceId);
+    expect(String(action.action_type), String(action.instruction)).toBe("DATA_REQUIRED");
+    // Re-confirming (a new action) lets the same quote be explained again.
+    const again = await create(f.instrumentId, 2, 1);
+    expect(again.status, JSON.stringify(again.json)).toBe(200);
+    await refresh();
+    expect(await observations(f), await runInfo()).toEqual([100, 50]);
+  });
+
+  // ---- a PENDING proposal does nothing -----------------------------------------------------------
+
+  it("lets a PENDING proposal neither explain a quote nor block a strategy", async () => {
+    const f = await makeFixture("100");
+    const holder = await makeHolder(f.instrumentId);
+    await sql!.unsafe(
+      "INSERT INTO corporate_actions (instrument_id,kind,ratio_to,ratio_from,effective_date,status,evidence,created_by,confirmed_by,confirmed_at,expires_at) VALUES ($1,'SPLIT',2,1,$2::date,'PENDING','{}'::jsonb,$3,NULL,NULL,now()+interval '7 days')",
+      [f.instrumentId, TODAY, admin.id]
+    );
+    feed.prices[f.symbol] = "50";
+    await refresh();
+    expect(await observations(f)).toEqual([100]);
+    expect((await rejection(f))[0].reason).toBe("IMPLAUSIBLE_MOVE");
+    expect(await verdict(holder, f.instrumentId, new Date())).toEqual({ kind: "OK" });
+  });
+
+  // ---- no double application after the price drifted ---------------------------------------------
+
+  it("does not re-explain a 50 print after the price drifted 100 -> 50 -> 30", async () => {
+    const f = await makeFixture("100");
+    await makeHolder(f.instrumentId);
+    await confirmAction(f.instrumentId, 2, 1);
+    feed.prices[f.symbol] = "50";
+    await refresh();
+    feed.prices[f.symbol] = "30";
+    await refresh();
+    expect(await observations(f), await runInfo()).toEqual([100, 50, 30]);
+    feed.prices[f.symbol] = "50";
+    await refresh();
+    expect(await observations(f), await runInfo()).toEqual([100, 50, 30]);
+    expect((await rejection(f))[0].reason).toBe("IMPLAUSIBLE_MOVE");
+  });
 });

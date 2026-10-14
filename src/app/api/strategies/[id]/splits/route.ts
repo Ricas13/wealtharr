@@ -56,14 +56,36 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
       // Units already restated by activity after the effective time would be double counted or mixed
       // between pre- and post-split units; refuse rather than guess.
+      // Corrections and the rows they reverse are not activity: a reversed trade must not block a
+      // split, and a reversal row (dated when it was entered) must not look like a later entry.
       const later = await tx.unsafe(
-        "SELECT id FROM ledger_events WHERE strategy_instance_id=$1 AND instrument_id=$2 AND occurred_at>$3 AND (account_id=$4 OR (account_id IS NULL AND $4=$5)) LIMIT 1",
+        "SELECT e.occurred_at FROM ledger_events e WHERE e.strategy_instance_id=$1 AND e.instrument_id=$2 AND e.occurred_at>$3 " +
+        "AND e.event_type<>'CORRECTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=e.id) " +
+        "AND (e.account_id=$4 OR (e.account_id IS NULL AND $4=$5))",
         [id, input.instrumentId, occurredAt, accountId, primaryAccountId]
       );
-      if (later[0]) throw new Error("SPLIT_HAS_LATER_ACTIVITY");
+      if (later.length) {
+        // One safe path: a split dated at the effective instant of an administrator-CONFIRMED action
+        // with exactly its ratio, when every later entry is already in post-split units (dated on or
+        // after that instant). The units restated are those held as of the effective instant.
+        const confirmed = await tx.unsafe(
+          "SELECT ratio_to,ratio_from,effective_date::text AS effective_date FROM corporate_actions WHERE instrument_id=$1 AND kind='SPLIT' AND status='CONFIRMED'",
+          [input.instrumentId]
+        );
+        const allowed = confirmed.some((action) => {
+          const effectiveMs = Date.parse(String(action.effective_date).slice(0, 10) + "T00:00:00.000Z");
+          if (!Number.isFinite(effectiveMs)) return false;
+          if (occurredAt.getTime() < effectiveMs - 86_400_000 || occurredAt.getTime() > effectiveMs) return false;
+          if (input.to * Number(action.ratio_from) !== input.from * Number(action.ratio_to)) return false;
+          return later.every((row) => new Date(String(row.occurred_at)).getTime() >= effectiveMs);
+        });
+        if (!allowed) throw new Error("SPLIT_HAS_LATER_ACTIVITY");
+      }
 
+      // Units as of the split's instant: reversed rows and the reversals themselves are left out.
       const rows = await tx.unsafe(
-        "SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity FROM ledger_events WHERE strategy_instance_id=$1 AND occurred_at<=$2 ORDER BY occurred_at,created_at,id",
+        "SELECT e.account_id,e.event_type,e.currency,e.cash_amount,e.fee_amount,e.instrument_id,e.quantity FROM ledger_events e WHERE e.strategy_instance_id=$1 AND e.occurred_at<=$2 " +
+        "AND e.event_type<>'CORRECTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=e.id) ORDER BY e.occurred_at,e.created_at,e.id",
         [id, occurredAt]
       );
       const position = foldAccountLedger(rows, accountId, primaryAccountId, String(locked[0].currency));

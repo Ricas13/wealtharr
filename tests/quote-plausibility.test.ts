@@ -84,7 +84,7 @@ describe("explainingCorporateAction",()=>{
  const pre={price:"100",observedAt:new Date("2026-10-09T16:00:00Z")};
  const quoteAt=new Date("2026-10-12T10:00:00Z");
  const action=(effectiveDate:string,to=2,from=1,id="a1")=>({id,to,from,effectiveDate});
- const cand=(a:ReturnType<typeof action>,preReference:{price:string;observedAt:Date}|null=pre,latestOnOrAfterEffective:{price:string}|null=null)=>({action:a,preReference,latestOnOrAfterEffective});
+ const cand=(a:ReturnType<typeof action>,preReference:{price:string;observedAt:Date}|null=pre,postEffectivePrices:string[]=[],alreadyExplained=false)=>({action:a,preReference,postEffectivePrices,alreadyExplained});
  it("explains the halved price of a 2:1 split effective on the quote date, with a pre-effective reference",()=>{
   const a=action("2026-10-12");
   expect(explainingCorporateAction("50",quoteAt,[cand(a)])).toBe(a);
@@ -105,13 +105,22 @@ describe("explainingCorporateAction",()=>{
  });
  it("accepts a lagging provider: 100 stamped on the effective day does not become the reference",()=>{
   // 100 was accepted on 10-12 (latest on/after the effective date); the pre-effective reference is still 100.
-  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12"),pre,{price:"100"})])).not.toBeNull();
+  expect(explainingCorporateAction("50",quoteAt,[cand(action("2026-10-12"),pre,["100"])])).not.toBeNull();
  });
  it("never applies an action twice once the post-split price has been adopted",()=>{
   // Accepted 50 on/after the effective date; 25 is not within 5% of 100 x 1 / 2 either.
-  expect(explainingCorporateAction("25",new Date("2026-10-13T10:00:00Z"),[cand(action("2026-10-12"),pre,{price:"50"})])).toBeNull();
+  expect(explainingCorporateAction("25",new Date("2026-10-13T10:00:00Z"),[cand(action("2026-10-12"),pre,["50"])])).toBeNull();
   // And a quote that would match is not "explained" again: the post-split price is already adopted.
-  expect(explainingCorporateAction("50",new Date("2026-10-13T10:00:00Z"),[cand(action("2026-10-12"),pre,{price:"50"})])).toBeNull();
+  expect(explainingCorporateAction("50",new Date("2026-10-13T10:00:00Z"),[cand(action("2026-10-12"),pre,["50"])])).toBeNull();
+ });
+ it("does not re-explain a 50 print after the price drifted 100 -> 50 -> 30",()=>{
+  // The 50 was already adopted (an accepted observation matches the band) even though the latest is 30.
+  const later=new Date("2026-10-14T10:00:00Z");
+  expect(explainingCorporateAction("50",later,[cand(action("2026-10-12"),pre,["30","50"])])).toBeNull();
+  // Or the action has already explained an observation of this line.
+  expect(explainingCorporateAction("50",later,[cand(action("2026-10-12"),pre,["30"],true)])).toBeNull();
+  // Without either, the same print is explained.
+  expect(explainingCorporateAction("50",later,[cand(action("2026-10-12"),pre,["30"])])).not.toBeNull();
  });
  it("does not explain an unrelated move, a x100 pence/pounds error or a stub price",()=>{
   expect(explainingCorporateAction("50",quoteAt,[])).toBeNull();

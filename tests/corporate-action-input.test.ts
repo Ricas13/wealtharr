@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { corporateActionIssue, corporateActionRequestSchema, isPowerOfTenRatio, reduceRatio } from "@/domain/corporate-action-input";
+import { corporateActionIssue, corporateActionRequestSchema, isPowerOfTenRatio, reduceRatio, requiresSecondAdmin } from "@/domain/corporate-action-input";
 
 const base = {
   action: "create" as const,
@@ -48,5 +48,18 @@ describe("corporateActionIssue", () => {
   });
   it("refuses a ratio that does not change the units", () => {
     expect(corporateActionIssue(parse({ ...base, ratioTo: 2, ratioFrom: 2 }), today)).toMatch(/change the number of units/);
+  });
+});
+
+describe("requiresSecondAdmin", () => {
+  it("is true for powers of ten and for any reduced term above 50, either way", () => {
+    for (const [to, from] of [[10, 1], [100, 1], [1, 10], [1, 1000], [51, 1], [1, 51], [200, 2], [3, 200], [60, 7]]) {
+      expect(requiresSecondAdmin(to, from), `${to}:${from}`).toBe(true);
+    }
+  });
+  it("is false for ordinary ratios, including a non-reduced one that reduces to one", () => {
+    for (const [to, from] of [[2, 1], [3, 2], [1, 3], [5, 1], [20, 1], [50, 1], [1, 50], [100, 50], [4, 2]]) {
+      expect(requiresSecondAdmin(to, from), `${to}:${from}`).toBe(false);
+    }
   });
 });

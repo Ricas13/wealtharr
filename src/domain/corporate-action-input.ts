@@ -30,7 +30,10 @@ export const corporateActionRequestSchema = z.discriminatedUnion("action", [
     evidence: z.object({ sourceUrl: httpsUrl, retrievedAt: isoDate, note: noteText }),
     confirmPowerOfTenRisk: z.boolean().optional()
   }),
-  z.object({ action: z.literal("revoke"), id: z.string().uuid(), reason: noteText })
+  // Reject a PENDING proposal or revoke a CONFIRMED action (either admin, with a reason).
+  z.object({ action: z.literal("revoke"), id: z.string().uuid(), reason: noteText }),
+  // A DIFFERENT admin turns a PENDING high-risk proposal into CONFIRMED.
+  z.object({ action: z.literal("approve"), id: z.string().uuid() })
 ]);
 export type CorporateActionRequest = z.infer<typeof corporateActionRequestSchema>;
 
@@ -79,3 +82,16 @@ export const POWER_OF_TEN_NOTE_PATTERN = /currenc|pence|pound|gbx|gbp|\bunits?\b
 
 /** Currencies quoted in minor units, where a x100 provider error is most likely. */
 export const MINOR_UNIT_CURRENCIES = ["GBX", "GBp", "ZAc", "ZAC", "ILA", "ILa"];
+
+/** A PENDING proposal lapses to REVOKED after this many days without a second admin's approval. */
+export const PENDING_ACTION_DAYS = 7;
+
+/**
+ * Ratios whose reduced form is a power of ten, or has a term above 50 in either direction, are the
+ * shape of a pence/pounds, decimal or stub-price error. They are proposed by one admin (PENDING) and
+ * only a DIFFERENT admin can confirm them. Other ratios are confirmed by their creator.
+ */
+export function requiresSecondAdmin(to: number, from: number): boolean {
+  const reduced = reduceRatio(to, from);
+  return isPowerOfTenRatio(to, from) || reduced.to > 50 || reduced.from > 50;
+}

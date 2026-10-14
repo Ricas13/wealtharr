@@ -76,8 +76,10 @@ export type ExplanationCandidate = {
   action: ConfirmedCorporateAction;
   /** Latest ACCEPTED observation observed strictly before the effective date 00:00 UTC, or null. */
   preReference: { price: Decimal.Value; observedAt: Date } | null;
-  /** Latest ACCEPTED observation on/after the effective date 00:00 UTC, or null. */
-  latestOnOrAfterEffective: { price: Decimal.Value } | null;
+  /** Prices of ALL accepted observations of the line on/after the effective date 00:00 UTC. */
+  postEffectivePrices: Decimal.Value[];
+  /** True when any observation of the line is already linked to this action as explained by it. */
+  alreadyExplained: boolean;
 };
 
 /**
@@ -89,9 +91,10 @@ export type ExplanationCandidate = {
  *    date (a lagging provider stamping the unadjusted price on the effective day cannot become the
  *    reference);
  *  - price is within 5% of preReference x from / to (`matchesRecordedSplit`);
- *  - the latest accepted observation on/after the effective date, if any, is NOT itself within that
- *    tolerance of preReference x from / to (when it is, the post-split price has already been
- *    adopted and nothing is left to explain: no double application).
+ *  - the action has not already explained an observation of this line, and NO accepted observation
+ *    on/after the effective date is itself within that tolerance of preReference x from / to (when
+ *    one is, the post-split price has already been adopted and nothing is left to explain: no double
+ *    application, even after the price drifted away from the band).
  * Of several matches the latest effective date wins.
  */
 export function explainingCorporateAction(
@@ -104,7 +107,8 @@ export function explainingCorporateAction(
   const quoteDay = utcDayNumber(quoteObservedAt);
   let best: ConfirmedCorporateAction | null = null;
   let bestDay = -Infinity;
-  for (const { action, preReference, latestOnOrAfterEffective } of candidates) {
+  for (const { action, preReference, postEffectivePrices, alreadyExplained } of candidates) {
+    if (alreadyExplained) continue;
     const effectiveDay = isoDayNumber(action.effectiveDate);
     if (!Number.isFinite(effectiveDay)) continue;
     if (effectiveDay > quoteDay) continue;
@@ -113,7 +117,7 @@ export function explainingCorporateAction(
     if (!(utcDayNumber(preReference.observedAt) < effectiveDay)) continue;
     const split = [{ to: action.to, from: action.from }];
     if (!matchesRecordedSplit(price, preReference.price, split, tolerance)) continue;
-    if (latestOnOrAfterEffective && matchesRecordedSplit(latestOnOrAfterEffective.price, preReference.price, split, tolerance)) continue;
+    if (postEffectivePrices.some((adopted) => matchesRecordedSplit(adopted, preReference.price, split, tolerance))) continue;
     if (effectiveDay > bestDay) { best = action; bestDay = effectiveDay; }
   }
   return best;

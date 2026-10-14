@@ -1,16 +1,30 @@
 import { z } from "zod";
+import type { Sql } from "postgres";
 import { requireAdminWithMfa } from "@/lib/session";
 import { assertSameOrigin, consumeRateLimit } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
-import { corporateActionIssue, corporateActionRequestSchema, reduceRatio } from "@/domain/corporate-action-input";
+import { invalidateValuationsFrom } from "@/lib/ledger-timeline";
+import {
+  PENDING_ACTION_DAYS, corporateActionIssue, corporateActionRequestSchema, reduceRatio, requiresSecondAdmin
+} from "@/domain/corporate-action-input";
 import { explainingCorporateAction, matchesRecordedSplit } from "@/domain/quote-plausibility";
 
 // Administrator-confirmed corporate actions. A confirmed split is what lets the market worker accept
 // a split-sized provider quote, for every user, so this is admin-only with two-step sign-in ALWAYS
 // required, same-origin, rate limited, evidenced by an observed market quote, audited, and every
-// admin is notified so a second admin can see and revoke it (two-person approval is a follow-up).
-// Revoking deletes the quotes the action explained, in the same transaction.
+// admin is notified.
+//
+// State machine
+//   create, ordinary ratio                      -> CONFIRMED (by its creator)
+//   create, power of ten or a term above 50     -> PENDING (expires after 7 days)
+//   PENDING + approve by a DIFFERENT admin      -> CONFIRMED
+//   PENDING + approve by its creator            -> refused (403); stays PENDING
+//   PENDING + revoke (reject, either admin)     -> REVOKED
+//   PENDING past expires_at                     -> REVOKED (swept; never approvable)
+//   CONFIRMED + revoke                          -> REVOKED, explained quotes deleted, rejection restored
+// Only CONFIRMED rows are read by the market worker and by the holder guard. With a single admin
+// account a high-risk proposal simply stays PENDING (fail closed).
 const headers = { "cache-control": "no-store" };
 
 class Refusal extends Error {
@@ -23,6 +37,14 @@ function pgCode(error: unknown): string {
 }
 
 const dayStart = (effectiveDate: string) => effectiveDate + "T00:00:00.000Z";
+
+async function notifyAdmins(tx: Pick<Sql, "unsafe">, instrumentId: string, title: string, text: string) {
+  await tx.unsafe(
+    "INSERT INTO notifications (user_id,type,title,body) SELECT u.id,'CORPORATE_ACTION',$2,i.name||': '||$3 " +
+    "FROM users u CROSS JOIN instruments i WHERE u.role='ADMIN' AND i.id=$1",
+    [instrumentId, title, text]
+  );
+}
 
 // The ratio must be grounded in a market observation, never invented: either a CURRENT rejected
 // quote that this action would explain under the worker's exact predicate, or an already accepted
@@ -40,20 +62,22 @@ async function assertObservedEvidence(instrumentId: string, to: number, from: nu
     if (!pre[0]) continue;
     const preReference = { price: String(pre[0].price), observedAt: new Date(String(pre[0].observed_at)) };
     const post = await sql.unsafe(
-      "SELECT price FROM market_data_observations WHERE trading_line_id=$1 AND observed_at>=$2::timestamptz ORDER BY observed_at DESC LIMIT 1",
+      "SELECT price FROM market_data_observations WHERE trading_line_id=$1 AND observed_at>=$2::timestamptz ORDER BY observed_at DESC LIMIT 500",
       [line.id, dayStart(effectiveDate)]
     );
+    const postEffectivePrices = post.map((p) => String(p.price));
     const rejection = await sql.unsafe("SELECT price,observed_at FROM market_data_rejections WHERE trading_line_id=$1", [line.id]);
     if (rejection[0]) {
       anyRejection = true;
       const explained = explainingCorporateAction(String(rejection[0].price), new Date(String(rejection[0].observed_at)), [{
         action: { id: "candidate", to, from, effectiveDate },
         preReference,
-        latestOnOrAfterEffective: post[0] ? { price: String(post[0].price) } : null
+        postEffectivePrices,
+        alreadyExplained: false
       }]);
       if (explained) return;
     }
-    if (post[0] && matchesRecordedSplit(String(post[0].price), preReference.price, [{ to, from }])) return;
+    if (postEffectivePrices.some((price) => matchesRecordedSplit(price, preReference.price, [{ to, from }]))) return;
   }
   throw new Refusal(409, anyRejection
     ? "The observed rejected quote does not match this ratio."
@@ -65,58 +89,123 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const admin = await requireAdminWithMfa();
     await consumeRateLimit("corporate-action:" + admin.id, 30, 3600);
+    // A proposal no second admin approved in time lapses.
+    await sql.unsafe("UPDATE corporate_actions SET status='REVOKED',revoked_at=now() WHERE status='PENDING' AND expires_at<=now()");
     const parsed = corporateActionRequestSchema.parse(await request.json());
     const issue = corporateActionIssue(parsed, new Date().toISOString().slice(0, 10));
     if (issue) return Response.json({ error: issue }, { status: 400, headers });
 
     if (parsed.action === "create") {
       const ratio = reduceRatio(parsed.ratioTo, parsed.ratioFrom);
+      const pending = requiresSecondAdmin(ratio.to, ratio.from);
       await assertObservedEvidence(parsed.instrumentId, ratio.to, ratio.from, parsed.effectiveDate);
-      const id = await sql.begin(async (tx) => {
+      const created = await sql.begin(async (tx) => {
         const inserted = await tx.unsafe(
-          "INSERT INTO corporate_actions (instrument_id,kind,ratio_to,ratio_from,effective_date,evidence,confirmed_by) " +
-          "VALUES ($1,'SPLIT',$2,$3,$4,$5::jsonb,$6) RETURNING id",
-          [parsed.instrumentId, ratio.to, ratio.from, parsed.effectiveDate, JSON.stringify(parsed.evidence), admin.id]
+          "INSERT INTO corporate_actions (instrument_id,kind,ratio_to,ratio_from,effective_date,status,evidence,created_by,confirmed_by,confirmed_at,expires_at) " +
+          "VALUES ($1,'SPLIT',$2,$3,$4,$5,$6::jsonb,$7,$8,CASE WHEN $5='CONFIRMED' THEN now() ELSE NULL END," +
+          "CASE WHEN $5='PENDING' THEN now()+($9::int*interval '1 day') ELSE NULL END) RETURNING id",
+          [parsed.instrumentId, ratio.to, ratio.from, parsed.effectiveDate, pending ? "PENDING" : "CONFIRMED",
+            JSON.stringify(parsed.evidence), admin.id, pending ? null : admin.id, PENDING_ACTION_DAYS]
         );
         const actionId = String(inserted[0].id);
         await tx.unsafe(
-          "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'corporate-action.confirmed','corporate_action',$2,$3::jsonb)",
-          [admin.id, actionId, JSON.stringify({ instrumentId: parsed.instrumentId, ratio: ratio.to + ":" + ratio.from, effectiveDate: parsed.effectiveDate, sourceUrl: parsed.evidence.sourceUrl })]
+          "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'corporate_action',$3,$4::jsonb)",
+          [admin.id, pending ? "corporate-action.proposed" : "corporate-action.confirmed", actionId,
+            JSON.stringify({ instrumentId: parsed.instrumentId, ratio: ratio.to + ":" + ratio.from, effectiveDate: parsed.effectiveDate, sourceUrl: parsed.evidence.sourceUrl })]
         );
-        await tx.unsafe(
-          "INSERT INTO notifications (user_id,type,title,body) SELECT u.id,'CORPORATE_ACTION','Corporate action confirmed',i.name||': '||$2||' split effective '||$3||'. Review it in Admin > Instruments; any admin can revoke it.' " +
-          "FROM users u CROSS JOIN instruments i WHERE u.role='ADMIN' AND i.id=$1",
-          [parsed.instrumentId, ratio.to + ":" + ratio.from, parsed.effectiveDate]
-        );
+        await notifyAdmins(tx, parsed.instrumentId,
+          pending ? "Corporate action needs a second admin" : "Corporate action confirmed",
+          ratio.to + ":" + ratio.from + " split effective " + parsed.effectiveDate +
+          (pending ? ". A different admin must approve it in Admin > Instruments; it lapses in " + PENDING_ACTION_DAYS + " days." : ". Review it in Admin > Instruments; any admin can revoke it."));
         return actionId;
       });
-      return Response.json({ ok: true, id }, { headers });
+      return Response.json({ ok: true, id: created, status: pending ? "PENDING" : "CONFIRMED" }, { headers });
+    }
+
+    if (parsed.action === "approve") {
+      const row = await sql.unsafe(
+        "SELECT instrument_id,ratio_to,ratio_from,effective_date::text AS effective_date,status,created_by FROM corporate_actions WHERE id=$1",
+        [parsed.id]
+      );
+      if (!row[0]) throw new Refusal(404, "That corporate action does not exist.");
+      if (String(row[0].status) !== "PENDING") throw new Refusal(409, "That corporate action is not awaiting approval.");
+      if (row[0].created_by && String(row[0].created_by) === admin.id) throw new Refusal(403, "A different admin must approve this corporate action.");
+      // The same observed-evidence test as at proposal time, against the market as it is now.
+      await assertObservedEvidence(String(row[0].instrument_id), Number(row[0].ratio_to), Number(row[0].ratio_from), String(row[0].effective_date).slice(0, 10));
+      await sql.begin(async (tx) => {
+        const locked = await tx.unsafe("SELECT status,created_by,expires_at FROM corporate_actions WHERE id=$1 FOR UPDATE", [parsed.id]);
+        if (!locked[0] || String(locked[0].status) !== "PENDING") throw new Refusal(409, "That corporate action is not awaiting approval.");
+        if (locked[0].created_by && String(locked[0].created_by) === admin.id) throw new Refusal(403, "A different admin must approve this corporate action.");
+        const live = await tx.unsafe("SELECT 1 FROM corporate_actions WHERE id=$1 AND (expires_at IS NULL OR expires_at>now())", [parsed.id]);
+        if (!live[0]) throw new Refusal(409, "That proposal has expired; propose it again.");
+        await tx.unsafe(
+          "UPDATE corporate_actions SET status='CONFIRMED',confirmed_by=$2,confirmed_at=now(),expires_at=NULL WHERE id=$1",
+          [parsed.id, admin.id]
+        );
+        await tx.unsafe(
+          "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'corporate-action.approved','corporate_action',$2,$3::jsonb)",
+          [admin.id, parsed.id, JSON.stringify({ instrumentId: String(row[0].instrument_id), proposedBy: row[0].created_by ? String(row[0].created_by) : null })]
+        );
+        await notifyAdmins(tx, String(row[0].instrument_id), "Corporate action approved",
+          "A proposed split effective " + String(row[0].effective_date).slice(0, 10) + " was approved by a second admin and now explains matching quotes.");
+      });
+      return Response.json({ ok: true, status: "CONFIRMED" }, { headers });
     }
 
     await sql.begin(async (tx) => {
-      const found = await tx.unsafe("SELECT id,instrument_id,status FROM corporate_actions WHERE id=$1 FOR UPDATE", [parsed.id]);
+      const found = await tx.unsafe(
+        "SELECT id,instrument_id,status,effective_date::text AS effective_date FROM corporate_actions WHERE id=$1 FOR UPDATE", [parsed.id]
+      );
       if (!found[0]) throw new Refusal(404, "That corporate action does not exist.");
-      if (String(found[0].status) !== "CONFIRMED") throw new Refusal(409, "That corporate action is already revoked.");
+      const status = String(found[0].status);
+      const instrumentId = String(found[0].instrument_id);
+      if (status === "REVOKED") throw new Refusal(409, "That corporate action is already revoked.");
       await tx.unsafe("UPDATE corporate_actions SET status='REVOKED',revoked_by=$2,revoked_at=now() WHERE id=$1", [parsed.id, admin.id]);
-      // These quotes were only acceptable because of this action, and so were the later quotes of the
-      // same line that were judged plausible against them: delete the explained observations and
-      // everything on those lines observed at or after the first of them. The previous accepted
-      // observation becomes the reference again and the next provider quote is assessed afresh.
+
+      if (status === "PENDING") {
+        await tx.unsafe(
+          "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'corporate-action.rejected','corporate_action',$2,$3::jsonb)",
+          [admin.id, parsed.id, JSON.stringify({ instrumentId, reason: parsed.reason })]
+        );
+        await notifyAdmins(tx, instrumentId, "Corporate action rejected", "A proposed split effective " + String(found[0].effective_date).slice(0, 10) + " was rejected.");
+        return;
+      }
+
+      // CONFIRMED. These quotes were only acceptable because of this action, and so were the later
+      // quotes of the same line that were judged plausible against them: delete the explained
+      // observations and everything on those lines observed at or after the first of them.
+      const first = await tx.unsafe(
+        "SELECT DISTINCT ON (trading_line_id) trading_line_id,observed_at,price,currency,provider FROM market_data_observations " +
+        "WHERE explained_by_corporate_action_id=$1 ORDER BY trading_line_id,observed_at ASC",
+        [parsed.id]
+      );
       const removed = await tx.unsafe(
         "DELETE FROM market_data_observations o USING (" +
         "SELECT trading_line_id,min(observed_at) AS first_at FROM market_data_observations WHERE explained_by_corporate_action_id=$1 GROUP BY trading_line_id" +
         ") e WHERE o.trading_line_id=e.trading_line_id AND o.observed_at>=e.first_at RETURNING o.id",
         [parsed.id]
       );
+      // Without a restored rejection the pre-split reference may be older than the 7-day reference
+      // window, and the very next quote (the same wrong price, or the genuine post-split price)
+      // would be accepted unchecked. The rejection keeps the reference in force however old it is
+      // (fail closed) until a plausible quote arrives or a new action is confirmed.
+      for (const line of first) {
+        await tx.unsafe(
+          "INSERT INTO market_data_rejections (trading_line_id,observed_at,price,currency,provider,reason) VALUES ($1,$2,$3,$4,$5,'CORPORATE_ACTION_REVOKED') " +
+          "ON CONFLICT (trading_line_id) DO UPDATE SET observed_at=EXCLUDED.observed_at,price=EXCLUDED.price,currency=EXCLUDED.currency," +
+          "provider=EXCLUDED.provider,reason=EXCLUDED.reason,rejected_at=now() WHERE market_data_rejections.observed_at<=EXCLUDED.observed_at",
+          [line.trading_line_id, String(line.observed_at), String(line.price), String(line.currency), String(line.provider)]
+        );
+      }
+      // Valuation snapshots computed while the action was in force used its prices and units.
+      const holders = await tx.unsafe("SELECT DISTINCT strategy_instance_id FROM ledger_events WHERE instrument_id=$1", [instrumentId]);
+      const effectiveFrom = new Date(dayStart(String(found[0].effective_date).slice(0, 10)));
+      for (const holder of holders) await invalidateValuationsFrom(tx, String(holder.strategy_instance_id), effectiveFrom);
       await tx.unsafe(
         "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'corporate-action.revoked','corporate_action',$2,$3::jsonb)",
-        [admin.id, parsed.id, JSON.stringify({ instrumentId: String(found[0].instrument_id), reason: parsed.reason, removedObservations: removed.length })]
+        [admin.id, parsed.id, JSON.stringify({ instrumentId, reason: parsed.reason, removedObservations: removed.length, restoredRejections: first.length })]
       );
-      await tx.unsafe(
-        "INSERT INTO notifications (user_id,type,title,body) SELECT u.id,'CORPORATE_ACTION','Corporate action revoked',i.name||': a confirmed split was revoked and the quotes it explained were removed.' " +
-        "FROM users u CROSS JOIN instruments i WHERE u.role='ADMIN' AND i.id=$1",
-        [String(found[0].instrument_id)]
-      );
+      await notifyAdmins(tx, instrumentId, "Corporate action revoked", "A confirmed split was revoked and the quotes it explained were removed.");
     });
     return Response.json({ ok: true }, { headers });
   } catch (error) {
@@ -128,7 +217,7 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && error.message === "RATE_LIMITED") return Response.json({ error: "Too many changes. Try again later." }, { status: 429, headers });
     if (pgCode(error) === "23503") return Response.json({ error: "That instrument does not exist." }, { status: 404, headers });
-    if (pgCode(error) === "23505") return Response.json({ error: "That split is already confirmed for this instrument and date." }, { status: 409, headers });
+    if (pgCode(error) === "23505") return Response.json({ error: "That split is already proposed or confirmed for this instrument and date." }, { status: 409, headers });
     if (error instanceof z.ZodError) return Response.json({ error: error.issues[0]?.message ?? "Invalid corporate action." }, { status: 400, headers });
     if (error instanceof SyntaxError) return Response.json({ error: "Invalid corporate action." }, { status: 400, headers });
     return Response.json({ error: "Could not update the corporate action." }, { status: 500, headers });

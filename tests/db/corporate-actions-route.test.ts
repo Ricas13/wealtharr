@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 
@@ -64,6 +64,10 @@ describe.skipIf(!url)("admin corporate-actions route", () => {
     adminId = String((await sql!.unsafe("INSERT INTO users (email,password_hash,role) VALUES ($1,'x','ADMIN') RETURNING id", [`ca-admin-${run}@example.test`]))[0].id);
     secondAdminId = String((await sql!.unsafe("INSERT INTO users (email,password_hash,role) VALUES ($1,'x','ADMIN') RETURNING id", [`ca-admin2-${run}@example.test`]))[0].id);
     session.id = adminId;
+  });
+  // The route rate limits per admin per hour; the many calls of this file must not trip it.
+  beforeEach(async () => {
+    await sql!.unsafe("DELETE FROM rate_limits WHERE key=ANY($1::text[])", [["corporate-action:" + adminId, "corporate-action:" + secondAdminId]]);
   });
   afterAll(async () => {
     if (!sql) return;
@@ -152,6 +156,96 @@ describe.skipIf(!url)("admin corporate-actions route", () => {
       evidence: { sourceUrl: "https://example.test/notice", retrievedAt: TODAY, note: "Checked the currency and unit: pounds, not pence, per the issuer." }
     }));
     expect(accepted.status, JSON.stringify(accepted.json)).toBe(200);
+    // A power-of-ten ratio is only proposed: it needs a different admin.
+    expect(accepted.json.status).toBe("PENDING");
+    const row = (await sql!.unsafe("SELECT status,created_by,confirmed_by,expires_at FROM corporate_actions WHERE id=$1", [String(accepted.json.id)]))[0];
+    expect(String(row.status)).toBe("PENDING");
+    expect(String(row.created_by)).toBe(adminId);
+    expect(row.confirmed_by).toBeNull();
+    expect(row.expires_at).not.toBeNull();
+  });
+
+  const proposeRisky = async () => {
+    const made = await makeInstrument("80", "8000");
+    const proposed = await call(valid(made.instrumentId, {
+      ratioTo: 1, ratioFrom: 100, confirmPowerOfTenRisk: true,
+      evidence: { sourceUrl: "https://example.test/notice", retrievedAt: TODAY, note: "Checked the currency and unit: pounds, not pence, per the issuer." }
+    }));
+    expect(proposed.status, JSON.stringify(proposed.json)).toBe(200);
+    return { ...made, id: String(proposed.json.id) };
+  };
+  const statusOf = async (id: string) => String((await sql!.unsafe("SELECT status FROM corporate_actions WHERE id=$1", [id]))[0].status);
+
+  it("keeps a high-risk proposal PENDING: its creator cannot approve it, a non-admin cannot, and notifications go to every admin", async () => {
+    session.mode = "ok";
+    session.id = adminId;
+    const { id, instrumentId } = await proposeRisky();
+    expect((await call({ action: "approve", id })).status).toBe(403);
+    expect(await statusOf(id)).toBe("PENDING");
+    session.mode = "forbidden";
+    expect((await call({ action: "approve", id })).status).toBe(403);
+    session.mode = "signedout";
+    expect((await call({ action: "approve", id })).status).toBe(401);
+    session.mode = "mfa";
+    expect((await call({ action: "approve", id })).status).toBe(403);
+    session.mode = "ok";
+    expect(await statusOf(id)).toBe("PENDING");
+    const notices = await sql!.unsafe("SELECT user_id FROM notifications WHERE type='CORPORATE_ACTION' AND title='Corporate action needs a second admin' AND user_id=ANY($1::uuid[])", [[adminId, secondAdminId]]);
+    expect(new Set(notices.map((n) => String(n.user_id))).size).toBe(2);
+    expect(await count(instrumentId)).toBe(1);
+  });
+
+  it("lets a different admin approve; the creator's proposal becomes CONFIRMED with an audit event", async () => {
+    session.mode = "ok";
+    session.id = adminId;
+    const { id } = await proposeRisky();
+    session.id = secondAdminId;
+    const approved = await call({ action: "approve", id });
+    expect(approved.status, JSON.stringify(approved.json)).toBe(200);
+    session.id = adminId;
+    const row = (await sql!.unsafe("SELECT status,created_by,confirmed_by FROM corporate_actions WHERE id=$1", [id]))[0];
+    expect(String(row.status)).toBe("CONFIRMED");
+    expect(String(row.created_by)).toBe(adminId);
+    expect(String(row.confirmed_by)).toBe(secondAdminId);
+    const audit = await sql!.unsafe("SELECT 1 FROM audit_events WHERE entity_id=$1 AND action='corporate-action.approved' AND actor_user_id=$2", [id, secondAdminId]);
+    expect(audit.length).toBe(1);
+    expect((await call({ action: "approve", id })).status).toBe(409);
+  });
+
+  it("lets either admin reject a PENDING proposal with a reason, without touching any quote", async () => {
+    session.mode = "ok";
+    session.id = adminId;
+    const { id, lineId } = await proposeRisky();
+    expect((await call({ action: "revoke", id, reason: "short" })).status).toBe(400);
+    expect((await call({ action: "revoke", id, reason: "The issuer notice describes a currency change, not a split." })).status).toBe(200);
+    expect(await statusOf(id)).toBe("REVOKED");
+    const audit = await sql!.unsafe("SELECT 1 FROM audit_events WHERE entity_id=$1 AND action='corporate-action.rejected'", [id]);
+    expect(audit.length).toBe(1);
+    // The rejected quote is still rejected: nothing was restored or deleted.
+    expect((await sql!.unsafe("SELECT 1 FROM market_data_rejections WHERE trading_line_id=$1 AND reason='IMPLAUSIBLE_MOVE'", [lineId])).length).toBe(1);
+  });
+
+  it("lapses an unapproved proposal after its window and refuses to approve it", async () => {
+    session.mode = "ok";
+    session.id = adminId;
+    const { id } = await proposeRisky();
+    await sql!.unsafe("UPDATE corporate_actions SET expires_at=now()-interval '1 minute' WHERE id=$1", [id]);
+    session.id = secondAdminId;
+    const late = await call({ action: "approve", id });
+    expect(late.status).toBe(409);
+    session.id = adminId;
+    expect(await statusOf(id)).toBe("REVOKED");
+  });
+
+  it("keeps a non-risky ratio single-admin: confirmed by its creator at once", async () => {
+    session.mode = "ok";
+    session.id = adminId;
+    const { instrumentId } = await makeInstrument("100", "50");
+    const created = await call(valid(instrumentId));
+    expect(created.json.status).toBe("CONFIRMED");
+    const row = (await sql!.unsafe("SELECT status,confirmed_by FROM corporate_actions WHERE id=$1", [String(created.json.id)]))[0];
+    expect(String(row.status)).toBe("CONFIRMED");
+    expect(String(row.confirmed_by)).toBe(adminId);
   });
 
   it("stores the ratio in lowest terms, refuses a duplicate and notifies every admin", async () => {
