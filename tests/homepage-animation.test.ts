@@ -19,12 +19,13 @@ describe("marketing page animated strategy story",()=>{
  it("animates an explicitly illustrative portfolio value alongside its SVG clip reveal",()=>{
   expect(home).toContain("<HeroStrategyPreview/>");
   expect(hero).toContain("ILLUSTRATIVE DATA");
-  expect(hero).toContain("not a performance projection");
+  expect(hero).toContain("MarketingHeroChart");
   expect(hero).toContain("setProgress(1-Math.pow(1-t,3))");
   expect(hero).toContain("revealProgress={progress}");
   const chart=readFileSync("src/components/MarketingHeroChart.tsx","utf8");
   expect(chart).toContain("width={400*revealProgress}");
   expect(chart).toContain("fmt.format(visibleCurrent)");
+  expect(chart).toContain("Fictional example · not investment performance");
   expect(hero).toContain("START+(END-START)*progress");
   expect(hero).toContain("prefers-reduced-motion: reduce");
   expect(hero).toContain("IntersectionObserver");
