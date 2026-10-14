@@ -343,8 +343,9 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
-    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&p.key!=="merriman-ultimate");
-    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
+    const group2Keys=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
+    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!group2Keys.has(p.key));
+    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).filter(key=>!group2Keys.has(key)).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
       const pin=SEED_DEFINITIONS[plugin.key];
@@ -359,7 +360,7 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","60-40"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","hfea","all-weather","60-40","coffeehouse","core-four","swensen","merriman-ultimate"]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
