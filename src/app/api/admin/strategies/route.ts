@@ -6,6 +6,7 @@ import { supportedEngineKeys, validateEngineConfig, assertCustomerPublishableEng
 import { parseInputSchema } from "@/domain/strategy/config";
 import { authFailure } from "@/lib/api-auth";
 import { curatedRelease, getStrategyPlugin, isBuiltInStrategy } from "@/domain/strategy/catalog";
+import {isMethodComplete} from "@/domain/strategy/method-complete";
 import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
@@ -137,6 +138,8 @@ export async function PATCH(request:Request){
         );
         if(!definitions[0])throw new LifecycleConflict("Strategy is not installed in the database.",404);
         if(p.enabled){
+          if(!isMethodComplete(getStrategyPlugin(p.strategyKey)))
+            throw new LifecycleConflict(METHOD_NOT_COMPLETE_MESSAGE,409);
           const releases=await tx.unsafe(
             "SELECT v.id,v.engine_key,v.config,v.input_schema "+
             "FROM strategy_versions v "+
