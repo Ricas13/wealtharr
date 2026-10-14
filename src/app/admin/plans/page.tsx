@@ -68,7 +68,7 @@ export default async function PlansAdmin(){
     </tr>)}</tbody></table></div>:
     <p className="admin-data-caveat">No subscriptions currently meet these review conditions. Provider reconciliation has not been independently verified.</p>}
    <p className="admin-data-caveat">Shows up to 50 records requiring attention. Raw billing errors, customer payment credentials and investment holdings are never selected.</p>
-   <a href="/admin/users" className="admin-panel-footer-link">Open customer directory →</a>
+   <Link href="/admin/users" className="admin-panel-footer-link">Open customer directory →</Link>
   </section>
   <section className="admin-design-panel">
    <header className="admin-design-panel-header"><div><h2>Plans & entitlements</h2>
