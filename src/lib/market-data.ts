@@ -12,6 +12,12 @@ export type PriceObservation = {
   priceKind?: "LAST"|"OPEN"|"HIGH"|"LOW"|"CLOSE";
   /** Explicit provider assertion: split/distribution-adjusted bar, not merely a daily close. */
   corporateActionsAdjusted?: boolean;
+  /** Provider-signed exchange-calendar identity for this completed session. */
+  sourceCalendar?: string;
+  sessionCalendarCertified?: boolean;
+  /** Must explicitly cover split AND dividends reinvestment, not merely split adjustment. */
+  totalReturnCertified?: boolean;
+  providerCorporateActionsRevision?: string;
 };
 
 export interface MarketDataProvider {
@@ -36,7 +42,11 @@ const quoteSchema = z.object({
   observedAt: z.string().datetime({ offset: true }),
   granularity: z.enum(["TRADE","MINUTE_BAR","DAILY_BAR"]).optional(),
   priceKind: z.enum(["LAST","OPEN","HIGH","LOW","CLOSE"]).optional(),
-  corporateActionsAdjusted: z.boolean().optional()
+  corporateActionsAdjusted: z.boolean().optional(),
+  sourceCalendar:z.string().min(1).max(128).optional(),
+  sessionCalendarCertified:z.boolean().optional(),
+  totalReturnCertified:z.boolean().optional(),
+  providerCorporateActionsRevision:z.string().min(1).max(128).optional()
 });
 
 function validatedObservation(raw: unknown, provider: string): PriceObservation {
@@ -50,7 +60,11 @@ function validatedObservation(raw: unknown, provider: string): PriceObservation 
     provider,
     granularity: parsed.granularity,
     priceKind: parsed.priceKind,
-    corporateActionsAdjusted: parsed.corporateActionsAdjusted
+    corporateActionsAdjusted: parsed.corporateActionsAdjusted,
+    sourceCalendar:parsed.sourceCalendar,
+    sessionCalendarCertified:parsed.sessionCalendarCertified,
+    totalReturnCertified:parsed.totalReturnCertified,
+    providerCorporateActionsRevision:parsed.providerCorporateActionsRevision
   };
 }
 
