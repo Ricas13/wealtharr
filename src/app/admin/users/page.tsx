@@ -2,6 +2,7 @@ import {sql} from "@/lib/db";
 import {requireAdminPage} from "@/lib/session";
 import {UsersRound,Layers3,ShieldAlert} from "lucide-react";
 import {AdminCustomersTable} from "@/components/AdminCustomersTable";
+import {AdminCustomerLookup} from "@/components/AdminCustomerLookup";
 import {UserStrategyAccessEditor} from "@/components/UserStrategyAccessEditor";
 export const dynamic="force-dynamic";
 export default async function UsersAdmin(){
@@ -23,10 +24,11 @@ export default async function UsersAdmin(){
   <div className="admin-overview-kpis admin-three-kpis">{metrics.map(({name,value,Icon})=><div className="admin-design-kpi" key={name}>
     <span className="admin-design-kpi-title">{name}<Icon size={17} aria-hidden="true"/></span><strong>{new Intl.NumberFormat("en-GB").format(value)}</strong>
     <span className="admin-design-kpi-detail">Current database records</span></div>)}</div>
-  <AdminCustomersTable rows={rows.map(u=>({
+  <AdminCustomerLookup/>
+  <div style={{marginTop:20}}><AdminCustomersTable rows={rows.map(u=>({
    email:String(u.email),country:String(u.country??"—"),role:String(u.role??"USER"),plan:String(u.plan??"No subscription"),status:String(u.status??"Unassigned"),
    active:Number(u.active_strategies??0),attention:Number(u.unhealthy??0)
-  }))}/>
+  }))}/></div>
   <div style={{marginTop:24}}><UserStrategyAccessEditor
     users={rows.map(u=>({id:String(u.id),email:String(u.email)}))}
     strategies={strategies.map(x=>({key:String(x.key),name:String(x.name)}))}
