@@ -47,8 +47,11 @@ export function trinityMonthlySeries(daily:readonly TrustedHistoricalSeries[],as
     if(!s.source||!s.currency||!s.exposure)throw new Error("TRINITY_DAILY_SOURCE_MISSING");
     const buckets=new Map<string,{at:Date;adjustedClose:Decimal}>();
     for(const p of s.points){
-      if(!Number.isFinite(p.at.getTime())||p.at>asOf||!p.adjustedClose.isFinite()||p.adjustedClose.lte(0))
+      if(!Number.isFinite(p.at.getTime())||!p.adjustedClose.isFinite()||p.adjustedClose.lte(0))
         throw new Error("TRINITY_DAILY_PRICE_INVALID");
+      // Data later than the *completed* review cutoff can be valid as of calculation
+      // time; never use those rows in the earlier month-end signal.
+      if(p.at>asOf)continue;
       const id=p.at.getUTCFullYear()+"-"+String(p.at.getUTCMonth()+1).padStart(2,"0");
       const prior=buckets.get(id);
       if(!prior||prior.at<p.at)buckets.set(id,p);
