@@ -5,7 +5,7 @@ import {vaaAllocation,weighted13612} from "../src/domain/strategy/vaa-signals";
 describe("vaa G4 canonical golden",()=>{
  it("raw 13612 sum uses exact published numerical weighting",()=>{
  const prices=Array.from({length:13},(_,i)=>D(100+i));
- const expected=D(12).div(111).minus(1).mul(12)
+ const expected=D(112).div(111).minus(1).mul(12)
   .plus(D(112).div(109).minus(1).mul(4))
   .plus(D(112).div(106).minus(1).mul(2))
   .plus(D(112).div(100).minus(1));
