@@ -28,7 +28,7 @@ export function estimateDailyRiskParity(
   const values:Decimal[]=[];
   for(let j=0;j<required;j++){
    const p=asset.points[j],t=p.at.getTime();
-   if(!Number.isFinite(t)||t<=prev||t>asOf||!p.adjustedClose.isFinite()||p.adjustedClose.lte(0))throw new Error("RP_INVALID_SESSION:"+asset.exposure);
+   if(!Number.isFinite(t)||t<=prev||t>asOf.getTime()||!p.adjustedClose.isFinite()||p.adjustedClose.lte(0))throw new Error("RP_INVALID_SESSION:"+asset.exposure);
    const date=p.at.toISOString().slice(0,10);
    if(index===0){if(j>0&&dates[j-1]===date)throw new Error("RP_DUPLICATE_SESSION");dates.push(date);}
    else if(dates[j]!==date)throw new Error("RP_UNALIGNED_SESSIONS:"+asset.exposure);
