@@ -56,6 +56,8 @@ function referencedExposures(config:Readonly<Record<string,unknown>>|undefined):
     }
   }
   if(typeof config.targetExposure==="string")ids.push(config.targetExposure);
+  if(typeof config.targetDateExposure==="string")ids.push(config.targetDateExposure);
+  if(typeof config.smallCapValueExposure==="string")ids.push(config.smallCapValueExposure);
   return ids;
 }
 
