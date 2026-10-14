@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type {Metadata} from "next";
 import {sql} from "@/lib/db";
+import {formatMinorCurrency} from "@/domain/currency-money";
 export const dynamic="force-dynamic";
 export const metadata:Metadata={
  title:"Portfolio Tracker Plans and Pricing",
@@ -19,9 +20,9 @@ export default async function PricingPage(){
  return <main><div className="container"><nav className="public-nav"><Link className="brand" href="/">{process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr"}</Link><Link className="button" href="/login">Sign in</Link></nav>
  <section className="section"><div className="eyebrow">Plans and billing</div><h1>Start simple. Add strategies as you need them.</h1><p>Plans define strategy limits and available notification channels. Subscription terms and prices shown below come from the platform&apos;s configured product catalogue.</p>
  <div className="pricing" style={{marginTop:24}}>{rows.length?rows.map(row=><article className="glass price" key={row.slug}>
- <h2>{row.display_name}</h2>{row.monthly_price_minor==null?<p className="help">Currently unavailable for new monthly subscriptions.</p>:<strong>{new Intl.NumberFormat("en-GB",{style:"currency",currency:String(row.billing_currency)}).format(Number(row.monthly_price_minor)/100)}<span style={{fontSize:14}}>/mo</span></strong>}
+ <h2>{row.display_name}</h2>{row.monthly_price_minor==null?<p className="help">Currently unavailable for new monthly subscriptions.</p>:<strong>{formatMinorCurrency(Number(row.monthly_price_minor),String(row.billing_currency))}<span style={{fontSize:14}}>/mo</span></strong>}
  <p>{row.max_active_strategies==null?"Unlimited active strategies":String(row.max_active_strategies)+" active strategies"}</p>
- <p className="help">{row.annual_price_minor==null?"Annual option not currently available.":"Annual option: "+new Intl.NumberFormat("en-GB",{style:"currency",currency:String(row.billing_currency)}).format(Number(row.annual_price_minor)/100)+" per year."} Final checkout verifies the amount against Stripe.</p>
+ <p className="help">{row.annual_price_minor==null?"Annual option not currently available.":"Annual option: "+formatMinorCurrency(Number(row.annual_price_minor),String(row.billing_currency))+" per year."} Final checkout verifies the amount against Stripe.</p>
  <Link className="button primary" href="/register">Choose plan</Link></article>):<div className="empty" style={{gridColumn:"1/-1"}}>Current plan prices are unavailable. We won&apos;t invent a price or accept a misleading comparison.</div>}</div></section>
  <section className="section"><h2>What does a subscription provide?</h2><p>Strategy tracking and configuration access depend on your selected plan. Brokerage costs, instrument fees, and any external market-data costs are separate unless explicitly stated at checkout.</p><Link href="/faq" className="button">Pricing questions</Link></section>
  <footer className="footer"><Link href="/">Home</Link> · <Link href="/features">Features</Link> · <Link href="/strategies">Strategies</Link></footer></div></main>;

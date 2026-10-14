@@ -2,6 +2,7 @@
 import {useState,type FormEvent} from "react";
 import {useRouter} from "next/navigation";
 import {ALL_CHANNELS,ALL_FEATURES,type ChannelKey,type FeatureKey} from "@/domain/entitlements";
+import {currencyMinorDigits,majorFromMinor,minorFromMajor} from "@/domain/currency-money";
 
 type Entitlements={features:string[];notificationChannels:string[]};
 type Config={
@@ -51,6 +52,14 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
   setForm(picked?{...picked,entitlements:entitlements(picked.entitlements)}:{...blank,entitlements:{features:[],notificationChannels:[]}});
  }
  function change<K extends keyof Config>(key:K,value:Config[K]){setForm(old=>({...old,[key]:value}));}
+ function changeCurrency(next:string){
+  // Keep the face amount when the default currency changes; this is NOT an FX conversion.
+  // Round only to the new currency's valid minor-unit precision.
+  setForm(old=>({...old,currency:next,
+   monthlyPriceMinor:minorFromMajor(majorFromMinor(old.monthlyPriceMinor,old.currency),next),
+   annualPriceMinor:minorFromMajor(majorFromMinor(old.annualPriceMinor,old.currency),next)
+  }));
+ }
  function toggle(kind:keyof Entitlements,key:string){
   setForm(old=>{const set=new Set(old.entitlements[kind]);if(set.has(key))set.delete(key);else set.add(key);
     return {...old,entitlements:{...old.entitlements,[kind]:[...set]}};});
@@ -60,6 +69,8 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    return {...old,availableStrategyKeys:[...set]};});
  }
  const restricted=form.availableStrategyKeys.length>0;
+ const priceStep=1/10**currencyMinorDigits(form.currency);
+ const currencyOptions=[...new Set(["GBP","USD","EUR",...form.supportedBillingCurrencies,form.currency])];
  async function save(e:FormEvent<HTMLFormElement>){
   e.preventDefault();setBusy(true);setMessage("");
   try{
@@ -86,13 +97,14 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    <div className="field"><label htmlFor="admin-plan-name">Display name</label><input id="admin-plan-name" value={form.displayName} required onChange={e=>change("displayName",e.target.value)}/></div>
    <div className="field full"><label htmlFor="admin-plan-description">Homepage card description</label><input id="admin-plan-description" value={form.description} onChange={e=>change("description",e.target.value)}/></div>
    <div className="field full"><label htmlFor="admin-plan-highlights">Homepage card highlights (one per line, up to 5)</label><textarea id="admin-plan-highlights" rows={4} value={highlightsDraft} onChange={e=>setHighlightsDraft(e.target.value)} placeholder="Ideal for simple tracking\nKnow when to rebalance"/><p className="help">Marketing copy only. Included features and notifications shown to customers are always derived from the actual plan entitlements.</p></div>
-   <div className="field"><label htmlFor="admin-plan-monthly">Default monthly ({form.currency})</label><input id="admin-plan-monthly" type="number" min="0" step=".01" value={form.monthlyPriceMinor/100} onChange={e=>change("monthlyPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
-   <div className="field"><label htmlFor="admin-plan-annual">Default annual ({form.currency})</label><input id="admin-plan-annual" type="number" min="0" step=".01" value={form.annualPriceMinor/100} onChange={e=>change("annualPriceMinor",Math.round(Number(e.target.value)*100))}/></div>
-   <div className="field"><label htmlFor="admin-plan-currency">Default currency</label><select id="admin-plan-currency" value={form.currency} onChange={e=>change("currency",e.target.value)}>{["GBP","USD","EUR"].map(c=><option key={c}>{c}</option>)}</select></div>
+   <div className="field"><label htmlFor="admin-plan-monthly">Default monthly ({form.currency})</label><input id="admin-plan-monthly" type="number" min="0" step={priceStep} value={majorFromMinor(form.monthlyPriceMinor,form.currency)} onChange={e=>change("monthlyPriceMinor",minorFromMajor(Number(e.target.value||"0"),form.currency))}/></div>
+   <div className="field"><label htmlFor="admin-plan-annual">Default annual ({form.currency})</label><input id="admin-plan-annual" type="number" min="0" step={priceStep} value={majorFromMinor(form.annualPriceMinor,form.currency)} onChange={e=>change("annualPriceMinor",minorFromMajor(Number(e.target.value||"0"),form.currency))}/></div>
+   <div className="field"><label htmlFor="admin-plan-currency">Default currency</label><select id="admin-plan-currency" value={form.currency} onChange={e=>changeCurrency(e.target.value)}>{currencyOptions.map(c=><option key={c}>{c}</option>)}</select></div>
    <div className="field"><label htmlFor="admin-plan-currencies">Billing currencies</label><input id="admin-plan-currencies" value={form.supportedBillingCurrencies.join(", ")} onChange={e=>change("supportedBillingCurrencies",e.target.value.toUpperCase().split(",").map(s=>s.trim()).filter(Boolean))}/></div>
    <div className="field"><label htmlFor="admin-plan-limit">Maximum active strategies (blank = unlimited)</label><input id="admin-plan-limit" type="number" min="1" value={form.maxActiveStrategies??""} onChange={e=>change("maxActiveStrategies",e.target.value?Number(e.target.value):null)}/></div>
    <div className="field"><label htmlFor="admin-plan-trial">Trial days</label><input id="admin-plan-trial" type="number" min="0" value={form.trialDays} onChange={e=>change("trialDays",Number(e.target.value))}/></div>
   </div>
+  <p className="help">Amounts use the selected currency’s real decimal precision. Changing the currency preserves the nominal amount (rounded to the new currency’s valid precision); it does not perform a foreign-exchange conversion. Check the resulting price and Stripe Price IDs before publishing.</p>
   <h3>Included features</h3>
   <div className="form-grid">{featureOptions.map(([key,label])=><label className="toggle-row" key={key}><input type="checkbox" checked={form.entitlements.features.includes(key)} onChange={()=>toggle("features",key)}/><span>{label}</span></label>)}</div>
   <h3>Notifications</h3>

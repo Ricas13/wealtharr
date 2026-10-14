@@ -8,15 +8,5 @@ export function verifiedInvoiceSubscriptionOwner(input:{
   input.remoteSubscriptionId===input.subscriptionId&&
   (!input.remoteMetadataUserId||input.remoteMetadataUserId===input.userId));
 }
-/** Stripe invoice amounts use the ISO minor unit for their billing currency. */
-export function invoiceAmountMinor(minor:number,currency:string):string{
- try{
-  if(!Number.isSafeInteger(minor))throw new Error("INVALID_AMOUNT");
-  const code=currency.toUpperCase();
-  const fmt=new Intl.NumberFormat("en-GB",{style:"currency",currency:code});
-  const digits=fmt.resolvedOptions().maximumFractionDigits??2;
-  return fmt.format(minor/10**digits);
- }catch{
-  return String(minor)+" "+currency.toUpperCase()+" minor units";
- }
-}
+/** Shared ISO minor-unit display, retained under the existing invoice helper name. */
+export {formatMinorCurrency as invoiceAmountMinor} from "@/domain/currency-money";
