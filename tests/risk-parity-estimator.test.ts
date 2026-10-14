@@ -14,7 +14,7 @@ describe("risk parity historical estimate",()=>{
  it("rejects missing and shifted observation calendars",()=>{
   const a=sample();a[1].points.pop();
   expect(()=>estimateDailyRiskParity(a,new Date("2026-04-01"),60)).toThrow("RP_MISSING_SESSIONS");
-  const b=sample();b[1].points[10].at=new Date("2026-03-30");
+  const b=sample();b[1].points.forEach((point)=>point.at=new Date(point.at.getTime()+86400_000));
   expect(()=>estimateDailyRiskParity(b,new Date("2026-04-01"),60)).toThrow("RP_UNALIGNED_SESSIONS");
  });
  it("produces positive, normalized weights for full paired return history",()=>{
