@@ -96,7 +96,7 @@ describe("isMethodComplete: checklist matrix",()=>{
     const leveraged=withConfig(alloc("US_EQUITY_3X_LONG","LONG_TREASURY_3X_LONG"));
     expect(failed(leveraged)).toContain("leverage");
     const hfea=getStrategyPlugin("hfea")!;
-    expect(failed(hfea)).toContain("declared");
+    expect(failed(hfea)).toEqual([]);
   });
   it("requires well-formed spec card and golden test paths",()=>{
     expect(failed(variant({specCard:null}))).toContain("spec-card");
