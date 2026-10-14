@@ -2,9 +2,9 @@ import {describe,expect,it} from "vitest";
 import {getStrategyPlugin} from "../src/domain/strategy/catalog";
 
 const cases = [
-  ["bernstein-no-brainer", [["US_LARGE_CAP","0.25"],["US_SMALL_CAP_BLEND","0.25"],["DEVELOPED_EX_US_SMALL_CAP_BLEND","0.25"],["US_SHORT_TREASURY","0.25"]]],
-  ["larry-portfolio", [["US_SMALL_CAP_VALUE","0.14"],["DEVELOPED_EX_US_SMALL_CAP_VALUE","0.105"],["EMERGING_MARKETS_VALUE","0.035"],["US_FIVE_YEAR_TREASURY","0.72"]]],
-  ["pinwheel", [["US_LARGE_CAP","0.15"],["US_SMALL_CAP_VALUE","0.10"],["DEVELOPED_EX_US_LARGE_CAP","0.15"],["EMERGING_MARKETS_EQUITY","0.10"],["US_INTERMEDIATE_TREASURY","0.15"],["US_TREASURY_BILLS","0.10"],["US_REITS","0.15"],["GOLD","0.10"]]]
+  ["bernstein-no-brainer", [["G3_US_LARGE_CAP_BLEND","0.25"],["G3_US_SMALL_CAP_BLEND","0.25"],["G3_DEV_EX_US_SMALL_CAP_BLEND","0.25"],["G3_US_SHORT_TREASURY","0.25"]]],
+  ["larry-portfolio", [["G3_US_SMALL_CAP_VALUE","0.14"],["G3_DEV_EX_US_SMALL_CAP_VALUE","0.105"],["G3_EM_VALUE","0.035"],["G3_US_FIVE_YEAR_TREASURY","0.72"]]],
+  ["pinwheel", [["G3_US_LARGE_CAP_BLEND","0.15"],["G3_US_SMALL_CAP_VALUE","0.10"],["G3_DEV_EX_US_LARGE_CAP_BLEND","0.15"],["G3_EM_LARGE_CAP_BLEND","0.10"],["G3_US_INTERMEDIATE_TREASURY","0.15"],["G3_US_TREASURY_BILLS","0.10"],["G3_US_REITS","0.15"],["G3_PHYSICAL_GOLD","0.10"]]]
 ] as const;
 
 describe("Group 3 reference-only allocation evidence",()=>{
