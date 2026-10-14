@@ -20,6 +20,9 @@ Unleveraged S&P SmallCap 600 exposure (IJR in Kelly's public discussion). Region
 - Verify the regional instrument and reserve sleeve; preserve existing immutable versions and historical fills without silent backfills.
 - Until each point is resolved, leave method completeness **INCOMPLETE** and prohibit new activation.
 
+## Independently verified author spreadsheet
+The author publishes an openly downloadable historical 3Sig working worksheet at https://www.jasonkelly.com/worksheets/My%203%25%20Signal%20Plan.xlsx . The first consecutive ordinary-quarter rows have been independently reproduced using precise Decimal arithmetic, including stock-fund dividends, bond-fund distributions, half of new contributions, desired stock share deltas, bond proceeds and actual-fill override accounting. Source sample opens with $8,000 in the stock fund and $2,000 in the bond fund; the next two stock target balances are $8,847.50 and $9,720.425, respectively. See src/domain/strategy/3sig-workbook-research.ts and tests/3sig-workbook-research.test.ts. The sheet does not remove the need to source age-dependent reset decisions, author protective state and customer execution integration. It remains research-only.
+
 ## Golden tests
 tests/sig-research.test.ts covers source-confirmed rate and contribution arithmetic only. This is NOT a full golden trading suite. Future author-derived scenarios must include 30 Down, spike/base resets, exhausted reserves, skipped and delayed quarters, price failure and multi-fill accounting.
 
