@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import {fixedAllocationEngine} from "./fixed-allocation";
 import {nextCalendarMonthDueAt,localDateInZone} from "../schedule";
+import {trinityNyseHolidayWindow} from "./trinity-calendar";
 import {trinityGlobalTrendSignal} from "./trinity-signals";
 import {TRINITY_CONFIG,TRINITY_BILLS,TRINITY_US_SIGNAL,TRINITY_VALUE,TRINITY_MOMENTUM,
   TRINITY_STATIC,TRINITY_SIGNALS,TRINITY_TRADE_UNIVERSE} from "./trinity-model";
@@ -26,7 +27,8 @@ export function trinitySignalCutoff(now:Date):Date{
   let cursor=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-2,15,12));
   let last:Date|null=null;
   for(let i=0;i<5;i++){
-    const next=nextCalendarMonthDueAt({lastReviewAt:cursor,timeZone:"America/New_York",cutoffLocal:"16:00"});
+    const next=nextCalendarMonthDueAt({lastReviewAt:cursor,timeZone:"America/New_York",cutoffLocal:"16:00",
+      holidays:trinityNyseHolidayWindow(now)});
     if(next>now)break;
     last=next;cursor=new Date(next.getTime()+1000);
   }
