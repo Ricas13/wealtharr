@@ -4,6 +4,9 @@ Status: **DRAFT, NOT SIGNED OFF.** Research compiled 2026-10-12 from public web 
 
 Reviewer: PENDING; independent approval: NO.
 
+
+> **Source-version conflict confirmed (2026-10-14):** In an October 6, 2019 author comment on https://jasonkelly.com/3sig/, Jason Kelly states that the next line is based on the previous quarter's **desired price**, rather than the eventual fill price, while other author examples discuss a partially funded post-order stock balance affecting later lines. These rules can diverge following capped/unfilled buys. This is a *material unresolved historical-versus-current variant distinction*. Do not release a live 9Sig engine until the current Kelly Letter guide unambiguously determines its target anchor and fill-date treatment.
+
 ## Engine
 VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See `docs/9SIG_IMPLEMENTATION_GAP.md` for how the code differs from this card.
 
