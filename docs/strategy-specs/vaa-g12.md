@@ -1,8 +1,8 @@
-# VAA Global 12
+# VAA Global 12 — Top 2 Breadth 4 Easy Trading
 
 ## Definition
 
-Keller/Keuning G12: same 12 offensive economic exposures as PAA; defensive LQD, IEF, SHY. Score 12*r1+4*r3+2*r6+r12; bad breadth is number of nonpositive offensive scores. CBF=min(1,bad/4); risk share 1-CBF equally across top five offensive, defensive fraction in top-ranking LQD/IEF/SHY. Net LQD exposure if simultaneously held as offensive and defensive. Monthly after completed month end.
+Keller/Keuning G12: same 12 offensive economic exposures as PAA; defensive LQD, IEF, SHY. Score 12*r1+4*r3+2*r6+r12; bad breadth is number of nonpositive offensive scores. With T=2 and B=4, the Easy Trading cash fraction is CF=(1/2)*floor(bad*2/4), capped at 1. Thus bad=0 or 1 holds two offensive assets at 50% each; bad=2 or 3 holds the highest-ranked offensive asset at 50% plus the best defensive at 50%; bad>=4 holds 100% in the strongest defensive asset. This is not the unrounded b/B fractional-weight variant. Net LQD exposure if simultaneously held as offensive and defensive. Monthly after completed month end. The source paper explicitly identifies G12 optimal T/B=2/4 (section 9) and Easy Trading in section 4.
 
 Primary research: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3002624. Rules are versioned and code-locked. All signals are evaluated only after the bar is final; market orders and recorded fills occur subsequently, never retroactively at a signal price.
 
