@@ -5,6 +5,7 @@ import {requireAdmin} from "@/lib/session";
 import {assertSameOrigin,consumeRateLimit} from "@/lib/security";
 import {authFailure} from "@/lib/api-auth";
 import {ensureSettings} from "@/lib/settings";
+import {verifiedInvoiceSubscriptionOwner} from "@/domain/admin-stripe-invoices";
 
 export const dynamic="force-dynamic";
 const payload=z.object({
@@ -47,8 +48,10 @@ export async function POST(request:Request){
   const localSubscriptionId=String(row.stripe_subscription_id);
   const remote=await stripe.subscriptions.retrieve(localSubscriptionId);
   const remoteCustomerId=typeof remote.customer==="string"?remote.customer:remote.customer?.id??null;
-  if(remote.id!==localSubscriptionId||remoteCustomerId!==localCustomerId||
-   (remote.metadata?.userId&&remote.metadata.userId!==parsed.userId)){
+  if(!verifiedInvoiceSubscriptionOwner({
+   userId:parsed.userId,customerId:localCustomerId,subscriptionId:localSubscriptionId,
+   remoteCustomerId,remoteSubscriptionId:remote.id,remoteMetadataUserId:remote.metadata?.userId??null
+  })){
    await audit(admin.id,parsed.userId,"OWNER_MISMATCH");
    return Response.json({error:"Stripe subscription ownership could not be verified. No invoices were returned."},
     {status:409,headers:privateHeaders});
