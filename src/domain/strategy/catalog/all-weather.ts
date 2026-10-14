@@ -14,8 +14,9 @@ export const plugin:StrategyPlugin={
     name:"All Weather (reference)",family:"FIXED_ALLOCATION",description:"Published unlevered reference approximation",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"DRAFT",realignsResearchOnlyDefinition:false
+    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false
   },
   specCard:"docs/strategy-specs/group-2-all-weather.md",
-  goldenTests:"tests/strategy-group-2-golden.test.ts"
+  goldenTests:"tests/strategy-group-2-golden.test.ts",
+releaseStatus:"COMPLETE"
 };
