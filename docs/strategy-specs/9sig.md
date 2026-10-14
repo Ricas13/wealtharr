@@ -62,6 +62,13 @@ VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See 
 | R16 | Withdrawals / decumulation. | Not found for 9Sig | **Unverified** (Q7) |
 | R17 | No floor on the TQQQ weight: repeated sells may take it below 60%. | S6 | **Single source** (primary) |
 
+
+## October 2026 forum cross-check (not author-certified)
+- March 2026 r/KellyLetter discussion reports TQQQ **quarterly close** 30% below its preceding two-year quarterly-close high as the contemporary 9Sig 30 Down trigger, and **two sell signals** skipped (intervening buys remain executable). https://www.reddit.com/r/KellyLetter/comments/1s8473h/30_down_rule_price_point/ and https://www.reddit.com/r/KellyLetter/comments/1q7e2v9/query_on_30_down_rule/ . This contradicts earlier SPY/one-skip accounts: source version is crucial.
+- A separate 2026 thread reports that resets occur after the 30 Down skips and describes a 100% spike. https://www.reddit.com/r/KellyLetter/comments/1s51l8j/30_down_rule/ . Forum posts disagree on exact later reset condition and calendar offset; no unverified reset is activated.
+- Public Kelly 2018 primary source explicitly requires spike gain >=100% in one quarter, stock portfolio weight between 60% and 100% **after normal rebalance**, and no 30 Down period: https://jasonkelly.com/resources/strategies/ . The 90% buy-power throttle is likewise author-documented; the current guide revision remains to be verified.
+- `src/domain/strategy/9sig-community-rules.ts` and `tests/9sig-community-rules.test.ts` implement these as **research-only** version-labelled, fail-closed predicates. They do not certify the full 2026 plan and do not issue trades.
+
 ## Hand-worked examples
 
 All figures in USD. They are worked by hand, not taken from the code. Example A reproduces Kelly's own published numbers. Example B uses invented quarterly returns and assumes **0% return on the bond fund** so the arithmetic is easy to check. It applies R2, R4, R5, R8, R9 and R10 only. The unverified rules R12, R14 and R15 are deliberately not applied and are flagged where they might fire.
