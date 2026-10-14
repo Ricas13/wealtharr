@@ -9,14 +9,15 @@ const cases = [
 
 describe("Group 3 reference-only allocation evidence",()=>{
   for(const [key,expected] of cases){
-    it(key+" matches documented sleeves without publishing incomplete implementation",()=>{
+    it(key+" matches documented sleeves with a published code method gated by market evidence",()=>{
       const plugin=getStrategyPlugin(key);
       expect(plugin).toBeDefined();
       expect(plugin?.profile?.engine).toBe("FIXED_ALLOCATION");
       expect(plugin?.profile?.config?.allocations).toEqual(expected.map(([exposure,weight])=>({exposure,weight})));
       expect(expected.reduce((total,[,weight])=>total+Number(weight),0)).toBeCloseTo(1,12);
-      expect(plugin?.seedDefinition).toBeNull();
-      expect(plugin?.releaseStatus).not.toBe("COMPLETE");
+      expect(plugin?.seedDefinition?.enabled).toBe(false);
+      expect(plugin?.seedDefinition?.initialVersion).toBe("PUBLISHED");
+      expect(plugin?.releaseStatus).toBe("COMPLETE");
     });
   }
   it("age-scaled and tactical methods remain intentionally nonpublishable",()=>{
