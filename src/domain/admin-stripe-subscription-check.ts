@@ -31,7 +31,9 @@ export function compareSubscriptionObservations(
   {field:"status",matched:local.status===canonicalStripeStatus(remote.status)},
   {field:"plan",matched:remote.planId!==null&&local.planId===remote.planId},
   {field:"cadence",matched:remote.cadence!==null&&local.cadence===remote.cadence},
-  {field:"period",matched:normalPeriod(local.periodEnd)===normalPeriod(remote.periodEnd)},
+  {field:"period",matched:
+   (!["active","trialing"].includes(remote.status)||local.periodEnd!==null&&remote.periodEnd!==null)&&
+   normalPeriod(local.periodEnd)===normalPeriod(remote.periodEnd)},
   {field:"cancellation",matched:local.cancelAtPeriodEnd===remote.cancelAtPeriodEnd}
  ];
  return checks.every(c=>c.matched)
