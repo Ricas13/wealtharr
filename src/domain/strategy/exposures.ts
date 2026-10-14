@@ -1,3 +1,4 @@
+import {GROUP4_EXPOSURES} from "./group4-exposures";
 /**
  * Registry of the economic exposures strategies may reference. Strategies name exposures, never
  * tickers or funds; the instrument mapping layer resolves an exposure to a tradable line per
@@ -50,6 +51,7 @@ export function isFullyDescribedExposure(exposure: ExposureDefinition | undefine
 }
 
 export const EXPOSURES: readonly ExposureDefinition[] = [
+  ...GROUP4_EXPOSURES,
   def("BROAD_EQUITY", "EQUITY", "Diversified global or broad-market equities"),
   def("DOMESTIC_EQUITY", "EQUITY", "Broad equities of the investor's home market"),
   def("INTERNATIONAL_EQUITY", "EQUITY", "Broad equities outside the investor's home market"),
