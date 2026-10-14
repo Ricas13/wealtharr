@@ -280,7 +280,7 @@ const canonical=(value:unknown):string=>JSON.stringify((function walk(v:unknown)
 
 const CATALOG_DIR="src/domain/strategy/catalog";
 // Group 3 source-verified releases intentionally supersede the frozen 2026 refactor snapshot.
-const GROUP3_KEYS=new Set(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel"]);
+const GROUP3_KEYS=new Set(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
 
 
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
@@ -364,13 +364,13 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","60-40","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","60-40","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
   it("only the three previously research-only fixed allocations realign an older definition",()=>{
     expect(STRATEGY_PLUGINS.filter(p=>p.seedDefinition?.realignsResearchOnlyDefinition).map(p=>p.key).sort())
-      .toEqual(["bernstein-no-brainer","coffeehouse","core-four","larry-portfolio","pinwheel","swensen","two-funds-for-life"]);
+      .toEqual(["bernstein-no-brainer","coffeehouse","core-four","larry-portfolio","pinwheel","swensen","trinity","two-funds-for-life"]);
   });
 
   it("keeps version 1.0 / effective 2026-01-01 and the generic fallback disclosure in the seed script",()=>{
