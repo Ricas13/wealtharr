@@ -21,7 +21,8 @@ export function calculateTacticalAllocation(req:TacticalRequest):TacticalAllocat
  if(!req.calendarCertified||!req.totalReturnCertified)throw new Error("TACTICAL_SOURCE_CERTIFICATION_REQUIRED");
  if(!req.currency||!Number.isFinite(req.asOf.getTime())||!/^\d{4}-(0[1-9]|1[0-2])$/.test(req.reviewMonth))throw new Error("TACTICAL_INVALID_REQUEST");
  const risk=[...req.riskAssets],def=[...req.defensiveAssets],all=[...risk,...def];
- if(!risk.length||!def.length||all.some(x=>!x)||new Set(all).size!==all.length)throw new Error("TACTICAL_INVALID_UNIVERSE");
+ if(!risk.length||!def.length||all.some(x=>!x)||new Set(risk).size!==risk.length||new Set(def).size!==def.length||
+    (!(req.variant==="VAA_G4"||req.variant==="VAA_G12")&&new Set(all).size!==all.length))throw new Error("TACTICAL_INVALID_UNIVERSE");
  const series=(id:string)=>{
   const matches=req.history.filter(s=>s.exposure===id&&s.currency===req.currency&&Boolean(s.source));
   if(matches.length!==1)throw new Error("TACTICAL_MISSING_OR_AMBIGUOUS_HISTORY:"+id);
