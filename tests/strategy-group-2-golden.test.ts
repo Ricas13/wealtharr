@@ -3,7 +3,7 @@ import {describe,it,expect} from "vitest";
 import {getStrategyPlugin} from "@/domain/strategy/catalog";
 import {initialAllocationPlan} from "@/domain/initial-allocation";
 import {planRebalance} from "@/domain/strategy/rebalance-plan";
-import {nextCalendarQuarterDueAt} from "@/domain/schedule";
+import {nextCalendarQuarterDueAt,rollBusinessDay} from "@/domain/schedule";
 import type {ResolvedPosition} from "@/domain/strategy/market-eligibility";
 
 const keys=["all-weather","hfea","coffeehouse","core-four","swensen","merriman-ultimate"] as const;
@@ -45,7 +45,7 @@ describe("group 2 independently calculated reference outcomes",()=>{
      ["BUY","US_EQUITY_3X_LONG","550.00"],["BUY","LONG_TREASURY_3X_LONG","450.00"]
    ]);
  });
- it("hfea: known NYSE holiday at March 2027 quarter close rolls review to March 25",()=>{
+ it("hfea: NYSE Good Friday closure is in holiday set, while March quarter ends on March 31",()=>{
    const c=getStrategyPlugin("hfea")?.profile?.config;
    const holidays=c?.marketHolidays as string[];
    expect(holidays).toContain("2027-03-26");
@@ -54,7 +54,8 @@ describe("group 2 independently calculated reference outcomes",()=>{
      lastReviewAt:new Date("2027-01-01T16:00:00Z"),
      timeZone:"America/New_York",cutoffLocal:"16:00",holidays
    });
-   expect(instant.toISOString()).toBe("2027-03-25T20:00:00.000Z");
+   expect(rollBusinessDay("2027-03-26",holidays)).toBe("2027-03-25");
+   expect(instant.toISOString()).toBe("2027-03-31T20:00:00.000Z");
  });
  it("coffeehouse: six equal equity/REIT sleeves and 40% Treasury",()=>{
    expect(initial("coffeehouse")).toEqual(["1000.00","1000.00","1000.00","1000.00","1000.00","4000.00","1000.00"]);
