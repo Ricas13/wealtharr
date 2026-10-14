@@ -7,7 +7,9 @@ import { sql } from "@/lib/db";
 import type { Sql } from "postgres";
 import { assessCorporateActions, corporateActionMessage } from "@/lib/corporate-action-guard";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
-import { isCashBuyShortfall, settleCashBuyFallback } from "@/domain/strategy/cash-buy-fallback";
+import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
+import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
+import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
 import { assertExecutionCurrencyMatch, executionPriceBand, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
@@ -21,7 +23,7 @@ import { loadTrustedHistory } from "@/lib/trusted-history-loader";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { nextCalendarQuarterDueAt } from "@/domain/schedule";
-import { buildStrategyAlert } from "@/domain/strategy-alert";
+import { alertKeyClass, buildStrategyAlert } from "@/domain/strategy-alert";
 import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
 import { assessLinkedMarkets } from "@/domain/strategy/linked-market-eligibility";
@@ -244,12 +246,121 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const trustedHistory=momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
-  const resolveProposal=async(unaffordableCashBuys:Record<string,Decimal>)=>{
-  let blockedCashBuyExposure:string|null=null;
+  const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
+    const mappingRows=await db.unsafe(
+      "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
+      [economicExposure,String(account.country),String(account.wrapper)]
+    );
+    const candidates:MappingCandidate[]=mappingRows.map((r)=>({
+      id:String(r.id),economicExposure:String(r.economic_exposure),leverage:String(r.leverage),direction:String(r.direction),
+      country:String(r.country),wrapper:String(r.wrapper),broker:r.broker?String(r.broker):null,
+      preferredCurrency:r.preferred_currency?String(r.preferred_currency):null,fidelity:String(r.fidelity),
+      effectiveFrom:isoDate(r.effective_from),effectiveTo:r.effective_to?isoDate(r.effective_to):null,
+      tradingLineId:String(r.trading_line_id),tradingLineCurrency:String(r.trading_line_currency),
+      tradingLineEffectiveFrom:isoDate(r.trading_line_effective_from),
+      tradingLineEffectiveTo:r.trading_line_effective_to?isoDate(r.trading_line_effective_to):null
+    }));
+    return resolveMapping(candidates,{
+      economicExposure,leverage,direction:"LONG",
+      country:String(account.country),wrapper:String(account.wrapper),
+      broker:account.broker_name?String(account.broker_name):null,
+      preferredCurrency:String(account.currency),asOf:new Date().toISOString().slice(0,10)
+    });
+  };
+  // Unit price, execution-account cash and execution-account holding of one leg, for order sizing
+  // (execution-residue.ts). Mirrors order sizing below (same account ranking, mapping, override and quote
+  // rules); null means "unknown" and fails closed.
+  // Residual-order sizing retains the administrator-confirmed split guard.
+  const legExecutionFor=async(economicExposure:string,leverageRaw:unknown,side:"BUY"|"SELL"):Promise<{price:Decimal;buyCash:Decimal;heldUnits:Decimal;accountId:string}|null>=>{
+    try{
+      const leverage=exposureLeverage(economicExposure,leverageRaw);
+      // A sale is sized on the held line of the largest position (as in resolveProposal), not on the
+      // account with the most cash.
+      const candidateLines:Array<{lineId:string;accountId:string}>=[];
+      if(side==="SELL"){
+        const held=[...exposurePositions]
+          .filter((p)=>p.economicExposure===economicExposure&&p.tradingLineId&&fullyEligibleAccountIds.has(p.accountId))
+          .sort((a,b)=>b.value.cmp(a.value))[0];
+        if(held?.tradingLineId)candidateLines.push({lineId:held.tradingLineId,accountId:held.accountId});
+      }
+      if(!candidateLines.length){
+        const ranked=accounts
+          .filter(account=>fullyEligibleAccountIds.has(String(account.id)))
+          .map((account)=>{
+            const accountId=String(account.id);
+            const scenarioDelta=scenario?.cashDelta&&accountId===primaryAccountId?new Decimal(scenario.cashDelta):new Decimal(0);
+            return {account,cash:(accountPositions.get(accountId)?.cash??new Decimal(0)).plus(scenarioDelta)};
+          })
+          .sort((a,b)=>b.cash.cmp(a.cash));
+        for(const candidate of ranked){
+          const mapping=await findMapping(economicExposure,leverage,candidate.account);
+          if(mapping){candidateLines.push({lineId:mapping.tradingLineId,accountId:String(candidate.account.id)});break;}
+        }
+      }
+      for(const {lineId,accountId} of candidateLines){
+        const quoteRows=await db.unsafe(
+          "SELECT tl.instrument_id,tl.currency,o.price,o.observed_at,o.currency AS observation_currency,r.observed_at AS rejected_observed_at FROM trading_lines tl LEFT JOIN market_data_rejections r ON r.trading_line_id=tl.id LEFT JOIN LATERAL (SELECT price,observed_at,currency FROM market_data_observations m WHERE m.trading_line_id=tl.id ORDER BY observed_at DESC LIMIT 1) o ON true WHERE tl.id=$1 LIMIT 1",
+          [lineId]
+        );
+        const quote=quoteRows[0];
+        if(!quote)return null;
+        const overrideRows=quote.instrument_id
+          ?await db.unsafe("SELECT manual_value,observed_at FROM overrides WHERE strategy_instance_id=$1 AND field_key=$2 AND active=true AND expires_at>now() ORDER BY created_at DESC LIMIT 1",[strategyInstanceId,"market_price:"+String(quote.instrument_id)])
+          :[];
+        const override=overrideRows[0];
+        const price=override?.manual_value!=null?validatedEffectivePrice(override.manual_value):quote.price!=null?validatedEffectivePrice(String(quote.price)):null;
+        const observedAt=override?.observed_at??quote.observed_at;
+        const rejectedAt=quote.rejected_observed_at?new Date(quote.rejected_observed_at):null;
+        const quoteAt=quote.observed_at?new Date(quote.observed_at):null;
+        const overrideAt=override?.observed_at?new Date(override.observed_at):null;
+        if(rejectedAt&&(!quoteAt||rejectedAt>=quoteAt)&&(!override||!overrideAt||overrideAt<=rejectedAt))return null;
+        // Residual order sizing enforces the same per-account confirmed-split guard as final sizing.
+        const sizingDate=override?.manual_value!=null?overrideAt:quoteAt;
+        if(quote.instrument_id&&await confirmedSplitBlock(String(quote.instrument_id),
+          sizingDate&&Number.isFinite(sizingDate.getTime())?sizingDate:null))return null;
+        if(!price||String(quote.observation_currency??quote.currency)!==String(instance.currency))return null;
+        if(!observedAt||!Number.isFinite(new Date(observedAt).getTime()))return null;
+        const ageHours=(Date.now()-new Date(observedAt).getTime())/3600000;
+        if(ageHours>36||new Date(observedAt).getTime()>Date.now()+60_000)return null;
+        const scenarioDelta=scenario?.cashDelta&&accountId===primaryAccountId?new Decimal(scenario.cashDelta):new Decimal(0);
+        const position=accountPositions.get(accountId);
+        return {
+          price:new Decimal(price.toString()),
+          buyCash:(position?.cash??new Decimal(0)).plus(scenarioDelta),
+          heldUnits:quote.instrument_id?(position?.quantities.get(String(quote.instrument_id))??new Decimal(0)):new Decimal(0),
+          accountId
+        };
+      }
+      return null;
+    }catch{
+      return null;
+    }
+  };
+  type SizingOverride={trade:{side:"BUY"|"SELL";exposure:string;amount:Decimal;leverage?:string;rationale:ExplanationRow[]}}|{proposal:ProposedAction};
+  const resolveProposal=async(override?:SizingOverride)=>{
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
   let sizingBand:Decimal|null=null;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage},unaffordableCashBuys});
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  if(override&&"proposal" in override)proposal=override.proposal;
+  if(override&&"trade" in override){
+    const forcedTrade=override.trade;
+    // The execution convention chose this order; it still goes through mapping, quote and practical-trade checks.
+    proposal={
+      actionType:forcedTrade.side,
+      title:(forcedTrade.side==="BUY"?"Buy ":"Sell ")+forcedTrade.exposure,
+      instruction:"",
+      amount:forcedTrade.amount,
+      currency:String(instance.currency),
+      economicExposure:forcedTrade.exposure,
+      leverage:forcedTrade.leverage,
+      explanation:[...proposal.explanation.filter((row)=>!row.label.startsWith("Full plan")),...forcedTrade.rationale],
+      nextState:{...state,lastCalculatedAt:new Date().toISOString()},
+      confidence:"HIGH",
+      dueAt:proposal.dueAt??new Date(),
+      completesReview:false
+    };
+  }
 
   let tradingLineId:string|null=null;
   let executionTicker:string|null=null;
@@ -280,25 +391,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
       let mappedAccount:typeof accounts[number]|null=null;
       for(const candidateAccount of rankedAccounts){
         const account=candidateAccount.account;
-        const mappingRows=await db.unsafe(
-          "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
-          [proposal.economicExposure,String(account.country),String(account.wrapper)]
-        );
-        const candidates:MappingCandidate[]=mappingRows.map((r)=>({
-          id:String(r.id),economicExposure:String(r.economic_exposure),leverage:String(r.leverage),direction:String(r.direction),
-          country:String(r.country),wrapper:String(r.wrapper),broker:r.broker?String(r.broker):null,
-          preferredCurrency:r.preferred_currency?String(r.preferred_currency):null,fidelity:String(r.fidelity),
-          effectiveFrom:isoDate(r.effective_from),effectiveTo:r.effective_to?isoDate(r.effective_to):null,
-          tradingLineId:String(r.trading_line_id),tradingLineCurrency:String(r.trading_line_currency),
-          tradingLineEffectiveFrom:isoDate(r.trading_line_effective_from),
-          tradingLineEffectiveTo:r.trading_line_effective_to?isoDate(r.trading_line_effective_to):null
-        }));
-        const mapping=resolveMapping(candidates,{
-          economicExposure:proposal.economicExposure,leverage,direction:"LONG",
-          country:String(account.country),wrapper:String(account.wrapper),
-          broker:account.broker_name?String(account.broker_name):null,
-          preferredCurrency:String(account.currency),asOf:new Date().toISOString().slice(0,10)
-        });
+        const mapping=await findMapping(proposal.economicExposure,leverage,account);
         if(mapping){
           mappedAccount=account;
           executionAccountId=String(account.id);
@@ -379,16 +472,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           constraints:scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>)
         });
         if(practical.status==="BLOCKED"){
-          const messages={
-            SELLING_DISABLED:"Selling is disabled in your trade preferences. Change that preference or add new money before the strategy can proceed.",
-            INSUFFICIENT_SPENDABLE_CASH:"Your cash buffer and estimated fee leave no spendable cash for this action.",
-            BELOW_ONE_SHARE:"This action is smaller than one whole share and your broker is set to whole shares only.",
-            BELOW_MINIMUM_TRADE:"This action is below your minimum trade size.",
-            NO_HOLDINGS:"The strategy wants to reduce this exposure, but no matching holding is recorded."
-          } as const;
-          if(proposal.actionType==="BUY"&&calculationEngineKey==="FIXED_ALLOCATION"&&isCashBuyShortfall(practical.reason))
-            blockedCashBuyExposure=proposal.economicExposure??null;
-          proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:messages[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
+          proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:PRACTICAL_BLOCK_MESSAGES[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
         }else{
           sizingPrice=effectivePrice;
           instructedQuantity=practical.quantity;
@@ -418,17 +502,62 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     }
   }
 
-  const skippedBuys=Object.keys(unaffordableCashBuys);
-  if(skippedBuys.length&&proposal.actionType!=="DATA_REQUIRED"){
-    proposal={...proposal,explanation:[
-      ...proposal.explanation,
-      ...skippedBuys.map(exposure=>({label:"Cash purchase of "+exposure+" skipped",value:"Below one whole share, your minimum trade, or spendable cash",kind:"text" as const}))
-    ]};
-  }
-  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand,blockedCashBuyExposure};
+  return {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand};
   };
-  const {proposal,tradingLineId,executionTicker,executionAccountId,sizingPrice,instructedQuantity,sizingBand}=
-    await settleCashBuyFallback(resolveProposal,effectiveCash);
+
+  // Execution convention (docs/strategy-engines.md "Execution convention for order sizing"): once the engine
+  // says a fixed-allocation review has to trade, the order is sized to the nearest tradable unit from the
+  // EXECUTION account's cash and holdings. It returns the next order, a residue HOLD (every leg within half a
+  // unit of target) or a DATA_REQUIRED that names why nothing can be traded.
+  let override:SizingOverride|undefined;
+  if(calculationEngineKey==="FIXED_ALLOCATION"&&dataStatus==="CURRENT"){
+    const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+    const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
+    const allocations=effectiveAllocations(config,settings);
+    if(needsTrade&&allocations){
+      const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
+      const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});
+      if(total.gt(0)){
+        const constraints=normalizeExecutionConstraints(scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>));
+        const currency=String(instance.currency);
+        // Prices resolve with the same mapping + quote rules as order sizing (the held line for an
+        // overweight leg, as a sale is sized); any doubt (no mapping, stale, rejected, other currency)
+        // is "unknown" and fails closed.
+        const sizingLegs:SizingLeg[]=[];
+        for(const leg of legs){
+          const allocation=allocations.find(a=>String(a.exposure)===leg.exposure);
+          const selling=leg.target.lt(leg.current);
+          const execution=await legExecutionFor(leg.exposure,allocation?.leverage,selling?"SELL":"BUY");
+          sizingLegs.push({
+            ...leg,price:execution?.price??null,buyCash:execution?.buyCash??new Decimal(0),heldUnits:execution?.heldUnits??new Decimal(0),
+            buyAccountId:selling?null:execution?.accountId??null,sellAccountId:selling?execution?.accountId??null:null
+          });
+        }
+        const outcome=sizeNextTrade({legs:sizingLegs,total,threshold,constraints});
+        if(outcome.kind==="TRADE"){
+          const allocation=allocations.find(a=>String(a.exposure)===outcome.trade.exposure);
+          override={trade:{
+            side:outcome.trade.side,exposure:outcome.trade.exposure,amount:outcome.trade.amount,
+            leverage:allocation?.leverage==null?undefined:String(allocation.leverage),
+            rationale:sizedTradeRows(outcome.trade,currency,constraints.fractionalShares)
+          }};
+        }else if(outcome.kind==="HOLD"){
+          override={proposal:residueHoldProposal(exact,outcome,{state,now:new Date(),cash:effectiveCash,currency,fractionalShares:constraints.fractionalShares})};
+        }else{
+          const note=openOutcomeNote(outcome,currency);
+          override={proposal:{
+            actionType:"DATA_REQUIRED",title:note.title,instruction:note.instruction,
+            explanation:[...exact.explanation.filter((row)=>!row.label.startsWith("Full plan")),...note.rows],
+            nextState:state,confidence:outcome.kind==="UNPRICED"?"LOW":"HIGH",dueAt:exact.dueAt,
+            reasonCode:outcomeReasonCode(outcome)
+          }};
+        }
+      }
+    }
+  }
+  const resolved=await resolveProposal(override);
+  const {sizingPrice,instructedQuantity,sizingBand,tradingLineId,executionTicker,executionAccountId}=resolved;
+  const proposal=resolved.proposal;
 
   const stableHoldings=accounts.flatMap((account)=>{
     const accountId=String(account.id);
@@ -461,7 +590,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const fingerprint=crypto.createHash("sha256").update(material).digest("hex");
   // Deliver one generic reminder per strategy review cycle and alert class,
   // while the newest calculated action and its precise quantities can change.
-  const notificationClass=proposal.actionType==="DATA_REQUIRED"?"DATA_REQUIRED":"REVIEW";
+  // A HOLD, BUY or SELL is a REVIEW alert; any DATA_REQUIRED (data problem, blocking preference, portfolio
+  // too small, cash needed) is a DATA_REQUIRED alert whose title and instruction carry the distinct message.
+  // A changed class is a new review_key, hence a new notification row.
+  // The outcome code is part of the class: a change of reason (cash needed -> preference blocks) is a new
+  // review_key and therefore a new notification and delivery.
+  const notificationClass=alertKeyClass(proposal.actionType,proposal.reasonCode);
   const reviewKey=crypto.createHash("sha256")
     .update(strategyInstanceId+"|"+lastReview.toISOString()+"|"+notificationClass).digest("hex");
   // An estimated BUY/SELL is never proof that target weights were achieved.
@@ -742,6 +876,7 @@ export async function calculateAction(strategyInstanceId:string){
       // in-flight or delivered alert always points to the latest revision.
       const message=buildStrategyAlert({
         actionType:proposal.actionType,
+        reason:proposal.reasonCode??null,
         amount:proposal.amount?.toString()??null,
         currency:proposal.currency??null,
         ticker:executionTicker??proposal.economicExposure??null,
