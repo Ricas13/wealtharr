@@ -31,3 +31,4 @@ export default async function UsersAdmin(){
    <p className="admin-data-caveat">Choose a customer from full-database search or the recent directory to review subscription health and edit their strategy permissions. Overrides are audited and still respect plan, regional and global restrictions.</p>
   </section>
  </div>;
+}
