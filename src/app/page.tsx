@@ -9,6 +9,7 @@ import {assertCuratedRules} from "@/domain/strategy/curated-release";
 import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-market-mappings";
 import {cardDescription,isOfferableForUser,summariseRules} from "@/domain/explore-catalogue";
 import {PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStrategyCard} from "@/components/PublicLandingInteractivity";
+import {MarketingHeroChart} from "@/components/MarketingHeroChart";
 import "./marketing-home.css";
 
 export const dynamic="force-dynamic";
@@ -121,17 +122,9 @@ export default async function HomePage(){
         </div>
         <div className="wm-preview" aria-label="Illustrative Wealtharr member-dashboard preview">
           <div className="wm-preview-header"><strong>◈ &nbsp; Overview <span>/ Strategy review</span></strong><small>ILLUSTRATIVE DATA</small></div>
-          <div className="wm-preview-body"><div className="wm-preview-title"><div><small>STRATEGY SNAPSHOT</small><h2>Portfolio allocation review</h2></div><span>Example only</span></div>
-            <div className="wm-preview-kpis"><div><small>Tracked value</small><strong>£24,850</strong></div><div><small>Allocated</small><strong>4 sleeves</strong></div><div><small>Next contribution</small><strong>£500</strong></div></div>
+          <div className="wm-preview-body"><div className="wm-preview-title"><div><small>STRATEGY SNAPSHOT</small><h2>Follow a strategy. See the progress.</h2></div><span>Example only</span></div>
             <div className="wm-preview-cols"><div className="wm-chart">
-              <div className="wm-panel-title">Portfolio journey <span>Illustrative 12 months</span></div>
-              <svg viewBox="0 0 300 144" role="img" aria-label="Fictional rising portfolio-value line, not real investment performance" preserveAspectRatio="none">
-                <defs><linearGradient id="wmchart" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#93d0ad" stopOpacity=".23"/><stop offset="1" stopColor="#93d0ad" stopOpacity="0"/></linearGradient></defs>
-                <path d="M0 114H300M0 75H300M0 36H300" stroke="#2a3a3d" strokeDasharray="4 6"/>
-                <path d="M0 120 L30 104 L55 113 L78 86 L103 96 L126 71 L151 83 L176 57 L204 64 L230 41 L256 48 L284 19 L300 14 V144H0Z" fill="url(#wmchart)"/>
-                <path d="M0 120 L30 104 L55 113 L78 86 L103 96 L126 71 L151 83 L176 57 L204 64 L230 41 L256 48 L284 19 L300 14" fill="none" stroke="#b3ecc7" strokeWidth="3" strokeLinecap="round"/>
-              </svg>
-              <small>Sample chart · not investment performance</small>
+              <MarketingHeroChart/>
             </div><div className="wm-allocation">
               <div className="wm-panel-title">Allocation drift <span>Actual / Target</span></div>
               {[["Equities",29,30],["Bonds",52,55],["Gold",9,8],["Commodities",10,7]].map(([label,actual,target])=><div className="wm-allocation-row" key={label}>
