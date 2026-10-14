@@ -1,27 +1,27 @@
-# Income Sig: primary-source methodology record
+# Income Sig: 2026 Generator and Reserve primary-source record
 
-Status: **INCOMPLETE — RESEARCH ONLY, NOT ACTIVATABLE**. Reviewed public statements on 2026-10-14. Not a reproduction of the current paid subscriber guide.
+Status: **INCOMPLETE — research only, not activatable.** Version: Income Sig upgrade announced for 2026-01-05, distinct from the 2022 original. Public author source: https://jasonkelly.com/income-sig/ (retrieved 2026-10-14). Historic context: https://jasonkelly.com/2024/11/from-the-forums-income-sig-distributions/.
 
 ## Definition
-Jason Kelly's Income Sig is part of The Kelly Letter Sig family. Published evidence describes an income-oriented fixed-allocation and surplus-extraction approach, not a guarantee of portfolio growth. Instrument description: Leveraged asset mixture; precise components and allocations have not been publicly verified.
+This is **not** a 3/6/9% signal strategy. Jason Kelly describes a Generator with income, stock and bond fund slots, and a separately managed Reserve. The Generator uses quarterly rebalancing and a profit skim beyond an undisclosed stock-slot quarterly target. Part of the surplus remains in the Generator, with the remainder and all fund distributions routed to the Reserve. Reserve assets are invested for stability and monthly withdrawals come from the Reserve bond slot.
 
-Primary sources: https://jasonkelly.com/; https://jasonkelly.com/ ; https://jasonkelly.com/2017/01/how-my-signal-system-works/. Kelly identifies his subscriber-only guide and calculator as the sources for full implementation instructions.
+Kelly publicly names optional opening Generator/Reserve weights of **70/30 for immediate income** and **100/0 for later income**. These outer weights must not be mistaken for the undisclosed allocation *within* the three Generator slots or allocation *within* the Reserve.
 
 ## Rebalancing rule
-The author states that Income Sig rebalances quarterly to a fixed allocation and skims leverage-driven surplus. No publishable arithmetic for target weights, reserve thresholds or withdrawals is established from accessible first-party material.
+Quarterly Generator rebalance to predetermined fund weights; split surplus gains into retained and skimmed portions; direct all confirmed distributions and skims into Reserve; pay regular monthly withdrawal from Reserve bond slot. New contributions go to Generator bond slot. The author's public text explicitly says detailed signals, fund allocations, profit-skim calculations and calculators are subscriber-only. No numeric skim proportion, thresholds, inner weights, individual fund selection, or withdrawal budget may be inferred.
 
 ## Instrument requirements
-Leveraged asset mixture; precise components and allocations have not been publicly verified. Regional substitutes need independent economic-exposure, leverage, currency, market-calendar and wrapper eligibility checks. A nominally similar UCITS instrument is not automatically identical.
+Three distinct Generator slots (income, stock, bond) and separate Reserve assets/bond slot. Need licensed market-data, exact instrument exposure, live quoted prices, costs, taxes and jurisdiction/wrapper eligibility. SVOL was mentioned in a 2024 author reply for the **older** Repository system; it is not evidence that the 2026 Reserve must hold SVOL.
 
 ## Owner-decision list
-- Obtain and record dated, legitimately accessed first-party guide for the selected Income Sig revision, with explicit permission/rights analysis for commercial representation.
-- Fixed-allocation quarterly rebalance with surplus skimming is publicly described, but exact target allocation, skim formula, payment timing, reserve replenishment, leverage controls and withdrawals are unavailable. It MUST NOT run through the growth-value-target formula.
-- Confirm starting and reset allocations, income/distribution accounting, contribution and withdrawal treatment, partial fills, fees, precision and calendar scheduling.
-- Verify the regional instrument and reserve sleeve; preserve existing immutable versions and historical fills without silent backfills.
-- Until each point is resolved, leave method completeness **INCOMPLETE** and prohibit new activation.
+- Obtain properly accessible authoritative 2026 subscriber guide and confirm whether commercial reproduction/branding is permitted.
+- Confirm Generator slot tickers/weights, target growth, skim percentage, reset and protective rules, Reserve holdings/weights, funding and depletion rules.
+- Define monthly withdrawal budget, contribution timing, distribution accounting, fees, missed quarters, partial fills and emergency drawdowns.
+- Do not migrate 2022 implementations to 2026 implicitly; preserve versions and ledger state.
+- Keep all strategy activation and investor trade instructions blocked until the full methodology is verified and tested.
 
 ## Golden tests
-No genuine author-derived golden execution cases can be constructed yet. Do not substitute guessed fixed weights. Future cases must include income extraction, reserve exhaustion, reinvestment, leverage shocks and partial fills.
+`tests/income-sig-research.test.ts` checks double-entry-style Generator/Reserve cashflow identity, transfer conservation and overdraw rejection against source-confirmed **direction** of flows. It does not test author-specific allocation arithmetic, which is unavailable. `src/domain/strategy/income-sig-research.ts` is not a live engine. True golden cases still require primary-source values for full multi-quarter and monthly distribution lifecycle.
 
 ## Rights and provenance
-Factual public statements are attributed and linked. Wealtharr has not established a licence to reproduce paid subscriber-only rulebooks, source text or the author's brand as an endorsed commercial offering. Do not imply endorsement or label a non-equivalent approximation as Income Sig.
+The publicly accessible explanation is attributed to the author; no paid guide or calculator content is reproduced. Commercial implementation and author/brand permission require legal evaluation. Do not claim affiliation or an exact recreation from this research module.
