@@ -1,7 +1,7 @@
 # pinwheel: Group 3 source-locked implementation dossier
 
 ## Definition
-Original 2018 US reference: 15% total domestic equities, 10% domestic small value, 15% international equities, 10% emerging markets, 15% intermediate domestic bonds, 10% domestic Treasury bills, 15% REITs and 10% gold.
+Portfolio Charts US reference (asset-level representation of Tyler's 2018 concept): 15% US large-cap blend, 10% domestic small value, 15% developed ex-US large-cap blend, 10% emerging markets, 15% intermediate domestic bonds, 10% domestic Treasury bills, 15% REITs and 10% gold.
 
 Source: https://portfoliocharts.com/2018/10/01/try-a-modern-spin-on-a-classic-idea-with-the-pinwheel-portfolio/
 
@@ -12,7 +12,7 @@ For static-reference entries, Wealtharr proposes a scheduled **annual** exact-ta
 Asset classes must be mapped to precisely equivalent economic exposures and account/wrapper-eligible funds in every enabled market. Trading history, corporate actions, cash residue, FX conversions and price freshness must pass platform guards.
 
 ## Owner-decision list
-Not an invitation to invent strategy rules. Unresolved engineering blocker: TOTAL_EX_US_EQUITY must explicitly mean developed ex-US for this version if emerging markets are a distinct leg; US_TREASURY_BILLS needs a maturity-matched mapping. No verified cross-jurisdiction instrument catalogue has been signed off.
+Not an invitation to invent strategy rules. Unresolved engineering blocker: DEVELOPED_EX_US_LARGE_CAP must explicitly mean developed ex-US for this version if emerging markets are a distinct leg; US_TREASURY_BILLS needs a maturity-matched mapping. No verified cross-jurisdiction instrument catalogue has been signed off.
 
 ## Golden tests
 The release will require dedicated independently calculated cases for initial allocation, underweight cash contribution, overweight sale, fee/rounding/cash residue, review-date rollover, missing inputs, migration preservation, instance lifecycle and entitlement gates. No release-status COMPLETE claim is made until these execute against the live model. See `tests/group-3-reference.test.ts` for provisional, independently sourced weight invariants.
