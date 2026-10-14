@@ -29,7 +29,7 @@ function certifiedSeries(exposure:string,rows:Row[],currency:string,reviewMonth:
   prev=at.getTime();sequence=s;
   const month=day.slice(0,7);months.add(month);
   if(r.month_terminal_certified)terminals.add(month);
-  points.push({at,adjustedClose:price});
+  points.push({at,adjustedClose:price,monthTerminalCertified:r.month_terminal_certified});
  }
  if(!points.length||now.getTime()-points[points.length-1].at.getTime()>CUTOFF_AGE_DAYS*86400_000)return null;
  const [year,month]=reviewMonth.split("-").map(Number);
