@@ -13,7 +13,11 @@ export type PublicPlanCard={
   monthlyMinor:number|null;annualMinor:number|null;maxActive:number|null;
   features:string[];channels:string[];highlights:string[];
 };
-const priceLabel=formatMinorCurrency;
+function priceLabel(amount:number,currency:string){
+  // The Free card deliberately reads £0 rather than £0.00.
+  if(amount===0)return new Intl.NumberFormat("en-GB",{style:"currency",currency,minimumFractionDigits:0,maximumFractionDigits:0}).format(0);
+  return formatMinorCurrency(amount,currency);
+}
 export function PublicStrategyRail({cards}:{cards:PublicStrategyCard[]}){
   const rail=useRef<HTMLDivElement>(null);
   const held=useRef(false);
