@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import Decimal from "decimal.js";
 const D=(n:number|string)=>new Decimal(n);
 import {ivyTenMonthSignals} from "../src/domain/strategy/ivy-signals";
-describe("gtaa-ivy canonical golden",()=>{
+describe("gtaa-ivy",()=>{
  it("three rising and two falling sleeves produce 60 percent risk and 40 percent bills",()=>{
   const ids=["US","EAFE","BONDS","COMMOD","REITS"];
   const history=ids.map((exposure,j)=>({exposure,currency:"USD",source:"licensed",points:Array.from({length:10},(_,i)=>({
