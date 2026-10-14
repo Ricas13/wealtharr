@@ -1,20 +1,9 @@
 "use client";
 import {useState} from "react";
+import {invoiceAmountMinor} from "@/domain/admin-stripe-invoices";
 
 type Invoice={status:string;currency:string;amountPaidMinor:number;amountDueMinor:number;issuedAt:string};
 type Reply={invoices:Invoice[];hasMore:boolean;nextCursor:string|null;note:string;error?:string};
-
-export function invoiceAmountMinor(minor:number,currency:string):string{
- try{
-  if(!Number.isSafeInteger(minor))throw new Error("INVALID_AMOUNT");
-  const code=currency.toUpperCase();
-  const fmt=new Intl.NumberFormat("en-GB",{style:"currency",currency:code});
-  const fraction=fmt.resolvedOptions().maximumFractionDigits;
-  return fmt.format(minor/10**fraction);
- }catch{
-  return String(minor)+" "+currency.toUpperCase()+" minor units";
- }
-}
 
 export function AdminStripeInvoiceHistory({userId}:{userId:string}){
  const [invoices,setInvoices]=useState<Invoice[]>([]);
