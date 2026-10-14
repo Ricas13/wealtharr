@@ -58,7 +58,7 @@ test("wizard, Strategy Studio and integrations remain usable at different widths
  }
  await page.goto("/admin/configuration");
  await expect(page.getByRole("heading",{name:"Set up Wealtharr"})).toBeVisible();
- await expect(page.getByRole("progressbar",{name:"Verified configuration progress"})).toBeVisible();
+ await expect(page.getByRole("progressbar",{name:"Configuration progress"})).toBeVisible();
  await page.goto("/admin/strategies");
  await expect(page.getByRole("heading",{name:"Strategy Studio",exact:true})).toBeVisible();
  await page.goto("/admin/integrations");

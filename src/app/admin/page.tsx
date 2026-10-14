@@ -11,7 +11,7 @@ export const dynamic="force-dynamic";
 
 export default async function AdminPage(){
  await requireAdminPage();
- const [users,strategies,failed,attention,runs,flags,definitions,attested,registrations,createdStrategies,customers30,activeSubscriptions,billingFailures]=await Promise.all([
+ const [users,strategies,failed,attention,runs,flags,definitions,publishedVersions,registrations,createdStrategies,customers30,activeSubscriptions,billingFailures]=await Promise.all([
   sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL"),
   sql.unsafe("SELECT count(*)::int AS c FROM strategy_instances WHERE status='ACTIVE'"),
   sql.unsafe("SELECT count(*)::int AS c FROM notification_deliveries WHERE status='PENDING' AND attempt_count>2"),
@@ -19,7 +19,7 @@ export default async function AdminPage(){
   sql.unsafe("SELECT DISTINCT ON (worker_key) worker_key,status,started_at,finished_at FROM worker_runs ORDER BY worker_key,started_at DESC"),
   sql.unsafe("SELECT key,enabled,updated_at FROM feature_flags ORDER BY key"),
   sql.unsafe("SELECT count(*)::int AS total,count(*) FILTER (WHERE enabled=true)::int AS enabled FROM strategy_definitions"),
-  sql.unsafe("SELECT count(*)::int AS c FROM strategy_version_attestations"),
+  sql.unsafe("SELECT count(*)::int AS c FROM strategy_versions WHERE lifecycle_status=\'PUBLISHED\' AND published_at IS NOT NULL"),
   sql.unsafe("SELECT to_char(date_trunc('month',created_at),'YYYY-MM') AS bucket,count(*)::int AS c FROM users WHERE deleted_at IS NULL AND created_at>=date_trunc('month',now())-interval '5 months' GROUP BY 1"),
   sql.unsafe("SELECT to_char(date_trunc('month',created_at),'YYYY-MM') AS bucket,count(*)::int AS c FROM strategy_instances WHERE created_at>=date_trunc('month',now())-interval '5 months' GROUP BY 1"),
   sql.unsafe("SELECT count(*)::int AS c FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '30 days'"),
@@ -70,10 +70,10 @@ export default async function AdminPage(){
   <section className="admin-design-panel" aria-labelledby="admin-billing-pulse"><header className="admin-design-panel-header"><div><h2 id="admin-billing-pulse">Billing activity</h2><p>Recorded subscription and webhook states; not independently reconciled payments.</p></div><Link href="/admin/plans" aria-label="Open Commerce"><ArrowUpRight size={17}/></Link></header><div className="admin-design-info-row"><span>Active or trial subscriptions</span><strong>{Number(activeSubscriptions[0]?.c??0)}</strong></div><div className="admin-design-info-row"><span>Failed Stripe events · last 24 hours</span><strong className={Number(billingFailures[0]?.c??0)>0?"is-warning":undefined}>{Number(billingFailures[0]?.c??0)}</strong></div><p className="admin-data-caveat">Subscription counts include trials. No monthly recurring revenue is estimated without reconciled transactions.</p><Link href="/admin/plans" className="admin-panel-footer-link">Review Commerce <ArrowRight size={14}/></Link></section>
   <div className="admin-design-grid admin-design-grid-secondary">
    <section className="admin-design-panel" aria-labelledby="admin-strategy-summary">
-    <header className="admin-design-panel-header"><div><h2 id="admin-strategy-summary">Strategy Studio</h2><p>Verified releases and research inventory</p></div><Link href="/admin/strategies" aria-label="Open strategy studio"><ArrowUpRight size={17}/></Link></header>
+    <header className="admin-design-panel-header"><div><h2 id="admin-strategy-summary">Strategy Studio</h2><p>Recorded inventory and publication states, not execution certification</p></div><Link href="/admin/strategies" aria-label="Open strategy studio"><ArrowUpRight size={17}/></Link></header>
     <div className="admin-design-info-row"><span>Installed strategies</span><strong>{Number(definitions[0]?.total??0)}</strong></div>
-    <div className="admin-design-info-row"><span>Customer enabled</span><strong>{Number(definitions[0]?.enabled??0)}</strong></div>
-    <div className="admin-design-info-row"><span>Attestation records</span><strong>{Number(attested[0]?.c??0)}</strong></div>
+    <div className="admin-design-info-row"><span>Globally enabled definitions</span><strong>{Number(definitions[0]?.enabled??0)}</strong></div>
+    <div className="admin-design-info-row"><span>Published version records</span><strong>{Number(publishedVersions[0]?.c??0)}</strong></div>
     <Link href="/admin/strategies" className="admin-panel-footer-link">Manage strategies <ArrowRight size={14}/></Link>
    </section>
    <section className="admin-design-panel" aria-labelledby="admin-worker-summary">
