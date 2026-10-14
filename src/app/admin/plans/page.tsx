@@ -6,6 +6,7 @@ import {StripePriceSync} from "@/components/StripePriceSync";
 import {SimplePlanEditor} from "@/components/SimplePlanEditor";
 import {CreditCard,UsersRound,Layers3} from "lucide-react";
 import {subscriptionWatchReason} from "@/domain/admin-subscription-watch";
+import {invoiceAmountMinor} from "@/domain/admin-stripe-invoices";
 
 export const dynamic="force-dynamic";
 export default async function PlansAdmin(){
@@ -94,8 +95,8 @@ export default async function PlansAdmin(){
    <table className="admin-studio-table"><thead><tr><th scope="col">PLAN</th><th scope="col">MONTHLY</th><th scope="col">ANNUAL</th><th scope="col">STRATEGIES</th><th scope="col">VISIBILITY</th></tr></thead>
     <tbody>{rows.map(p=><tr key={String(p.slug)}>
       <td><strong>{String(p.display_name)}</strong><small>{String(p.description??"")}</small></td>
-      <td>{String(p.billing_currency)} {(Number(p.monthly_price_minor)/100).toFixed(2)}</td>
-      <td>{String(p.billing_currency)} {(Number(p.annual_price_minor)/100).toFixed(2)}<small>{(Number(p.annual_discount_bps)/100).toFixed(2)}% configured discount</small></td>
+      <td>{invoiceAmountMinor(Number(p.monthly_price_minor),String(p.billing_currency))}</td>
+      <td>{invoiceAmountMinor(Number(p.annual_price_minor),String(p.billing_currency))}<small>{(Number(p.annual_discount_bps)/100).toFixed(2)}% configured discount</small></td>
       <td>{p.max_active_strategies??"Unlimited"}</td>
       <td>{p.visible&&!p.archived?<span className="admin-studio-release-state is-live">Visible</span>:<span className="admin-studio-release-state is-review">Hidden</span>}</td>
     </tr>)}</tbody></table></div>
@@ -107,7 +108,7 @@ export default async function PlansAdmin(){
    <table className="admin-studio-table"><thead><tr><th>PLAN</th><th>CURRENCY</th><th>CADENCE</th><th>AMOUNT</th><th>PROVIDER PRICE</th><th>APPS</th><th>SETUP</th></tr></thead>
     <tbody>{prices.map(p=><tr key={String(p.slug)+String(p.currency)+String(p.cadence)}>
      <td><strong>{String(p.slug)}</strong><small>{p.active?"Active":"Inactive"}</small></td>
-     <td>{String(p.currency)}</td><td>{String(p.cadence)}</td><td>{(Number(p.amount_minor)/100).toFixed(2)}</td>
+     <td>{String(p.currency)}</td><td>{String(p.cadence)}</td><td>{invoiceAmountMinor(Number(p.amount_minor),String(p.currency))}</td>
      <td>{String(p.stripe_price_id??"Not configured")}</td>
      <td><small>Apple: {String(p.apple_product_id??"—")}</small><small>Google: {String(p.google_product_id??"—")}</small></td>
      <td><StripePriceSync slug={String(p.slug)} currency={String(p.currency)} cadence={String(p.cadence)} active={Boolean(p.active)} amountMinor={Number(p.amount_minor)}/></td>
