@@ -1,0 +1,36 @@
+name: Group 5 Sig validation
+
+on:
+  pull_request:
+    paths:
+      - "src/domain/strategy/sig-*.ts"
+      - "src/domain/strategy/income-sig-research.ts"
+      - "tests/sig-*.test.ts"
+      - "tests/income-sig-research.test.ts"
+      - "docs/strategy-specs/3sig.md"
+      - "docs/strategy-specs/6sig.md"
+      - "docs/strategy-specs/9sig.md"
+      - "docs/strategy-specs/income-sig.md"
+      - ".github/workflows/group-5-sig.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Group 5 scope lint
+        run: npx eslint src/domain/strategy/sig-research.ts src/domain/strategy/sig-timeline-research.ts src/domain/strategy/income-sig-research.ts tests/sig-research.test.ts tests/sig-timeline-research.test.ts tests/income-sig-research.test.ts
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Source-confirmed arithmetic tests
+        run: npx vitest run tests/sig-research.test.ts tests/sig-timeline-research.test.ts tests/income-sig-research.test.ts
