@@ -6,6 +6,24 @@ mode permits all web visitors to reach the sign-in screen. Authentication and
 administrator MFA are mandatory controls; routing alone grants no privileged
 application access.
 
+## Fix an existing public Traefik 404 after a localhost-only deployment
+
+If an upgrade used the localhost 3001 overlay, Wealtharr's app may have lost
+its media_net attachment and public router labels. Do not change Cloudflare,
+DNS, certificates or Traefik. On the existing Oracle host use:
+
+```sh
+cd /opt/wealtharr
+bash scripts/repair-public-routing.sh
+```
+
+This stops if there is not exactly one existing Wealtharr app and only recreates
+that app using its already-built image. It does not build, migrate, reseed,
+restart the database, alter secrets or change the reverse proxy.
+
+Always use docker-compose.oracle-public.yml for this hostname, not the
+separate docker-compose.oracle-localhost3001.yml host-forwarded mode.
+
 Run from `/opt/wealtharr` using the **existing** private
 `.env.production` and the reviewed release SHA. Never regenerate keys or
 delete a volume to upgrade only the UI.
