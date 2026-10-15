@@ -56,6 +56,11 @@ function referencedExposures(config:Readonly<Record<string,unknown>>|undefined):
     }
   }
   if(typeof config.targetExposure==="string")ids.push(config.targetExposure);
+  if(typeof config.targetDateExposure==="string")ids.push(config.targetDateExposure);
+  if(typeof config.smallCapValueExposure==="string")ids.push(config.smallCapValueExposure);
+  if(Array.isArray(config.staticAllocations))for(const row of config.staticAllocations){ids.push(typeof (row as {exposure?:unknown})?.exposure==="string"?(row as {exposure:string}).exposure:"");}
+  if(Array.isArray(config.signalUniverse))for(const exposure of config.signalUniverse){ids.push(typeof exposure==="string"?exposure:"");}
+  if(typeof config.defensiveAsset==="string")ids.push(config.defensiveAsset);
   return ids;
 }
 
