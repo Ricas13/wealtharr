@@ -9,10 +9,10 @@ const ctx={
   contributionsSinceReview:D("0"),state:{sigConfirmedAnchor:"7128.60",sigQuarterIndex:8},
   confirmedQuarterTrades:{buyGross:D("0"),sellGross:D("0"),feeTotal:D("0"),reserveBeforeTrades:D("2109.40")},
   config:{ruleVersion:"WEALTHARR_OWNER_2026_V1",targetExposure:"NASDAQ_100_3X_LONG",referenceCurrency:"USD",
-    referenceCloseDates:Array.from({length:9},(_,i)=>new Date(Date.UTC(2023,i*3+3,0)).toISOString().slice(0,10))},
+    referenceCloseDates:Array.from({length:9},(_,i)=>new Date(Date.UTC(2023,9+i*3+3,0)).toISOString().slice(0,10))},
   settings:{},reviewDue:true,dataHealth:{status:"CURRENT" as const},
   trustedHistory:[{exposure:"NASDAQ_100_3X_LONG",currency:"USD",source:"verified",
-    points:Array.from({length:9},(_,i)=>({at:new Date(Date.UTC(2023,0+i*3+3,0)),
+    points:Array.from({length:9},(_,i)=>({at:new Date(Date.UTC(2023,9+i*3+3,0)),
       adjustedClose:D(i===8?"80":"100")}))}]
 };
 describe("nonpublished 9Sig community engine integration",()=>{
