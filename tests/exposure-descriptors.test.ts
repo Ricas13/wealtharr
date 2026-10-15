@@ -9,8 +9,8 @@ describe("exposure descriptors",()=>{
     expect(getExposure("BROAD_EQUITY")?.leverage).toBe(1);
   });
 
-  it("does not treat the deliberately vague legacy exposures as fully described",()=>{
-    expect(isFullyDescribedExposure(getExposure("BROAD_EQUITY"))).toBe(false);
+  it("qualifies the Group 2 broad equity sleeve without fabricating a tradable fund",()=>{
+    expect(isFullyDescribedExposure(getExposure("BROAD_EQUITY"))).toBe(true);
     expect(isFullyDescribedExposure(getExposure("AGGREGATE_BONDS"))).toBe(false);
     expect(isFullyDescribedExposure(undefined)).toBe(false);
   });

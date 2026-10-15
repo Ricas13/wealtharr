@@ -11,7 +11,7 @@ const sixtyForty=getStrategyPlugin("60-40")!;
 describe("production seeding of strategy definitions",()=>{
   it("seeds only complete methods, as disabled definitions with a PUBLISHED version",()=>{
     const entries=strategiesToSeed(STRATEGY_PLUGINS,"PRODUCTION");
-    expect(entries.map(e=>e.plugin.key)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+    expect(entries.map(e=>e.plugin.key)).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
     for(const entry of entries){
       expect(entry.enabled,entry.plugin.key).toBe(false);
       expect(entry.initialVersion,entry.plugin.key).toBe("PUBLISHED");
@@ -40,7 +40,7 @@ describe("production seeding of strategy definitions",()=>{
     const byKey=new Map(entries.map(e=>[e.plugin.key,e]));
     expect(byKey.get("9sig")).toMatchObject({enabled:true,initialVersion:"PUBLISHED"});
     expect(byKey.get("60-40")).toMatchObject({enabled:false,initialVersion:"PUBLISHED"});
-    expect(byKey.get("hfea")).toMatchObject({enabled:false,initialVersion:"DRAFT"});
+    expect(byKey.get("hfea")).toMatchObject({enabled:false,initialVersion:"PUBLISHED"});
     expect(byKey.get("coffeehouse")).toMatchObject({realignsResearchOnlyDefinition:true});
   });
 });

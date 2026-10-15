@@ -16,8 +16,9 @@ export const plugin:StrategyPlugin={
     name:"Coffeehouse Portfolio — US seven-fund reference",family:"FIXED_ALLOCATION",description:"Research-only seven-asset profile",
     engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"DRAFT",realignsResearchOnlyDefinition:true
+    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:true
   },
-  specCard:"docs/strategy-specs/coffeehouse-core-four-swensen.md",
-  goldenTests:"tests/strategy-reference-golden.test.ts"
+  specCard:"docs/strategy-specs/group-2-coffeehouse.md",
+  goldenTests:"tests/strategy-group-2-golden.test.ts",
+releaseStatus:"COMPLETE"
 };

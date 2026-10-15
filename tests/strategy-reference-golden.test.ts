@@ -64,11 +64,11 @@ describe("independently worked portfolio allocation golden cases",()=>{
  });
  // All Weather (unlevered 30/40/15/7.5/7.5). Every expected value below was worked out by hand from
  // the configured (code-locked) weights, NOT by running the engine. Leg order in the config is:
- // BROAD_EQUITY 0.30, LONG_TREASURY 0.40, INTERMEDIATE_TREASURY 0.15, GOLD 0.075, BROAD_COMMODITIES 0.075.
+ // US_LARGE_CAP 0.30, LONG_TREASURY 0.40, INTERMEDIATE_TREASURY 0.15, GOLD 0.075, BROAD_COMMODITIES 0.075.
  // Planner convention: target = weight x (invested + cash); sells first (largest first), then buys (largest first).
  it("All Weather configured weights are 30/40/15/7.5/7.5, annual review, zero threshold",()=>{
   expect(allocation("all-weather")).toEqual([
-   {exposure:"BROAD_EQUITY",weight:"0.30"},{exposure:"LONG_TREASURY",weight:"0.40"},
+   {exposure:"US_LARGE_CAP",weight:"0.30"},{exposure:"LONG_TREASURY",weight:"0.40"},
    {exposure:"INTERMEDIATE_TREASURY",weight:"0.15"},{exposure:"GOLD",weight:"0.075"},
    {exposure:"BROAD_COMMODITIES",weight:"0.075"}
   ]);
@@ -95,7 +95,7 @@ describe("independently worked portfolio allocation golden cases",()=>{
   // deltas (target-current): equity -1000, long Tsy +400, intermediate +125, gold +250, commodities +225 (sum 0).
   // sells: equity 1000. buys largest first: long Tsy 400, gold 250, commodities 225, intermediate 125 = 1000.
   expect(plan("all-weather",["4000","3600","1375","500","525"])).toEqual([
-   ["SELL","BROAD_EQUITY","1000.00"],["BUY","LONG_TREASURY","400.00"],["BUY","GOLD","250.00"],
+   ["SELL","US_LARGE_CAP","1000.00"],["BUY","LONG_TREASURY","400.00"],["BUY","GOLD","250.00"],
    ["BUY","BROAD_COMMODITIES","225.00"],["BUY","INTERMEDIATE_TREASURY","125.00"]
   ]);
  });
@@ -105,21 +105,21 @@ describe("independently worked portfolio allocation golden cases",()=>{
   // sells (largest first): long Tsy 600, intermediate 200 = 800. buys: equity 600, commodities 150, gold 50 = 800.
   expect(plan("all-weather",["2400","4600","1700","700","600"])).toEqual([
    ["SELL","LONG_TREASURY","600.00"],["SELL","INTERMEDIATE_TREASURY","200.00"],
-   ["BUY","BROAD_EQUITY","600.00"],["BUY","BROAD_COMMODITIES","150.00"],["BUY","GOLD","50.00"]
+   ["BUY","US_LARGE_CAP","600.00"],["BUY","BROAD_COMMODITIES","150.00"],["BUY","GOLD","50.00"]
   ]);
  });
  it("All Weather £1,000 deposit is spent on the underweight legs with no sale",()=>{
   // holdings 3000/4000/1500/800/700 = 10000 plus cash 1000 -> total 11000; targets 3300/4400/1650/825/825.
   // deltas: +300, +400, +150, +25, +125 (sum 1000 = the cash). Buys largest first; no sells.
   expect(plan("all-weather",["3000","4000","1500","800","700"],"1000")).toEqual([
-   ["BUY","LONG_TREASURY","400.00"],["BUY","BROAD_EQUITY","300.00"],["BUY","INTERMEDIATE_TREASURY","150.00"],
+   ["BUY","LONG_TREASURY","400.00"],["BUY","US_LARGE_CAP","300.00"],["BUY","INTERMEDIATE_TREASURY","150.00"],
    ["BUY","BROAD_COMMODITIES","125.00"],["BUY","GOLD","25.00"]
   ]);
  });
  it("All Weather with the code-locked zero threshold trades even a one-penny drift",()=>{
   // holdings 3000.01/3999.99/1500/750/750 = 10000.00; deltas equity -0.01, long Tsy +0.01, others 0.
   expect(plan("all-weather",["3000.01","3999.99","1500","750","750"])).toEqual([
-   ["SELL","BROAD_EQUITY","0.01"],["BUY","LONG_TREASURY","0.01"]
+   ["SELL","US_LARGE_CAP","0.01"],["BUY","LONG_TREASURY","0.01"]
   ]);
  });
  it("All Weather £1,000 withdrawal modelled as negative cash sells every leg proportionally",()=>{
@@ -128,7 +128,7 @@ describe("independently worked portfolio allocation golden cases",()=>{
   // deltas -300/-400/-150/-75/-75 (sum -1000 = the withdrawal). Sells most negative first: LT 400, EQ 300, IT 150.
   // GOLD and COMM both 75 (tied): asserted order-insensitively. No buys, residue 1000+(-1000)-0 = 0.
   const legs=plan("all-weather",["3000","4000","1500","750","750"],"-1000");
-  expect(legs.slice(0,3)).toEqual([["SELL","LONG_TREASURY","400.00"],["SELL","BROAD_EQUITY","300.00"],["SELL","INTERMEDIATE_TREASURY","150.00"]]);
+  expect(legs.slice(0,3)).toEqual([["SELL","LONG_TREASURY","400.00"],["SELL","US_LARGE_CAP","300.00"],["SELL","INTERMEDIATE_TREASURY","150.00"]]);
   expect([...legs.slice(3)].sort((a,b)=>String(a[1]).localeCompare(String(b[1])))).toEqual([["SELL","BROAD_COMMODITIES","75.00"],["SELL","GOLD","75.00"]]);
   expect(legs).toHaveLength(5);
  });
@@ -144,7 +144,7 @@ describe("independently worked portfolio allocation golden cases",()=>{
   // holdings 3501/3800/1500/600/599 = 10000: equity -501 -> 0.0501 > 0.05 -> trade.
   // deltas: equity -501, long Tsy +200, intermediate 0, gold +150, commodities +151. buys 200+151+150 = 501.
   expect(band(["3501","3800","1500","600","599"])).toEqual([
-   ["SELL","BROAD_EQUITY","501.00"],["BUY","LONG_TREASURY","200.00"],
+   ["SELL","US_LARGE_CAP","501.00"],["BUY","LONG_TREASURY","200.00"],
    ["BUY","BROAD_COMMODITIES","151.00"],["BUY","GOLD","150.00"]
   ]);
  });

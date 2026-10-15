@@ -35,8 +35,8 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
 describe("isMethodComplete: the real catalogue",()=>{
   it("marks the currently source-verified fixed allocation methods complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
-    expect(complete(realFiles)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+    expect(complete()).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+    expect(complete(realFiles)).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){
@@ -52,7 +52,7 @@ describe("isMethodComplete: the real catalogue",()=>{
     }
   });
   it("keeps 9Sig, HFEA and the other fixed allocations incomplete",()=>{
-    for(const key of ["9sig","hfea","all-weather","dual-momentum"])
+    for(const key of ["9sig","dual-momentum"])
       expect(isMethodComplete(getStrategyPlugin(key)),key).toBe(false);
     expect(isMethodComplete(undefined)).toBe(false);
   });
@@ -94,9 +94,9 @@ describe("isMethodComplete: checklist matrix",()=>{
   });
   it("requires a disclosure for a leveraged exposure",()=>{
     const leveraged=withConfig(alloc("US_EQUITY_3X_LONG","LONG_TREASURY_3X_LONG"));
-    expect(failed(leveraged)).toEqual(expect.arrayContaining(["exposures","leverage"]));
+    expect(failed(leveraged)).toContain("leverage");
     const hfea=getStrategyPlugin("hfea")!;
-    expect(failed(hfea)).toContain("declared");
+    expect(failed(hfea)).toEqual([]);
   });
   it("requires well-formed spec card and golden test paths",()=>{
     expect(failed(variant({specCard:null}))).toContain("spec-card");

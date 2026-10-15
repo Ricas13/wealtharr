@@ -27,6 +27,10 @@ async function main(){
     // Historical catalogue fixtures remain available ONLY in ephemeral GitHub Actions tests.
     const syntheticCiCatalogue=process.env.GITHUB_ACTIONS==="true" && process.env.CI==="true" &&
       /^postgres(?:ql)?:\/\/[^@]+@127\.0\.0\.1:5432\/strategyos_test$/.test(process.env.DATABASE_URL??"");
+    // Group 2 methods are code-released. Legacy installations can contain disabled draft v1.0
+    // rows; a code-complete release installs a NEW immutable v2.0 rather than rewriting history.
+    // This set identifies an upgrade cohort, not an alternative definitions catalogue.
+    const group2ReleaseKeys=new Set(["all-weather","hfea","coffeehouse","core-four","swensen","merriman-ultimate"]);
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
@@ -56,6 +60,18 @@ async function main(){
         );
       }
 
+      const group2ProductionRelease=!syntheticCiCatalogue&&group2ReleaseKeys.has(key);
+      if(group2ProductionRelease){
+        // Research-only rows may have RESEARCH_PENDING engines. Align only disabled definitions
+        // without a published version; never change an enabled or already published definition.
+        await sql.unsafe(
+          "UPDATE strategy_definitions SET engine=$2,name=$3,description=$4,family=$5,updated_at=now() "+
+          "WHERE id=$1 AND enabled=false AND NOT EXISTS ("+
+          "SELECT 1 FROM strategy_versions v WHERE v.strategy_definition_id=$1 AND v.lifecycle_status='PUBLISHED')",
+          [id,engine,name,description,family]
+        );
+      }
+
       if(entry.initialVersion===null)continue;
 
       const release=curatedRelease(plugin);
@@ -69,6 +85,38 @@ async function main(){
         "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) VALUES ($1,'1.0','2026-01-01',$2,$3,'OPTIONAL',$6::text::jsonb,$4::text::jsonb,$5,CASE WHEN $3='PUBLISHED' THEN now() ELSE NULL END) ON CONFLICT (strategy_definition_id,version) DO NOTHING",
         [id,engine,lifecycle,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]
       );
+
+      if(group2ProductionRelease){
+        // A pre-existing v1.0 DRAFT cannot be mutated into a published version during deploy.
+        // Deterministically create v2.0 on today's date, leaving old instances pinned to v1.0.
+        // Repeated deployment is a no-op. Conflicting operator-created v2.0 fails closed.
+        await sql.begin(async tx=>{
+          const locked=await tx.unsafe("SELECT id,enabled FROM strategy_definitions WHERE id=$1 FOR UPDATE",[id]);
+          if(!locked[0]||locked[0].enabled)return;
+          // No-op only when a canonical published version already exists. A legacy operator-
+          // published v1.0 with old rules must stay immutable, not block a new correct v2.0.
+          const canonical=await tx.unsafe(
+            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 "+
+            "AND lifecycle_status='PUBLISHED' AND engine_key=$2 AND config=$3::jsonb "+
+            "AND input_schema=$4::jsonb LIMIT 1",
+            [id,engine,JSON.stringify(config),JSON.stringify(inputSchema)]
+          );
+          if(canonical.length)return;
+          const historical=await tx.unsafe(
+            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version='1.0' LIMIT 1",[id]
+          );
+          if(!historical.length)return;
+          const conflicting=await tx.unsafe(
+            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version='2.0' LIMIT 1",[id]
+          );
+          if(conflicting.length)throw new Error("GROUP2_EXISTING_VERSION_CONFLICT:"+key);
+          await tx.unsafe(
+            "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) "+
+            "VALUES ($1,'2.0',current_date,$2,'PUBLISHED','OPTIONAL',$5::text::jsonb,$3::text::jsonb,$4,now())",
+            [id,engine,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]
+          );
+        });
+      }
     }
 
     // Persist *all* research names for admin inventory without exposing any as an executable release.

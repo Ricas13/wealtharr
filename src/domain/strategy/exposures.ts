@@ -49,7 +49,7 @@ export function isFullyDescribedExposure(exposure: ExposureDefinition | undefine
   return true;
 }
 
-export const EXPOSURES: readonly ExposureDefinition[] = [
+const BASE_EXPOSURES: readonly ExposureDefinition[] = [
   // Group 1 source-specific US-reference exposures; market mappings remain operator verified.
   {id:"G1_US_TOTAL_EQUITY",assetClass:"EQUITY",description:"US total stock market large, mid and small equities",leverage:1,region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad US total-market equity index",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
   {id:"G1_EX_US_TOTAL_EQUITY",assetClass:"EQUITY",description:"Developed and emerging equity markets outside the US",leverage:1,region:"EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad total international developed and emerging equity index excluding US",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
@@ -118,6 +118,29 @@ export const EXPOSURES: readonly ExposureDefinition[] = [
   def("CASH_BILLS", "CASH", "Cash or short-dated government bills"),
   def("GOLD", "COMMODITY", "Physical-gold-backed exposure"),
   def("BROAD_COMMODITIES", "COMMODITY", "Diversified commodities basket"),
+  // Merriman's 2026 ten-sleeve 50/50 reference needs separate international value and small-factor
+  // exposures. Never collapse these into generic developed-market equity to force broker eligibility.
+  {
+    id:"DEVELOPED_EX_US_LARGE_CAP_VALUE",assetClass:"EQUITY",leverage:1,
+    description:"Developed markets outside the US, large-cap value factor equities",
+    region:"DEVELOPED_EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",
+    creditQuality:"NOT_APPLICABLE",coverage:"Diversified developed ex-US large-cap equities selected for value characteristics",
+    domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"
+  },
+  {
+    id:"DEVELOPED_EX_US_SMALL_CAP_BLEND",assetClass:"EQUITY",leverage:1,
+    description:"Developed markets outside the US, diversified small-cap equities",
+    region:"DEVELOPED_EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",
+    creditQuality:"NOT_APPLICABLE",coverage:"Developed ex-US small capitalisation blend equities",
+    domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"
+  },
+  {
+    id:"DEVELOPED_EX_US_SMALL_CAP_VALUE",assetClass:"EQUITY",leverage:1,
+    description:"Developed markets outside the US, small-cap value equities",
+    region:"DEVELOPED_EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",
+    creditQuality:"NOT_APPLICABLE",coverage:"Developed ex-US small capitalisation equities selected for value characteristics",
+    domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"
+  },
   // Wealtharr 60/40 model exposures (docs/strategy-specs/60-40.md). These names and their
   // definitions are a Wealtharr model convention that the owner must confirm; they are not taken
   // from the Bogleheads wiki, which names only asset classes.
@@ -139,7 +162,32 @@ export const EXPOSURES: readonly ExposureDefinition[] = [
   }
 ];
 
-const byId = new Map(EXPOSURES.map((exposure) => [exposure.id, exposure]));
+// Group 2 semantic qualifiers for legacy generic economic exposures; market mapping remains fail-closed.
+const GROUP_2_DESCRIPTORS:ReadonlyMap<string,Partial<ExposureDefinition>>=new Map([
+  ["BROAD_EQUITY",{region:"GLOBAL",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Diversified broad equity markets; no single-country concentration assumed",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["LONG_TREASURY",{region:"US",maturityBand:"LONG",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"Long-duration US government Treasury obligations",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["INTERMEDIATE_TREASURY",{region:"US",maturityBand:"INTERMEDIATE",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"Intermediate-maturity US Treasury obligations",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["GOLD",{region:"GLOBAL",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Physical gold bullion price exposure, not gold-mining equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["BROAD_COMMODITIES",{region:"GLOBAL",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Diversified broad commodity futures index exposure, not individual gold or commodity equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_EQUITY_3X_LONG",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Daily-reset 3x S&P 500 equity exposure; fund structural risks and exact index must be evidenced",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["LONG_TREASURY_3X_LONG",{region:"US",maturityBand:"LONG",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"Daily-reset 3x US 20+-year Treasury bond exposure, not 3x 7-10-year",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_LARGE_CAP",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Broad US large-cap equity blend",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_LARGE_CAP_VALUE",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Diversified US large-cap value equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_SMALL_CAP_BLEND",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Diversified US small-cap blend equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_SMALL_CAP_VALUE",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Diversified US small-cap value equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["DEVELOPED_EX_US_LARGE_CAP",{region:"DEVELOPED_EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Developed ex-US large-cap blend equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_INTERMEDIATE_TREASURY",{region:"US",maturityBand:"INTERMEDIATE",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US intermediate-maturity Treasuries",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_REITS",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Broad US listed equity REITs, not generic global real-estate equity",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_TOTAL_EQUITY",{region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"Total US stock market, large/mid/small capitalizations",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["TOTAL_EX_US_EQUITY",{region:"EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"All-cap developed and emerging markets equities excluding US",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_AGGREGATE_BONDS",{region:"US",maturityBand:"ALL_MATURITIES",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US investment-grade aggregate bonds incl government, corporate and securitised",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["EMERGING_MARKETS_EQUITY",{region:"EMERGING_MARKETS",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad emerging markets equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+  ["US_TIPS",{region:"US",maturityBand:"ALL_MATURITIES",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US Treasury inflation-protected securities; no nominal Treasury substitute",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
+]);
+export const EXPOSURES:readonly ExposureDefinition[]=BASE_EXPOSURES.map((exposure)=>({
+  ...exposure,...(GROUP_2_DESCRIPTORS.get(exposure.id)??{})
+}));
+const byId = new Map(EXPOSURES.map((exposure) => [exposure.id,exposure]));
 
 export function getExposure(id: string) {
   return byId.get(id);

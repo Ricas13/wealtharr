@@ -282,7 +282,8 @@ const CATALOG_DIR="src/domain/strategy/catalog";
 // Group 3 source-verified releases intentionally supersede the frozen 2026 refactor snapshot.
 const GROUP3_KEYS=new Set(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
 const GROUP1_KEYS=new Set(["80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]);
-const RELEASED_KEYS=new Set([...GROUP1_KEYS,...GROUP3_KEYS]);
+const GROUP2_KEYS=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
+const RELEASED_KEYS=new Set([...GROUP1_KEYS,...GROUP2_KEYS,...GROUP3_KEYS]);
 
 
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
@@ -350,11 +351,11 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
-    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!GROUP3_KEYS.has(p.key));
+    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!GROUP3_KEYS.has(p.key)&&p.key!=="merriman-ultimate");
     expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
-      if(GROUP1_KEYS.has(plugin.key))continue;
+      if(RELEASED_KEYS.has(plugin.key))continue;
       const pin=SEED_DEFINITIONS[plugin.key];
       expect({name:d.name,family:d.family,description:d.description,engine:d.engine,proprietary:d.proprietary,
         enabled:d.enabled,initialVersion:d.initialVersion,realign:d.realignsResearchOnlyDefinition},plugin.key).toEqual(pin);
@@ -367,7 +368,7 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
