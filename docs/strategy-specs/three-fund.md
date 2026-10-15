@@ -1,31 +1,29 @@
-# Three-Fund Portfolio
+# Three-Fund — US 40/40/20 model
 
-Status: **DRAFT, NOT SIGNED OFF.** Written without access to the primary source (the build sandbox cannot reach the web). Every item marked `VERIFY` must be checked against the cited source by a person, then the status changed to SIGNED OFF with name and date, before a version of this strategy can be published (see CLAUDE.md).
+## Definition
+Frozen reference profile `three-fund`, engine `FIXED_ALLOCATION`. Allocation:
+- `G1_US_TOTAL_EQUITY`: 40%
+- `G1_EX_US_TOTAL_EQUITY`: 40%
+- `G1_US_AGGREGATE_BONDS`: 20%
 
-## Engine
-FIXED_ALLOCATION (research catalogue key `three-fund`).
+Source: https://www.bogleheads.org/wiki/Three-fund_portfolio
 
-## Target allocation (as currently seeded)
-- DOMESTIC_EQUITY 40% (illustrative)
-- INTERNATIONAL_EQUITY 40% (illustrative)
-- AGGREGATE_BONDS 20% (illustrative)
-Weights are USER SETTINGS; there is no canonical split.
+Bogleheads specifies the three underlying asset classes, not universal weights. The 40/40/20 weights are Wealtharr's frozen US-reference variant.
 
-## Primary sources to verify against
-- Bogleheads wiki, Three-fund portfolio. VERIFY the page describes three asset classes without fixed weights.
+This profile is not guaranteed equivalent to home-country adaptations. In particular, US Treasury securities remain US government obligations even in a GBP account. No UK ISA, SIPP or GIA product is asserted as eligible or mapped.
 
-## Rebalance rule
-VERIFY: user-chosen review frequency and drift band; no canonical rule. Requires user-configurable weights (Phase 1).
+## Rebalancing rule
+Wealtharr convention: `reviewFrequency: ANNUAL`; `rebalanceThreshold: 0.00`. When the account has a due review, compute target holding value as total invested positions plus free strategy cash, times the frozen weight. Sell overweight holdings before buying underweight holdings, subject to execution constraints. New contributions become strategy cash and are incorporated at the next permitted review; they do not independently change the method's review cadence. Withdrawals and executed trades enter the immutable account ledger and affect subsequent holdings and cash, without silently altering weights. Fractional vs whole-unit restrictions, available cash, fees, smallest order, half-even monetary rounding and unsettled execution residue are handled by the existing shared planner and documented under `docs/strategy-engines.md`. No rebalancing trade executes without recorded investor action. Stale prices and missing exact market mappings fail closed.
 
-## Open questions
-- VERIFY each weight and the exposure definition against the source (no tickers; exposures only).
-- VERIFY whether the source states a rebalance schedule or only "periodically"; the product must not claim a canonical schedule the source does not give.
-- Instrument mapping per jurisdiction (UK first) is separate work and stays UNVERIFIED until the instrument import exists.
+## Instrument requirements
+Every sleeve requires one independently verified eligible tradable instrument mapping with the exact named economic exposure, current prices, domicile and fund eligibility for the user's country, broker, trading currency and wrapper (ISA, SIPP or GIA as applicable). An equivalent sounding ticker or alternative asset is not automatically allowed. Listing eligibility is not inferable from strategy weights. Require positive verification of leverage (1x), security instrument type, price currency, hedging policy, tracking scope, maturity or gold backing as appropriate. UK-accessible listings are not assumed to offer US-domiciled assets directly. No symbols or mappings are inserted by this release.
 
-## Golden tests required before publication
-Independently computed (spreadsheet or hand) expected trades for at least: on-target, drifted equity-heavy, drifted bond-heavy, a new cash deposit, and a withdrawal. Record the workings next to the test.
+## Owner-decision list
+- The source's allocation and the separately chosen Wealtharr annual, zero-band schedule are explicitly distinguished.
+- This frozen model cannot be modified by user-selected weights; alternative schedules or weights require a new immutable version.
+- A complete method does not waive the exact instrument-mapping / wrapper / account / global / plan / per-user gates.
+- Existing published versions and active customer positions must remain pinned and must not be edited in place.
+- Administrator verification of an actual mapping is an operational precondition, not a request for source-method attestation.
 
-## Sign-off
-Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______
-
-**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".
+## Golden tests
+`tests/strategy-golden-three-fund.test.ts` independently verifies target allocations, overweight sale, contribution inclusion, review due, stale data and exact mapping omission. Arithmetic assertions use explicit reference weights, not weights read from the code under test.

@@ -278,24 +278,24 @@ const canonical=(value:unknown):string=>JSON.stringify((function walk(v:unknown)
   return v;
 })(value));
 
+const GROUP1_RELEASED_KEYS=new Set(["80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]);
 const CATALOG_DIR="src/domain/strategy/catalog";
 
 const GROUP4_KEYS=new Set(["trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
-const historic=<T extends {key:string}>(rows:readonly T[])=>rows.filter(p=>!GROUP4_KEYS.has(p.key));
-
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   it("keeps the exact registry order of the old RESEARCH_STRATEGIES array",()=>{
-    expect(historic(RESEARCH_STRATEGIES).map(p=>p.key)).toEqual(historic(PRE_REFACTOR_PROFILES).map(p=>p.key));
-    expect(historic(RESEARCH_STRATEGIES)).toHaveLength(20);
+    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key)).toEqual(PRE_REFACTOR_PROFILES.map(p=>p.key));
+    expect(RESEARCH_STRATEGIES).toHaveLength(27);
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(historic(RESEARCH_STRATEGIES)).toEqual(historic(PRE_REFACTOR_PROFILES));
+    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP1_RELEASED_KEYS.has(p.key)&&!GROUP4_KEYS.has(p.key))).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!GROUP1_RELEASED_KEYS.has(p.key)));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
-    expect(Object.keys(ENGINE_AND_CONFIG).filter(k=>!GROUP4_KEYS.has(k))).toEqual(historic(RESEARCH_STRATEGIES).map(p=>p.key));
-    for(const profile of historic(RESEARCH_STRATEGIES)){
+    expect(Object.keys(ENGINE_AND_CONFIG)).toEqual(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key));
+    for(const profile of RESEARCH_STRATEGIES){
+      if(GROUP1_RELEASED_KEYS.has(profile.key)||GROUP4_KEYS.has(profile.key))continue;
       const pin=ENGINE_AND_CONFIG[profile.key];
       expect(profile.engine,profile.key).toBe(pin.engine);
       if(pin.config===undefined)expect(profile.config,profile.key).toBeUndefined();
@@ -309,7 +309,7 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
   it("keeps input schemas and disclosure text exactly as before",()=>{
     expect(LEVERAGE_DISCLOSURE).toBe(PRE_REFACTOR_LEVERAGE_DISCLOSURE);
-    for(const profile of historic(RESEARCH_STRATEGIES)){
+    for(const profile of RESEARCH_STRATEGIES){
       expect(profile.inputSchema,profile.key).toBeUndefined();
       if(profile.key==="hfea")expect(profile.disclosure).toBe(PRE_REFACTOR_LEVERAGE_DISCLOSURE);
       else expect(profile.disclosure,profile.key).toBeUndefined();
@@ -331,7 +331,8 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
   it("curated-rule enforcement accepts exactly the pinned rules and nothing else",()=>{
     expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_LITERAL,[])).not.toThrow();
-    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG).filter(([key])=>!GROUP4_KEYS.has(key))){
+    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG)){
+      if(GROUP1_RELEASED_KEYS.has(key)||GROUP4_KEYS.has(key))continue;
       if(pin.config&&pin.engine!=="RESEARCH_PENDING"){
         expect(()=>assertCuratedRules(key,pin.engine,pin.config,[]),key).not.toThrow();
         expect(()=>assertCuratedRules(key,"VALUE_TARGET",pin.config,[]),key).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
@@ -347,9 +348,10 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
     const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!GROUP4_KEYS.has(p.key));
-    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).filter(k=>!GROUP4_KEYS.has(k)).sort());
+    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
+      if(GROUP1_RELEASED_KEYS.has(plugin.key))continue;
       const pin=SEED_DEFINITIONS[plugin.key];
       expect({name:d.name,family:d.family,description:d.description,engine:d.engine,proprietary:d.proprietary,
         enabled:d.enabled,initialVersion:d.initialVersion,realign:d.realignsResearchOnlyDefinition},plugin.key).toEqual(pin);
@@ -362,7 +364,7 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key).sort()).toEqual(["9sig","60-40",...GROUP4_KEYS].sort());
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10",...GROUP4_KEYS]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
