@@ -14,10 +14,10 @@ describe("binary production strategy release policy",()=>{
     // 60-40 was listed here while its method was incomplete; it is now the one complete method
     // (see the case below). A still-incomplete fixed allocation takes its place.
     expect(()=>assertReleaseMethodComplete("dual-momentum")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
-    expect(()=>assertReleaseMethodComplete("all-weather")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
+    expect(()=>assertReleaseMethodComplete("income-sig")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     expect(()=>assertReleaseMethodComplete("unknown-strategy")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
-  it("accepts only the complete Global 60/40 (GBP) method on a live host, and still fails closed for the rest",()=>{
+  it("accepts completed Group 1 and 2 methods on a live host, and fails closed for the rest",()=>{
     vi.stubEnv("NODE_ENV","production");
     vi.stubEnv("CI","false");
     vi.stubEnv("GITHUB_ACTIONS","false");
