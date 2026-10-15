@@ -22,6 +22,19 @@ export function requiredPositions(engine: string, config: Record<string, unknown
       direction: "LONG"
     };
   };
+  if (engine === "TRINITY_HYBRID") {
+    const trade=Array.isArray(config.staticAllocations)?config.staticAllocations.map((r:unknown)=>one((r as {exposure?:unknown})?.exposure)):[];
+    const scored=Array.isArray(config.signalUniverse)?config.signalUniverse.map(x=>one(x)):[];
+    const defensive=one(config.defensiveAsset);
+    const unique=new Map<string,RequiredPosition>();
+    for(const position of [...trade,...scored,defensive])if(position)unique.set(position.economicExposure,position);
+    return [...unique.values()];
+  }
+  if (engine === "TWO_FUNDS_MODERATE") {
+    const tdf=one(config.targetDateExposure);
+    const small=one(config.smallCapValueExposure);
+    return tdf&&small?[tdf,small]:[];
+  }
   if (engine === "VALUE_TARGET") {
     const required = one(config.targetExposure, config.targetLeverage);
     return required ? [required] : [];
@@ -90,6 +103,9 @@ export function assessStrategyMarket(
        new Set([...config.riskAssets, config.defensiveAsset]).size !== config.riskAssets.length + 1)) {
     return { available: false, positions: [], missingExposures: ["Unverified strategy rules"], supportedMarkets: [] };
   }
+  if(engine==="TRINITY_HYBRID"&&(!Array.isArray(config.signalUniverse)||config.signalUniverse.length!==10||
+    !Array.isArray(config.staticAllocations)||config.staticAllocations.length!==11||
+    typeof config.defensiveAsset!=="string"))return {available:false,positions:[],missingExposures:["Unverified Trinity model"],supportedMarkets:[]};
   if(engine==="TACTICAL_ALLOCATION"){
     const r=config.riskAssets,d=config.defensiveAssets;
     const v=config.variant;

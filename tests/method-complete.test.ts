@@ -33,10 +33,10 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
   evaluateMethodCompleteness(plugin,files).checks.filter(c=>!c.ok).map(c=>c.id);
 
 describe("isMethodComplete: the real catalogue",()=>{
-  it("marks exactly the Global 60/40 (GBP) model complete, with and without file evidence",()=>{
+  it("marks the currently source-verified fixed allocation methods complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
-    expect(complete(realFiles)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10"]);
+    expect(complete()).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
+    expect(complete(realFiles)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){

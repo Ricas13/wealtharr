@@ -8,6 +8,9 @@ import type { Sql } from "postgres";
 import { assessCorporateActions, corporateActionMessage } from "@/lib/corporate-action-guard";
 import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } from "@/domain/ledger";
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
+import {twoFundsAllocations} from "@/domain/strategy/two-funds-engine";
+import {trinityWeights} from "@/domain/strategy/trinity-engine";
+import {trinityNyseHolidayWindow} from "@/domain/strategy/trinity-calendar";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
@@ -23,7 +26,7 @@ import { loadTrustedHistory } from "@/lib/trusted-history-loader";
 import {loadTacticalCertifiedHistory} from "@/lib/tactical-history-loader";
 import { assessStrategyMarket, StrategyMarketUnavailableError, type ResolvedPosition } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
-import { nextCalendarQuarterDueAt,nextCompletedMonthReviewDueAt } from "@/domain/schedule";
+import { nextCalendarQuarterDueAt,nextCalendarMonthDueAt,nextCompletedMonthReviewDueAt } from "@/domain/schedule";
 import { alertKeyClass, buildStrategyAlert } from "@/domain/strategy-alert";
 import { validatedFillTime } from "@/domain/execution-time";
 import { postActionReviewState } from "@/domain/strategy/review-completion";
@@ -204,7 +207,9 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const frequency=String(config.reviewFrequency??"QUARTERLY");
   const lastReview=scenario?.resetTimeline?new Date():state.lastReviewAt?new Date(String(state.lastReviewAt)):new Date(instance.started_at);
   const reviewTimezone=String(config.reviewTimezone??instance.user_timezone??"UTC");
-  const holidayDates=Array.isArray(config.marketHolidays)?config.marketHolidays.filter((v):v is string=>typeof v==="string"):[];
+  const holidayDates=calculationEngineKey==="TRINITY_HYBRID"
+    ?trinityNyseHolidayWindow(new Date())
+    :Array.isArray(config.marketHolidays)?config.marketHolidays.filter((v):v is string=>typeof v==="string"):[];
   const convention: "PREVIOUS"|"NEXT"=config.businessDayConvention==="NEXT"?"NEXT":"PREVIOUS";
   const scheduleInput={
     lastReviewAt:lastReview,
@@ -217,6 +222,8 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     ?nextCalendarQuarterDueAt(scheduleInput)
     :config.reviewSchedule==="CALENDAR_MONTH_COMPLETE"
       ?nextCompletedMonthReviewDueAt(scheduleInput)
+      :config.reviewSchedule==="CALENDAR_MONTH_END"
+        ?nextCalendarMonthDueAt(scheduleInput)
       :nextReviewDueAt({...scheduleInput,frequency});
   const reviewDue=Boolean(state.forceReview)||new Date()>=dueAt;
   const contributionRows=scenario?.resetTimeline
@@ -255,8 +262,10 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     }
   }
   // Momentum research engines read licensed price history; every other engine ignores it.
-  const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
-    ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
+  const momentumUniverse=calculationEngineKey==="TRINITY_HYBRID"&&Array.isArray(config.signalUniverse)
+    ?(config.signalUniverse as unknown[]).map(String)
+    :calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
+      ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   const tacticalUniverse=calculationEngineKey==="TACTICAL_ALLOCATION"&&
     Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)
     ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String)])]:null;
@@ -265,7 +274,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,
       tacticalSignalMapping.map(m=>({exposure:m.economicExposure,tradingLineId:m.tradingLineId})),new Date(),db)
     :momentumUniverse
-      ?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db)
+      ?await loadTrustedHistory(momentumUniverse,String(instance.currency),calculationEngineKey==="TRINITY_HYBRID"?14:(Number(config.lookbackMonths)||12),new Date(),db)
       :undefined;
   const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
     const mappingRows=await db.unsafe(
@@ -531,10 +540,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // EXECUTION account's cash and holdings. It returns the next order, a residue HOLD (every leg within half a
   // unit of target) or a DATA_REQUIRED that names why nothing can be traded.
   let override:SizingOverride|undefined;
-  if(calculationEngineKey==="FIXED_ALLOCATION"&&dataStatus==="CURRENT"){
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
     const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
     const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
-    const allocations=effectiveAllocations(config,settings);
+    const allocations:Array<{exposure:string;weight:string|number;leverage?:string|number}>|null=calculationEngineKey==="TWO_FUNDS_MODERATE"
+      ?twoFundsAllocations(config,new Date()).map(a=>({...a}))
+      :calculationEngineKey==="TRINITY_HYBRID"
+        ?exact.actionType==="DATA_REQUIRED"?null:trinityWeights({trustedHistory,now:new Date()})
+        :effectiveAllocations(config,settings);
     if(needsTrade&&allocations){
       const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
       const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});

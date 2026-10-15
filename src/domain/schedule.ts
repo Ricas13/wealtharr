@@ -160,10 +160,32 @@ export function nextCalendarQuarterDueAt(input:{
   throw new Error("CALENDAR_QUARTER_DATE_UNAVAILABLE");
 }
 
-/** First eligible business morning after a completed calendar month, NOT one month
- * after subscription or the preceding monthly review date. The source-certified
- * terminal trading session is independently enforced by tactical-history-loader.
- * The review cutoff is after prior month-close observations have become final. */
+/**
+ * Month-end review rather than N months after strategy signup. An explicit
+ * verified market-holiday array is honoured. After the last eligible trading
+ * day's local close, return the next calendar month-end cut-off.
+ * This leaves the shared quarterly scheduler unmodified for other groups.
+ */
+export function nextCalendarMonthDueAt(input:{
+ lastReviewAt:Date;timeZone:string;cutoffLocal?:string;holidays?:string[];
+ convention?:"PREVIOUS"|"NEXT";
+}):Date{
+  const last=localDateInZone(input.lastReviewAt,input.timeZone);
+  const {year,month}=parseDate(last);
+  for(let n=0;n<24;n++){
+    const offset=month-1+n;
+    const y=year+Math.floor(offset/12);
+    const m=(offset%12)+1;
+    const nominal=[String(y),String(m).padStart(2,"0"),String(daysInMonth(y,m)).padStart(2,"0")].join("-");
+    const date=rollBusinessDay(nominal,input.holidays??[],input.convention??"PREVIOUS");
+    const instant=zonedLocalDateTimeToUtc(date,input.cutoffLocal??"16:00",input.timeZone);
+    if(instant.getTime()>input.lastReviewAt.getTime())return instant;
+  }
+  throw new Error("CALENDAR_MONTH_DATE_UNAVAILABLE");
+}
+
+/** First eligible business morning after a completed calendar month; source-confirmed
+ * final trading sessions are validated separately by the tactical history loader. */
 export function nextCompletedMonthReviewDueAt(input:{
  lastReviewAt:Date;timeZone:string;cutoffLocal?:string;holidays?:string[];
 }):Date{

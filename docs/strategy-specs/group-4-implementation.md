@@ -25,7 +25,7 @@ Customer actions use the existing immutable strategy ledger and execution confir
 - `src/domain/strategy/tactical-math.ts`, `tactical-allocation.ts`, `tactical-engine.ts`: mathematical methods and guarded transaction proposals
 - `risk-parity-estimator.ts`, `paa-signals.ts`, `vaa-signals.ts`, `ivy-signals.ts`: independent signal functions
 - `src/domain/strategy/catalog/group4-configs.ts`, `src/domain/strategy/group4-exposures.ts`: immutable variants and economic exposures
-- `db/migrations/0059_tactical_history_certification.sql`, `src/lib/tactical-history-loader.ts`, `src/lib/price-history-ingest.ts`: historical provider certification
+- `db/migrations/0062_tactical_history_certification.sql`, `src/lib/tactical-history-loader.ts`, `src/lib/price-history-ingest.ts`: historical provider certification
 - `src/lib/tactical-enable-preflight.ts`, `src/lib/tactical-release-upgrade.ts`, `src/lib/action-service.ts`: admin and customer lifecycle integration
 - `docs/strategy-specs/{trend-200d,risk-parity,dual-momentum,gtaa-ivy,paa,vaa,vaa-g12}.md`: source references, assumptions, cash rules and specific golden cases
 - `tests/*golden.test.ts`, `tests/tactical*.test.ts`, `tests/db/tactical*.test.ts`: arithmetic, fail-closed and database integration checks

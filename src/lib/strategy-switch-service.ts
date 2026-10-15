@@ -11,6 +11,7 @@ import { recalculateAfterMutation } from "@/lib/action-service";
 import { assessStrategyMarket, StrategyMarketUnavailableError } from "@/domain/strategy/market-eligibility";
 import { requiredPositions } from "@/domain/strategy/market-eligibility";
 import { switchPositionDiscrepancies } from "@/domain/strategy/switch-position-eligibility";
+import {TRINITY_US_SIGNAL} from "@/domain/strategy/trinity-model";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertDisabledStrategyPreviewGates } from "@/lib/admin-preview-gates";
 
@@ -126,7 +127,8 @@ export async function switchStrategy(
       const blocked=switchPositionDiscrepancies(positions,instruments.map(row=>({
         id:String(row.id),exposure:String(row.exposure),
         leverage:String(row.leverage),direction:String(row.direction)
-      })),requiredPositions(String(target.engine_key),config));
+      })),requiredPositions(String(target.engine_key),config).filter(position=>
+        !(String(target.engine_key)==="TRINITY_HYBRID"&&position.economicExposure===TRINITY_US_SIGNAL)));
       if(blocked.length)throw new Error("STRATEGY_SWITCH_REQUIRES_RECONCILIATION");
     }
 
