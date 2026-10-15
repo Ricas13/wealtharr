@@ -9,6 +9,7 @@ import { curatedRelease, getStrategyPlugin, isBuiltInStrategy } from "@/domain/s
 import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { assertCuratedRules } from "@/domain/strategy/curated-release";
+import {hasExecutableTacticalMarket} from "@/lib/tactical-enable-preflight";
 
 const definitionSchema=z.object({
   key:z.string().min(1),name:z.string().min(1),family:z.string().min(1),description:z.string(),
@@ -156,12 +157,18 @@ export async function PATCH(request:Request){
               throw new LifecycleConflict(METHOD_NOT_COMPLETE_MESSAGE,409);
             throw new LifecycleConflict("The release does not match the built-in reviewed strategy method.",409);
           }
-          const market=assessStrategyMarket(String(release.engine_key),
-            (release.config??{}) as Record<string,unknown>,
-            verifiedCandidates(await tx.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)),
-            {country:"GB",wrapper:"ISA",currency:"GBP"},new Date().toISOString().slice(0,10));
+          const candidates=verifiedCandidates(await tx.unsafe(VERIFIED_MARKET_MAPPINGS_SQL));
+          const currentAt=new Date();
+          const config=(release.config??{}) as Record<string,unknown>;
+          const market=assessStrategyMarket(String(release.engine_key),config,candidates,
+            {country:"GB",wrapper:"ISA",currency:"GBP"},currentAt.toISOString().slice(0,10));
           if(!market.supportedMarkets.length)
             throw new LifecycleConflict("No complete configured country/account instrument mapping is available.",409);
+          if(String(release.engine_key)==="TACTICAL_ALLOCATION" &&
+            !(await hasExecutableTacticalMarket({config,candidates,at:currentAt,db:tx})))
+            throw new LifecycleConflict(
+              "Tactical method has no fully certified executable market history. "+
+              "Confirm licensed adjusted total-return bars, complete exchange sessions and end-of-month signal coverage.",409);
           // These are technical enablement prerequisites, NOT evidence that the
           // broker permits purchases or that data/licensing/legal gates have passed.
         }

@@ -50,6 +50,10 @@ export function requiredPositions(engine: string, config: Record<string, unknown
     const exposures = [...config.riskAssets, config.defensiveAsset];
     return exposures.map((exposure) => one(exposure)).filter((p): p is RequiredPosition => Boolean(p));
   }
+  if(engine==="TACTICAL_ALLOCATION"&&Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)) {
+    return [...new Set([...config.riskAssets,...config.defensiveAssets])]
+      .map(exposure=>one(exposure)).filter((x):x is RequiredPosition=>Boolean(x));
+  }
   return [];
 }
 
@@ -102,6 +106,17 @@ export function assessStrategyMarket(
   if(engine==="TRINITY_HYBRID"&&(!Array.isArray(config.signalUniverse)||config.signalUniverse.length!==10||
     !Array.isArray(config.staticAllocations)||config.staticAllocations.length!==11||
     typeof config.defensiveAsset!=="string"))return {available:false,positions:[],missingExposures:["Unverified Trinity model"],supportedMarkets:[]};
+  if(engine==="TACTICAL_ALLOCATION"){
+    const r=config.riskAssets,d=config.defensiveAssets;
+    const v=config.variant;
+    if(!Array.isArray(r)||!Array.isArray(d)||r.length===0||
+      (v!=="RISK_PARITY_ERC_252"&&d.length===0)||
+      [...r,...d].some(x=>typeof x!=="string"||!x.trim())||
+      new Set(r).size!==r.length||new Set(d).size!==d.length||
+      (v!=="VAA_G4"&&v!=="VAA_G12"&&new Set([...r,...d]).size!==r.length+d.length)||
+      config.reviewFrequency!=="MONTHLY"||config.rebalanceThreshold!=="0")
+      return {available:false,positions:[],missingExposures:["Unverified tactical rules"],supportedMarkets:[]};
+  }
   // Repeated allocation sleeves can resolve to the same trading line, causing
   // double-counted holdings and ambiguous execution. Reject before resolving.
   if (engine === "FIXED_ALLOCATION" && Array.isArray(config.allocations)) {

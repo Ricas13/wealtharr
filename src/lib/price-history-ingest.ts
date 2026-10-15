@@ -4,7 +4,7 @@ import { getMarketDataProvider, type MarketDataProvider } from "@/lib/market-dat
 import { acceptHistoryObservation } from "@/domain/trusted-history";
 import { runBounded } from "@/lib/work-pool";
 
-const LOOKBACK_DAYS = 450;
+const LOOKBACK_DAYS = 540;
 const MAX_DAYS_PER_LINE_PER_RUN = 40;
 
 /**
@@ -25,8 +25,10 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
     "SELECT DISTINCT tl.id,tl.provider_symbol,tl.currency FROM trading_lines tl JOIN instruments i ON i.id=tl.instrument_id " +
     "WHERE tl.provider_symbol IS NOT NULL AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) " +
     "AND i.economic_exposure IN (" +
-    " SELECT e FROM strategy_versions v, jsonb_array_elements_text(v.config->'riskAssets') e WHERE v.engine_key='MOMENTUM_ROTATION' AND jsonb_typeof(v.config->'riskAssets')='array'" +
-    " UNION SELECT v.config->>'defensiveAsset' FROM strategy_versions v WHERE v.engine_key='MOMENTUM_ROTATION' AND v.config ? 'defensiveAsset')"
+    " SELECT e FROM strategy_versions v, jsonb_array_elements_text(v.config->'riskAssets') e WHERE v.engine_key IN ('MOMENTUM_ROTATION','TACTICAL_ALLOCATION') AND jsonb_typeof(v.config->'riskAssets')='array'" +
+    " UNION SELECT v.config->>'defensiveAsset' FROM strategy_versions v WHERE v.engine_key='MOMENTUM_ROTATION' AND v.config ? 'defensiveAsset'"+
+    " UNION SELECT d FROM strategy_versions v, jsonb_array_elements_text(v.config->'defensiveAssets') d "+
+    "WHERE v.engine_key='TACTICAL_ALLOCATION' AND jsonb_typeof(v.config->'defensiveAssets')='array')"
   );
   let stored = 0;
   let rejected = 0;
@@ -36,7 +38,7 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
     async (line) => {
       const days = await sql.unsafe(
         "SELECT to_char(d::date,'YYYY-MM-DD') AS day FROM generate_series(current_date-$1::int, current_date-1, interval '1 day') d " +
-        "WHERE extract(isodow FROM d) < 6 AND NOT EXISTS (SELECT 1 FROM price_history h WHERE h.trading_line_id=$2 AND h.trading_day=d::date AND h.licensed=true AND h.adjustment_verified=true) " +
+        "WHERE extract(isodow FROM d) < 6 AND NOT EXISTS (SELECT 1 FROM price_history h WHERE h.trading_line_id=$2 AND h.trading_day=d::date AND h.licensed=true AND h.adjustment_verified=true AND h.session_calendar_certified=true AND h.total_return_certified=true) " +
         "ORDER BY d DESC LIMIT $3",
         [LOOKBACK_DAYS, line.id, MAX_DAYS_PER_LINE_PER_RUN]
       );
@@ -47,10 +49,19 @@ export async function ingestPriceHistory(options: { deadline?: number; concurren
           const observation = await provider.historicalPrice(String(line.provider_symbol), new Date(day + "T21:00:00.000Z"));
           if (!acceptHistoryObservation(observation, day, String(line.currency))) { rejected += 1; continue; }
           await sql.unsafe(
-            "INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed,adjustment_verified) VALUES ($1,$2,$3,$4,$5,true,true) "+ 
+            "INSERT INTO price_history (trading_line_id,trading_day,adjusted_close,currency,provider,licensed,adjustment_verified,"+
+            "session_calendar_certified,month_terminal_certified,total_return_certified,source_calendar,session_sequence,provider_corporate_actions_revision) "+
+            "VALUES ($1,$2,$3,$4,$5,true,true,$6,$7,$8,$9,$10,$11) "+ 
             "ON CONFLICT (trading_line_id,trading_day,provider) DO UPDATE SET "+ 
-            "adjusted_close=EXCLUDED.adjusted_close,currency=EXCLUDED.currency,licensed=true,adjustment_verified=true,ingested_at=now()",
-            [line.id, day, observation!.price, observation!.currency.toUpperCase(), observation!.provider]
+            "adjusted_close=EXCLUDED.adjusted_close,currency=EXCLUDED.currency,licensed=true,adjustment_verified=true,"+
+            "session_calendar_certified=EXCLUDED.session_calendar_certified,month_terminal_certified=EXCLUDED.month_terminal_certified,"+
+            "total_return_certified=EXCLUDED.total_return_certified,source_calendar=EXCLUDED.source_calendar,"+
+            "session_sequence=EXCLUDED.session_sequence,provider_corporate_actions_revision=EXCLUDED.provider_corporate_actions_revision,ingested_at=now()",
+            [line.id, day, observation!.price, observation!.currency.toUpperCase(), observation!.provider,
+             observation!.sessionCalendarCertified===true && Boolean(observation!.sourceCalendar) && Number.isSafeInteger(observation!.sessionSequence),
+             observation!.monthTerminalCertified===true && observation!.sessionCalendarCertified===true && Boolean(observation!.sourceCalendar) && Number.isSafeInteger(observation!.sessionSequence),
+             observation!.totalReturnCertified===true && Boolean(observation!.providerCorporateActionsRevision),
+             observation!.sourceCalendar??null,observation!.sessionSequence??null,observation!.providerCorporateActionsRevision??null]
           );
           stored += 1;
         } catch { rejected += 1; }

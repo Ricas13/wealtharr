@@ -126,7 +126,7 @@ jobs:
           assert set(old_host['services']['scheduler']['environment']) == {'CRON_SECRET'}, 'Scheduler receives only cron secret'
           assert old_host['services']['app']['environment']['DATABASE_URL'].startswith('postgresql://wealtharr_app:')
           PY
-          docker build --quiet -f docker/backup.Dockerfile .
+          docker build --quiet --build-arg BACKUP_BASE_IMAGE=alpine:3.21 -f docker/backup.Dockerfile .
           rm -f .env.production
       - run: sh -n scripts/verify-private-staging.sh
       - run: bash -n scripts/repair-public-routing.sh
