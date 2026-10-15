@@ -9,7 +9,7 @@ export type ConfirmedLink={
   externalTradeId:string;ledgerEventId:string;side:"BUY"|"SELL";quantity:string;
 };
 export type BrokerOrder={
-  id:string|number;side?:unknown;status?:unknown;filledQuantity?:unknown;
+  id:string|number;side?:unknown;status?:unknown;filledQuantity?:unknown;ticker?:unknown;
 };
 export type BrokerOrderCheck={
   externalTradeId:string;ledgerEventId:string;
