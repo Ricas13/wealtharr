@@ -11,7 +11,7 @@ const sixtyForty=getStrategyPlugin("60-40")!;
 describe("production seeding of strategy definitions",()=>{
   it("seeds only complete methods, as disabled definitions with a PUBLISHED version",()=>{
     const entries=strategiesToSeed(STRATEGY_PLUGINS,"PRODUCTION");
-    expect(entries.map(e=>e.plugin.key)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10"]);
+    expect(entries.map(e=>e.plugin.key)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
     for(const entry of entries){
       expect(entry.enabled,entry.plugin.key).toBe(false);
       expect(entry.initialVersion,entry.plugin.key).toBe("PUBLISHED");

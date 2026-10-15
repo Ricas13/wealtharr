@@ -1,4 +1,7 @@
 import Decimal from "decimal.js";
+import {twoFundsAllocations} from "@/domain/strategy/two-funds-engine";
+import {trinityWeights} from "@/domain/strategy/trinity-engine";
+import type {TrustedHistoricalSeries} from "@/domain/strategy/types";
 import type { ResolvedPosition } from "@/domain/strategy/market-eligibility";
 
 type AllocationLine={exposure:string;ticker:string;exchange:string;currency:string;amount:string;weight:string};
@@ -6,11 +9,20 @@ export type InitialAllocationPlan={investAmount:string;cashReserve:string;curren
 
 /** This is an allocation instruction in money, not a broker order or guessed number of shares. */
 export function initialAllocationPlan(engine:string,config:Record<string,unknown>,
-  cash:Decimal.Value,currency:string,positions:ResolvedPosition[]):InitialAllocationPlan | null {
+  cash:Decimal.Value,currency:string,positions:ResolvedPosition[],at=new Date(),trustedHistory?:TrustedHistoricalSeries[]):InitialAllocationPlan | null {
   const amount=new Decimal(cash);
   if(!amount.isFinite()||amount.lte(0))return null;
   let targets:Array<{exposure:string;weight:Decimal}>=[];
-  if(engine==="FIXED_ALLOCATION"&&Array.isArray(config.allocations)) {
+  if(engine==="TRINITY_HYBRID") {
+    if(!trustedHistory)return null;
+    try {
+      targets=trinityWeights({now:at,trustedHistory}).filter(x=>new Decimal(x.weight).gt(0))
+        .map(x=>({exposure:x.exposure,weight:new Decimal(x.weight)}));
+    }catch{return null;}
+  } else if(engine==="TWO_FUNDS_MODERATE") {
+    targets=twoFundsAllocations(config,at).filter(x=>new Decimal(x.weight).gt(0))
+      .map(x=>({exposure:x.exposure,weight:new Decimal(x.weight)}));
+  } else if(engine==="FIXED_ALLOCATION"&&Array.isArray(config.allocations)) {
     targets=config.allocations.map((x:unknown)=>{
       const a=x as {exposure:string;weight:string};
       return {exposure:a.exposure,weight:new Decimal(a.weight)};
@@ -21,7 +33,7 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
   if(targets.length<1||targets.some(x=>!x.exposure||!x.weight.isFinite()||x.weight.lte(0)))return null;
   const totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
   if(totalWeight.gt(1))return null;
-  if(engine==="FIXED_ALLOCATION"&&!totalWeight.eq(1))return null;
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine)&&!totalWeight.eq(1))return null;
   const orders:AllocationLine[]=[];
   let allocated=new Decimal(0);
   for(let i=0;i<targets.length;i++){
