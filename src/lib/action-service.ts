@@ -11,6 +11,7 @@ import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/f
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
+import { confirmedSigReviewTrades } from "@/domain/strategy/sig-confirmed-ledger";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
 import { assertExecutionCurrencyMatch, executionPriceBand, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
 import { nextReviewDueAt } from "@/domain/schedule";
@@ -68,7 +69,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const baseCurrency=String(instance.currency).toUpperCase();
   const accountCurrencies=new Set(accounts.map((account)=>String(account.currency).toUpperCase()));
   const primaryAccountId=String(instance.account_id);
-  const ledgerRows=await db.unsafe("SELECT account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity,occurred_at,created_at FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",[strategyInstanceId]);
+  const ledgerRows=await db.unsafe("SELECT id,correction_of_event_id,account_id,event_type,currency,cash_amount,fee_amount,instrument_id,quantity,occurred_at,created_at FROM ledger_events WHERE strategy_instance_id=$1 ORDER BY occurred_at,created_at",[strategyInstanceId]);
   const folded=foldLedger(ledgerRows.map(ledgerRowToEvent),baseCurrency);
   const accountPositions=new Map<string,ReturnType<typeof foldLedger>>();
   for(const account of accounts){
@@ -246,6 +247,13 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const momentumUniverse=calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
     ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
   // The community Sig model uses independently sourced USD reference prices even for\n  // investors whose accounts are denominated in GBP or EUR. Missing unique licensed\n  // TQQQ history fails closed inside its research engine; never substitute LQQ3 prices.\n  const sigResearchReference=calculationEngineKey==="NINE_SIG_COMMUNITY";\n  const trustedHistory=sigResearchReference\n    ?await loadTrustedHistory(["NASDAQ_100_3X_LONG"],"USD",32,new Date(),db)\n    :momentumUniverse?await loadTrustedHistory(momentumUniverse,String(instance.currency),Number(config.lookbackMonths)||12,new Date(),db):undefined;
+  const confirmedQuarterTrades=calculationEngineKey==="NINE_SIG_COMMUNITY"
+    ?confirmedSigReviewTrades(ledgerRows.map(row=>({
+      id:String(row.id),correctionOfEventId:row.correction_of_event_id?String(row.correction_of_event_id):null,
+      eventType:String(row.event_type),currency:String(row.currency),
+      cashAmount:String(row.cash_amount),feeAmount:String(row.fee_amount),
+      occurredAt:new Date(row.occurred_at)
+    })),lastReview,baseCurrency,effectiveCash):undefined;
   const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
     const mappingRows=await db.unsafe(
       "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
@@ -341,7 +349,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
   let sizingBand:Decimal|null=null;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,confirmedQuarterTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
   if(override&&"proposal" in override)proposal=override.proposal;
   if(override&&"trade" in override){
     const forcedTrade=override.trade;
