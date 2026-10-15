@@ -27,8 +27,8 @@ describe("Ivy reference signals",()=>{
   const c=history();c[0].currency="GBP";
   expect(()=>ivyTenMonthSignals(assets,c,"2026-10","USD")).toThrow("IVY_HISTORY_MISSING_OR_AMBIGUOUS");
  });
- it("blocks tie without explicitly declared tie policy",()=>{
+ it("routes exact SMA equality to defensive bills by Wealtharr convention",()=>{
   const h=history();h[0].points=h[0].points.map(p=>({...p,adjustedClose:new Decimal(100)}));
-  expect(()=>ivyTenMonthSignals(assets,h,"2026-10","USD")).toThrow("IVY_SIGNAL_ON_THRESHOLD_REQUIRES_POLICY");
+  expect(ivyTenMonthSignals(assets,h,"2026-10","USD")[0].invested).toBe(false);
  });
 });
