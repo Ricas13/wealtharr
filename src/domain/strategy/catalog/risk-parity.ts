@@ -10,5 +10,6 @@ export const plugin:StrategyPlugin={
  engine:"TACTICAL_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],
  initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false},
  specCard:"docs/strategy-specs/risk-parity.md",
- goldenTests:"tests/risk-parity-golden.test.ts"
+ goldenTests:"tests/risk-parity-golden.test.ts",
+ releaseStatus:"COMPLETE"
 };
