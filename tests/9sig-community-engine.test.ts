@@ -21,7 +21,7 @@ describe("nonpublished 9Sig community engine integration",()=>{
     expect(engine.key).toBe("NINE_SIG_COMMUNITY");
     expect(()=>assertCustomerPublishableEngine("NINE_SIG_COMMUNITY")).toThrow("ENGINE_NOT_CUSTOMER_VERIFIED");
   });
-  it("computes a 9% target and 90%-of-reserve capped initial buy",()=>{
+  it("starts a new account at 60/40 without a fictional prior growth quarter",()=>{\n    const result=engine.calculate({...ctx,state:{},cash:D("10000"),exposures:[],\n      confirmedQuarterTrades:{buyGross:D("0"),sellGross:D("0"),feeTotal:D("0"),reserveBeforeTrades:D("10000")}});\n    expect(result.actionType).toBe("BUY");\n    expect(result.amount?.toFixed(2)).toBe("6000.00");\n  });\n  it("computes a 9% target and 90%-of-reserve capped initial buy",()=>{
     const result=engine.calculate(ctx);
     expect(result.actionType).toBe("BUY");
     expect(result.amount?.toFixed(2)).toBe("1898.46");
