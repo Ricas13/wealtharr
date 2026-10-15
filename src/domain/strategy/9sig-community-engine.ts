@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import type {StrategyEngine} from "./types";
 import {assess2026Community9Sig30Down} from "./9sig-community-rules";
 import {verifiedSigQuarterCloses} from "./sig-quarter-closes";
+import {calendarQuarterReviewDates} from "./sig-calendar-quarter";
 
 /** Owner-selected Wealtharr Sig variant; publication requires full per-account workflow and market verification. */
 export const nineSigCommunityEngine:StrategyEngine={
@@ -22,9 +23,9 @@ export const nineSigCommunityEngine:StrategyEngine={
     const h=ctx.trustedHistory?.find(s=>s.exposure==="NASDAQ_100_3X_LONG"&&s.currency==="USD");
     let closes:Decimal[];
     try{
-      if(!Array.isArray(ctx.config.referenceCloseDates))throw new Error("MISSING_SCHEDULE");
-      closes=verifiedSigQuarterCloses(h,ctx.config.referenceCloseDates.map(String),"USD");
-      const lastDate=String(ctx.config.referenceCloseDates[8]);
+      const dates=calendarQuarterReviewDates((h?.points??[]).map(p=>p.at.toISOString().slice(0,10)),ctx.now.toISOString().slice(0,10));
+      closes=verifiedSigQuarterCloses(h,dates,"USD");
+      const lastDate=dates[8];
       const observedDate=ctx.now.toISOString().slice(0,10);
       if(lastDate!==observedDate&&ctx.state.sigReviewedReferenceDate!==lastDate)
         throw new Error("SIG_REFERENCE_SCHEDULE_STALE");
@@ -35,7 +36,8 @@ export const nineSigCommunityEngine:StrategyEngine={
       .reduce((a,p)=>a.plus(p.value),new Decimal(0));
     if(ctx.exposures.some(p=>p.economicExposure!=="NASDAQ_100_3X_LONG"&&!p.value.isZero()))
       return fail("Other holdings require classification");
-    const anchor=ctx.state.sigPreviousSignalTarget;
+    // Owner recollection, not independently confirmed Kelly-letter rule: use post-fill stock value.
+    const anchor=ctx.state.sigConfirmedAnchor;
     // A newly started portfolio receives the historical 60/40 base, without
     // inventing a growth step before its first confirmed allocation.
     const stable=ctx.state.reviewTargetValue;
@@ -54,11 +56,11 @@ export const nineSigCommunityEngine:StrategyEngine={
       });
     }catch{return fail("Current 30 Down state cannot be verified");}
     const nextState={...ctx.state,sigProtection:protection.protection,
-      sigReviewedReferenceDate:String(ctx.config.referenceCloseDates[8]),
+      sigReviewedReferenceDate:ctx.now.toISOString().slice(0,10),
       reviewTargetValue:target.toString(),reviewContributionsSnapshot:ctx.contributionsSinceReview.toString()};
     if(protection.effectiveSignal==="HOLD"||gap.abs().lt("0.01"))
       return {actionType:"HOLD",title:"No order",instruction:"Model hold",explanation:[],
-        nextState:{...nextState,sigPreviousSignalTarget:target.toString(),sigQuarterIndex:quarter+1},
+        nextState:{...nextState,sigConfirmedAnchor:exposure.toString(),sigQuarterIndex:quarter+1},
         confidence:"MEDIUM",dueAt:ctx.now};
     if(gap.isNegative())return {actionType:"SELL",title:"Model sell",instruction:"Model stock reduction",
       amount:gap.neg(),currency:ctx.baseCurrency,economicExposure:"NASDAQ_100_3X_LONG",
@@ -73,7 +75,7 @@ export const nineSigCommunityEngine:StrategyEngine={
     const allowed=Decimal.min(gap,ctx.cash,Decimal.max(0,opening.mul("0.9").minus(used)));
     if(allowed.lt("0.01"))return {actionType:"HOLD",title:"Buying power exhausted",
       instruction:"Model quarter review finished without buying",explanation:[],
-      nextState:{...nextState,sigPreviousSignalTarget:target.toString(),sigQuarterIndex:quarter+1},confidence:"MEDIUM",dueAt:ctx.now};
+      nextState:{...nextState,sigConfirmedAnchor:exposure.toString(),sigQuarterIndex:quarter+1},confidence:"MEDIUM",dueAt:ctx.now};
     return {actionType:"BUY",title:"Model buy",instruction:"Model stock addition",
       amount:allowed,currency:ctx.baseCurrency,economicExposure:"NASDAQ_100_3X_LONG",
       explanation:[],nextState,confidence:"MEDIUM",dueAt:ctx.now};
