@@ -39,6 +39,11 @@ describe("strategy-scoped Trading 212 verification",()=>{
  it("does not accept the same external order as belonging to two strategy links",()=>{
   expect(()=>reconcileConfirmedOrders([link("101"),link("101")],[])).toThrow("BROKER_DUPLICATE_ASSIGNED_ID");
  });
+ it("rejects rounded 64-bit provider IDs before order attribution",()=>{
+  expect(()=>reconcileConfirmedOrders([link("9007199254740993")],[
+    {id:9007199254740993,side:"BUY",status:"FILLED",filledQuantity:5}
+  ])).toThrow("BROKER_ORDER_ID_PRECISION_UNSAFE");
+ });
  it("does not persist or infer shared account cash, fees or dividends",()=>{
   const input=[{id:"101",side:"BUY",status:"FILLED",filledQuantity:5,accountCash:10000,dividends:700}];
   const x=reconcileConfirmedOrders([link("101")],input);
