@@ -136,7 +136,7 @@ jobs:
       - run: npm run build
       - name: Build production application image and verify runtime boundary
         run: |
-          docker build --tag wealtharr-ci:${{ github.sha }} .
+          docker build --build-arg NODE_BASE_IMAGE=mirror.gcr.io/library/node:22-alpine --tag wealtharr-ci:${{ github.sha }} .
           test "$(docker inspect --format '{{.Config.User}}' wealtharr-ci:${{ github.sha }})" = node
           docker run --rm --entrypoint node wealtharr-ci:${{ github.sha }} -e "for (const p of ['next','tsx','postgres']) require.resolve(p); for (const p of ['vitest','eslint','drizzle-kit']) { try { require.resolve(p); process.exit(1); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; } }"
       - name: Smoke-test production runtime and migration tooling
