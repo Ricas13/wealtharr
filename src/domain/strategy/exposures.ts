@@ -50,6 +50,19 @@ export function isFullyDescribedExposure(exposure: ExposureDefinition | undefine
 }
 
 const BASE_EXPOSURES: readonly ExposureDefinition[] = [
+  // Group 1 source-specific US-reference exposures; market mappings remain operator verified.
+  {id:"G1_US_TOTAL_EQUITY",assetClass:"EQUITY",description:"US total stock market large, mid and small equities",leverage:1,region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad US total-market equity index",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_EX_US_TOTAL_EQUITY",assetClass:"EQUITY",description:"Developed and emerging equity markets outside the US",leverage:1,region:"EX_US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad total international developed and emerging equity index excluding US",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_AGGREGATE_BONDS",assetClass:"BOND",description:"US investment-grade aggregate bond market",leverage:1,region:"US",maturityBand:"ALL_MATURITIES",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US investment grade government, agency, mortgage and corporate aggregate index",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_LARGE_BLEND",assetClass:"EQUITY",description:"US large-cap blend stocks",leverage:1,region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"US large capitalisation diversified blend index",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_SMALL_VALUE",assetClass:"EQUITY",description:"US small-cap value stocks",leverage:1,region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"US small capitalisation value-style index",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_LONG_TREASURY",assetClass:"BOND",description:"Long-term US Treasury securities",leverage:1,region:"US",maturityBand:"LONG",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US Treasury securities with long remaining maturities, no corporate credit",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_SHORT_TREASURY",assetClass:"BOND",description:"Short-term US Treasury securities",leverage:1,region:"US",maturityBand:"SHORT",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US Treasury notes and bills of short maturity, no corporate credit",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_TREASURY_BILLS",assetClass:"CASH",description:"Short-dated US Treasury bills (not generic cash)",leverage:1,region:"US",maturityBand:"SHORT",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"Direct US Treasury bills or single-fund Treasury-bill-index exposure",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_PHYSICAL_GOLD",assetClass:"COMMODITY",description:"Unleveraged physical gold spot price exposure",leverage:1,region:"GLOBAL",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Physical gold bullion or physically backed eligible security, not miners/futures leverage",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_SP500_INDEX",assetClass:"EQUITY",description:"Low-cost S&P 500 market capitalisation index exposure",leverage:1,region:"US",maturityBand:"NOT_APPLICABLE",currencyPolicy:"LOCAL",creditQuality:"NOT_APPLICABLE",coverage:"S&P 500 index of large US publicly traded companies",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+  {id:"G1_US_SHORT_GOVERNMENT",assetClass:"BOND",description:"Short-term US government debt",leverage:1,region:"US",maturityBand:"SHORT",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US federal government short-term securities, not corporate bonds",domicileRequirement:"Mapping must be independently verified for each jurisdiction and wrapper; no default ticker or jurisdiction eligibility is asserted"},
+
   def("BROAD_EQUITY", "EQUITY", "Diversified global or broad-market equities"),
   def("DOMESTIC_EQUITY", "EQUITY", "Broad equities of the investor's home market"),
   def("INTERNATIONAL_EQUITY", "EQUITY", "Broad equities outside the investor's home market"),
@@ -75,7 +88,6 @@ const BASE_EXPOSURES: readonly ExposureDefinition[] = [
   def("CASH_BILLS", "CASH", "Cash or short-dated government bills"),
   def("GOLD", "COMMODITY", "Physical-gold-backed exposure"),
   def("BROAD_COMMODITIES", "COMMODITY", "Diversified commodities basket"),
-
   // Merriman's 2026 ten-sleeve 50/50 reference needs separate international value and small-factor
   // exposures. Never collapse these into generic developed-market equity to force broker eligibility.
   {
@@ -146,7 +158,6 @@ export const EXPOSURES:readonly ExposureDefinition[]=BASE_EXPOSURES.map((exposur
   ...exposure,...(GROUP_2_DESCRIPTORS.get(exposure.id)??{})
 }));
 const byId = new Map(EXPOSURES.map((exposure) => [exposure.id,exposure]));
-
 
 export function getExposure(id: string) {
   return byId.get(id);
