@@ -35,7 +35,7 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
 describe("isMethodComplete: the real catalogue",()=>{
   it("marks exactly the Global 60/40 (GBP) model complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10"]);
+    expect(complete()).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
     expect(complete(realFiles)).toEqual(["golden-butterfly","permanent-portfolio","three-fund","60-40","80-20","buffett-90-10"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
@@ -52,7 +52,7 @@ describe("isMethodComplete: the real catalogue",()=>{
     }
   });
   it("keeps 9Sig, HFEA and the other fixed allocations incomplete",()=>{
-    for(const key of ["9sig","hfea","all-weather","dual-momentum"])
+    for(const key of ["9sig","hfea","all-weather"])
       expect(isMethodComplete(getStrategyPlugin(key)),key).toBe(false);
     expect(isMethodComplete(undefined)).toBe(false);
   });
