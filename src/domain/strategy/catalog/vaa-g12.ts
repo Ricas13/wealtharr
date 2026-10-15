@@ -11,5 +11,6 @@ export const plugin:StrategyPlugin={
  description:"VAA G12 12-offensive five-holding breadth protection",
  engine:"TACTICAL_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],
  initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false},
- specCard:"docs/strategy-specs/vaa-g12.md",goldenTests:"tests/vaa-g12-golden.test.ts"
+ specCard:"docs/strategy-specs/vaa-g12.md",goldenTests:"tests/vaa-g12-golden.test.ts",
+ releaseStatus:"COMPLETE"
 };
