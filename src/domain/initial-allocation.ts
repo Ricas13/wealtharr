@@ -13,7 +13,11 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
   const amount=new Decimal(cash);
   if(!amount.isFinite()||amount.lte(0))return null;
   let targets:Array<{exposure:string;weight:Decimal}>=[];
-  if(engine==="TRINITY_HYBRID") {
+  if(engine==="QUARTERLY_SIGNAL_TARGET"){
+    const stockWeight=new Decimal(String(config.initialTargetRatio??"0.6"));
+    targets=[{exposure:String(config.targetExposure),weight:stockWeight},
+      {exposure:String(config.safeExposure),weight:new Decimal(1).minus(stockWeight)}].filter(x=>x.weight.gt(0));
+  } else if(engine==="TRINITY_HYBRID") {
     if(!trustedHistory)return null;
     try {
       targets=trinityWeights({now:at,trustedHistory}).filter(x=>new Decimal(x.weight).gt(0))

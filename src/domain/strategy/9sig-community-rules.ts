@@ -7,7 +7,9 @@ import Decimal from "decimal.js";
  * Author historical spike rule (2018):
  * https://jasonkelly.com/resources/strategies/
  *
- * IMPORTANT: October 2026 BestFolio claims a SPY trigger in 6Sig/9Sig,\n * whereas March 2026 r/KellyLetter participants report TQQQ. The benchmark\n * is NOT verified: this models only that specific forum reconstruction.\n * Never invoke as the author's certified signal or live registry engine.
+ * IMPORTANT: October 2026 BestFolio claims a SPY trigger in 6Sig/9Sig,
+ * whereas March 2026 r/KellyLetter participants report TQQQ. The benchmark
+ * is NOT verified: this models only that specific forum reconstruction.\n * Never invoke as the author's certified signal or live registry engine.
  */
 export type Community9SigProtection={
   startQuarter:number|null;
@@ -25,34 +27,41 @@ function validPrice(v:Decimal.Value){
   if(!n.isFinite()||n.lte(0))throw new Error("INVALID_9SIG_REFERENCE_PRICE");
   return n;
 }
+export type SigProtectionParams={triggerRatio?:Decimal.Value;skipCap?:number};
+/**
+ * 30 Down protection. Owner decision (2026-10): when a window has run out (skips used or 8 quarters
+ * elapsed) while the price is still below the line, normal trading RESUMES; a new window can only start
+ * after the price has first closed back above the line (which resets the state).
+ */
 export function assess2026Community9Sig30Down(input:{
   quarterIndex:number;
   currentTqqqClose:Decimal.Value;
   precedingEightTqqqQuarterCloses:readonly Decimal.Value[];
   signal:"BUY"|"SELL"|"HOLD";
   protection:Community9SigProtection;
-}):Community9SigDecision{
+}&SigProtectionParams):Community9SigDecision{
   const {quarterIndex,signal,protection}=input;
+  const cap=input.skipCap??2;
+  if(!Number.isInteger(cap)||cap<1||cap>8)throw new Error("INVALID_9SIG_PROTECTION_STATE");
   if(!Number.isInteger(quarterIndex)||quarterIndex<8||!Number.isInteger(protection.skippedSellCount)||
-    protection.skippedSellCount<0||protection.skippedSellCount>2||
+    protection.skippedSellCount<0||protection.skippedSellCount>cap||
     (protection.startQuarter!==null&&(!Number.isInteger(protection.startQuarter)||protection.startQuarter>quarterIndex)))
     throw new Error("INVALID_9SIG_PROTECTION_STATE");
   if(input.precedingEightTqqqQuarterCloses.length!==8)
     throw new Error("9SIG_EIGHT_QUARTER_HISTORY_REQUIRED");
   const reference=Decimal.max(...input.precedingEightTqqqQuarterCloses.map(validPrice));
-  const triggered=validPrice(input.currentTqqqClose).lte(reference.mul("0.70"));
-  const inExisting=protection.startQuarter!==null&&quarterIndex-protection.startQuarter<8&&protection.skippedSellCount<2;
-  // 2026 discussions do not resolve all re-arm/expiry/reset interactions.
-  // No invented rearm when already in a completed or expired window.
-  if(protection.startQuarter!==null&&!inExisting&&triggered)
-    throw new Error("9SIG_REARM_AND_RESET_RULE_UNVERIFIED");
-  const activated=protection.startQuarter===null&&triggered;
+  const triggered=validPrice(input.currentTqqqClose).lte(reference.mul(input.triggerRatio??"0.70"));
+  const inExisting=protection.startQuarter!==null&&quarterIndex-protection.startQuarter<8&&protection.skippedSellCount<cap;
+  const spent=protection.startQuarter!==null&&!inExisting;
+  // A spent window followed by a close above the line re-arms the protection.
+  const base:Community9SigProtection=spent&&!triggered?{startQuarter:null,skippedSellCount:0}:protection;
+  const activated=base.startQuarter===null&&triggered;
   const active=activated||inExisting;
   const skip=active&&signal==="SELL";
   const next=activated?{startQuarter:quarterIndex,skippedSellCount:skip?1:0}
-    :skip?{startQuarter:protection.startQuarter,skippedSellCount:protection.skippedSellCount+1}:protection;
+    :skip?{startQuarter:base.startQuarter,skippedSellCount:base.skippedSellCount+1}:base;
   return {signal,effectiveSignal:skip?"HOLD":signal,protection:next,
-    protectionActive:active,skipRemaining:active?2-next.skippedSellCount:0};
+    protectionActive:active,skipRemaining:active?cap-next.skippedSellCount:0};
 }
 
 /**

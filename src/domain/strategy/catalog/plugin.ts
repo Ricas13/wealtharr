@@ -16,7 +16,7 @@
 export type StrategyProfile = {
   key: string;
   name: string;
-  engine: "FIXED_ALLOCATION" | "VALUE_TARGET" | "MOMENTUM_ROTATION" | "TACTICAL_ALLOCATION" | "TWO_FUNDS_MODERATE" | "TRINITY_HYBRID" | "RESEARCH_PENDING";
+  engine: "FIXED_ALLOCATION" | "VALUE_TARGET" | "MOMENTUM_ROTATION" | "TACTICAL_ALLOCATION" | "TWO_FUNDS_MODERATE" | "TRINITY_HYBRID" | "QUARTERLY_SIGNAL_TARGET" | "RESEARCH_PENDING";
   launchState: "DRAFT_REQUIRES_VERIFICATION";
   config?: Record<string, unknown>;
   /** Shown to the investor with the strategy; required whenever it holds a leveraged exposure. */

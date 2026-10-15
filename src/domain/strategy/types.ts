@@ -33,6 +33,8 @@ export type EngineContext = {
   trustedHistory?: TrustedHistoricalSeries[];
   /** Gross confirmed review fills derived from the ledger, never proposals. */
   confirmedQuarterTrades?: {buyGross: Decimal;sellGross: Decimal;feeTotal: Decimal;reserveBeforeTrades: Decimal;};
+  /** Confirmed executed fills of the current review split by managed sleeve (quarterly signal family). */
+  sigReviewTrades?: {stockBuyGross: Decimal;stockSellGross: Decimal;safeBuyGross: Decimal;safeSellGross: Decimal;feeTotal: Decimal;};
 };
 
 export type ExplanationRow = {
@@ -56,6 +58,13 @@ export type ProposedAction = {
   completesReview?: boolean;
   /** Machine code of a DATA_REQUIRED outcome from the execution convention (alert text and notification key). */
   reasonCode?: string;
+  /**
+   * State that closes the review if this trade turns out to be smaller than the smallest practical order
+   * (below one share or the minimum trade). Without it the remainder would fail closed forever.
+   */
+  residueCloseState?: Record<string, unknown>;
+  /** A housekeeping order (sweeping idle cash into the safe sleeve) that may also close the review when unaffordable. */
+  optionalSweep?: boolean;
 };
 
 export interface StrategyEngine {

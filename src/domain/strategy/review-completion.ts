@@ -17,7 +17,10 @@ export function postActionReviewState(
     // quarterly growth factor a second time before the review has actually ended.
     const target=proposed.nextState.targetValue;
     const contributions=proposed.nextState.reviewContributionsSnapshot;
+    // In-review markers of the quarterly signal family (sigReview*) persist until the review closes.
+    const sigReview=Object.fromEntries(Object.entries(proposed.nextState).filter(([k])=>k.startsWith("sigReview")));
     return {...current,
+      ...sigReview,
       ...(target!=null?{reviewTargetValue:target}:{}),
       ...(contributions!=null?{reviewContributionsSnapshot:contributions}:{}),
       forceReview:true};
@@ -26,6 +29,7 @@ export function postActionReviewState(
     const closed={...proposed.nextState};
     delete closed.reviewTargetValue;
     delete closed.reviewContributionsSnapshot;
+    for(const key of Object.keys(closed))if(key.startsWith("sigReview"))delete closed[key];
     return {...closed,lastReviewAt:confirmedAt.toISOString(),forceReview:false};
   }
   return proposed.nextState;

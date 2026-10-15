@@ -108,6 +108,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
       const exposure=String(line.economic_exposure);
       if(engine==="VALUE_TARGET"&&exposure!==String(config.targetExposure))
         throw new Error("TRADE_EXPOSURE_NOT_MANAGED");
+      if(engine==="QUARTERLY_SIGNAL_TARGET"&&exposure!==String(config.targetExposure)&&exposure!==String(config.safeExposure))
+        throw new Error("TRADE_EXPOSURE_NOT_MANAGED");
       if(engine==="FIXED_ALLOCATION"&&!(Array.isArray(config.allocations)&&
         config.allocations.some((a:unknown)=>!!a&&typeof a==="object"&&
           String((a as Record<string,unknown>).exposure)===exposure)))
@@ -122,7 +124,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
         // let an imported trade turn the indicator into a managed position.
         if(!TRINITY_TRADE_UNIVERSE.some(id=>id===exposure))throw new Error("TRADE_EXPOSURE_NOT_MANAGED");
       }
-      if(!["VALUE_TARGET","FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine))
+      if(!["VALUE_TARGET","FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID","QUARTERLY_SIGNAL_TARGET"].includes(engine))
         throw new Error("TRADE_ENGINE_NOT_VERIFIED");
 
       // Validate every intermediate balance *after inserting the historical

@@ -29,6 +29,9 @@ import {plugin as vaa} from "./vaa";
 import {plugin as vaaG12} from "./vaa-g12";
 import {plugin as threeSig} from "./3sig";
 import {plugin as sixSig} from "./6sig";
+import {plugin as quarterlyNasdaq3x} from "./quarterly-target-nasdaq-3x";
+import {plugin as quarterlyMidcap2x} from "./quarterly-target-midcap-2x";
+import {plugin as quarterlySmallcap} from "./quarterly-target-smallcap";
 
 export type {StrategyEngineKey,StrategyPlugin,StrategyProfile,SeedDefinition,CodeRelease} from "./plugin";
 export {LEVERAGE_DISCLOSURE} from "./plugin";
@@ -45,7 +48,8 @@ export const STRATEGY_PLUGINS:readonly StrategyPlugin[]=[
   merrimanUltimate,incomeSig,twoFundsForLife,bernsteinNoBrainer,larryPortfolio,pinwheel,trinity,
   trend200d,riskParity,
   dualMomentum,gtaaIvy,paa,vaa,vaaG12,
-  threeSig,sixSig
+  threeSig,sixSig,
+  quarterlyNasdaq3x,quarterlyMidcap2x,quarterlySmallcap
 ];
 
 const BY_KEY=new Map<string,StrategyPlugin>();

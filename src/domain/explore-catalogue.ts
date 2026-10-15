@@ -13,7 +13,7 @@ export type ExploreCardState="AVAILABLE"|"COMING_SOON"|"RESEARCH";
 export type ExploreStartAction="START"|"PLAN_OPTIONS"|"NONE";
 
 /** Engines a customer can be offered today. Mirrors `assertCustomerPublishableEngine`. */
-const CUSTOMER_PUBLISHABLE_ENGINES:ReadonlySet<string>=new Set(["VALUE_TARGET","FIXED_ALLOCATION"]);
+const CUSTOMER_PUBLISHABLE_ENGINES:ReadonlySet<string>=new Set(["VALUE_TARGET","FIXED_ALLOCATION","QUARTERLY_SIGNAL_TARGET"]);
 
 export type ExploreCardInput={
   /** Engine the catalogue declares for the strategy, or null when nothing is declared. */
@@ -135,6 +135,7 @@ const OPERATOR_NOTE=/licen[cs]|brand|trade\s?mark|research|pending|verif|draft/i
 const GENERATED_DESCRIPTION:Record<string,string>={
   FIXED_ALLOCATION:"Holds fixed target weights and rebalances them on a set review schedule.",
   VALUE_TARGET:"Follows a target value path and compares your portfolio with it at each review.",
+  QUARTERLY_SIGNAL_TARGET:"Steers a growth-target line quarterly, funded from a bond fund, with a purchase throttle and sell-skip protection after a large fall.",
   MOMENTUM_ROTATION:"Rotates between assets according to price-trend signals. Not yet available.",
   RESEARCH_PENDING:"The method is still being researched. Not yet available."
 };

@@ -1,0 +1,98 @@
+import {describe,expect,it} from "vitest";
+import Decimal from "decimal.js";
+import {getStrategyPlugin} from "../src/domain/strategy/catalog";
+import {getStrategyEngine,assertCustomerPublishableEngine} from "../src/domain/strategy/registry";
+import {postActionReviewState} from "../src/domain/strategy/review-completion";
+import {sigReviewTradesBySleeve} from "../src/domain/strategy/sig-confirmed-ledger";
+import type {EngineContext} from "../src/domain/strategy/types";
+
+const D=(v:Decimal.Value)=>new Decimal(v);
+const cfg=()=>({...(getStrategyPlugin("quarterly-target-nasdaq-3x")!.profile!.config as Record<string,unknown>)});
+const NINE=["2024-09-30","2024-12-31","2025-03-31","2025-06-30","2025-09-30","2025-12-31","2026-03-31","2026-06-30","2026-09-30"];
+const engine=getStrategyEngine("QUARTERLY_SIGNAL_TARGET");
+const base=(over:Partial<EngineContext>={}):EngineContext=>({
+  strategyInstanceId:"i",strategyVersionId:"v",now:new Date("2026-10-01T15:00:00Z"),baseCurrency:"USD",cash:D(0),
+  exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(4000)}],
+  contributionsSinceReview:D(0),state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30"},
+  config:cfg(),settings:{},reviewDue:true,dataHealth:{status:"CURRENT"},
+  trustedHistory:[{exposure:"NASDAQ_100_3X_LONG",currency:"USD",source:"t",
+    points:NINE.map(d=>({at:new Date(d+"T00:00:00Z"),adjustedClose:D(100)}))}],
+  sigReviewTrades:{stockBuyGross:D(0),stockSellGross:D(0),safeBuyGross:D(0),safeSellGross:D(0),feeTotal:D(0)},
+  ...over
+} as EngineContext);
+
+describe("engine safety",()=>{
+  it("is a customer-publishable engine and rejects bad configuration",()=>{
+    expect(()=>assertCustomerPublishableEngine("QUARTERLY_SIGNAL_TARGET")).not.toThrow();
+    expect(()=>engine.validateConfig({...cfg(),variant:"SIG_12"})).toThrow("INVALID_QUARTERLY_SIGNAL_CONFIG");
+    expect(()=>engine.validateConfig({...cfg(),safeExposure:"NASDAQ_100_3X_LONG"})).toThrow("INVALID_QUARTERLY_SIGNAL_CONFIG");
+    expect(()=>engine.validateConfig({...cfg(),buyBudgetRatio:"1.5"})).toThrow("INVALID_QUARTERLY_SIGNAL_CONFIG");
+    expect(()=>engine.validateConfig({...cfg(),actWindowTradingDays:0})).toThrow("INVALID_QUARTERLY_SIGNAL_CONFIG");
+    expect(()=>engine.validateConfig({...cfg(),protection:{triggerRatio:"0.7",lookbackQuarters:6,skippedSells:2}})).toThrow("INVALID_QUARTERLY_SIGNAL_CONFIG");
+    expect(()=>engine.validateConfig(cfg())).not.toThrow();
+  });
+  it("fails closed on stale data, unmanaged holdings, missing history, missing trades",()=>{
+    expect(engine.calculate(base({dataHealth:{status:"STALE",message:"old"}})).actionType).toBe("DATA_REQUIRED");
+    expect(engine.calculate(base({exposures:[{economicExposure:"GOLD",value:D(10)}]})).actionType).toBe("DATA_REQUIRED");
+    expect(engine.calculate(base({trustedHistory:[]})).actionType).toBe("DATA_REQUIRED");
+    expect(engine.calculate(base({sigReviewTrades:undefined})).actionType).toBe("DATA_REQUIRED");
+    expect(engine.calculate(base({state:{sigConfirmedAnchor:"x"}})).actionType).toBe("DATA_REQUIRED");
+  });
+  it("does nothing when no review is due or the latest quarter is already reviewed",()=>{
+    expect(engine.calculate(base({reviewDue:false})).actionType).toBe("NO_ACTION");
+    expect(engine.calculate(base({state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"}})).actionType).toBe("NO_ACTION");
+  });
+  it("closes an unfinished review of an earlier quarter instead of blocking forever",()=>{
+    const hold=engine.calculate(base({now:new Date("2026-12-31T22:00:00Z"),
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",reviewTargetValue:"6540",
+        sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30"}}));
+    expect(hold.actionType).toBe("HOLD");
+    expect(hold.nextState.sigLastReviewedReference).toBe("2026-09-30");
+    expect(hold.nextState.sigConfirmedAnchor).toBe("6000");
+  });
+  it("carries the in-review markers through trades and clears them on close",()=>{
+    const release=engine.calculate(base({exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(5000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(4000)}]}));
+    const mid=postActionReviewState(release,{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30"},new Date());
+    expect(mid.sigReviewKind).toBe("SIGNAL");
+    expect(mid.sigReviewReference).toBe("2026-09-30");
+    expect(mid.forceReview).toBe(true);
+    const close=engine.calculate(base({state:mid,exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6540)},{economicExposure:"US_AGGREGATE_BONDS",value:D(2460)}]}));
+    expect(close.actionType).toBe("HOLD");
+    const after=postActionReviewState(close,mid,new Date());
+    expect(Object.keys(after).filter(k=>k.startsWith("sigReview"))).toEqual([]);
+    expect(after.reviewTargetValue).toBeUndefined();
+    expect(after.forceReview).toBe(false);
+  });
+  it("adds new money received mid-review at half its value to the frozen target",()=>{
+    const frozen=engine.calculate(base({exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6540)},{economicExposure:"US_AGGREGATE_BONDS",value:D(2460)}],
+      contributionsSinceReview:D(200),cash:D(200),
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",reviewTargetValue:"6540",
+        reviewContributionsSnapshot:"0",sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30"}}));
+    // target 6540 + 0.5 x 200 = 6640, gap 100, cash 200 -> buy 100.
+    expect(frozen.actionType).toBe("BUY");
+    expect(frozen.amount?.toFixed(2)).toBe("100.00");
+  });
+  it("sweeps idle cash into the safe exposure when the target is met",()=>{
+    const sweep=engine.calculate(base({cash:D(500),state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+      reviewTargetValue:"6000",reviewContributionsSnapshot:"0",sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30"}}));
+    expect([sweep.actionType,sweep.economicExposure,sweep.optionalSweep]).toEqual(["BUY","US_AGGREGATE_BONDS",true]);
+    expect(sweep.amount?.toFixed(2)).toBe("500.00");
+    expect(sweep.residueCloseState?.sigConfirmedAnchor).toBe("6000");
+  });
+});
+
+describe("sigReviewTradesBySleeve",()=>{
+  const at=new Date("2026-09-30T20:00:00Z");
+  const row=(over:Record<string,unknown>)=>({id:"a",correctionOfEventId:null,eventType:"BUY",currency:"USD",cashAmount:"-100",
+    feeAmount:"0",occurredAt:new Date("2026-10-01T15:00:00Z"),exposure:"NASDAQ_100_3X_LONG",...over}) as never;
+  it("splits fills by sleeve, ignores earlier and corrected rows, and adds fees",()=>{
+    const rows=[row({id:"1",cashAmount:"-100",feeAmount:"1"}),row({id:"2",eventType:"SELL",cashAmount:"50",exposure:"US_AGGREGATE_BONDS"}),
+      row({id:"3",occurredAt:new Date("2026-09-01T00:00:00Z")}),row({id:"4"}),row({id:"5",eventType:"CORRECTION",correctionOfEventId:"4",cashAmount:"0"})];
+    const t=sigReviewTradesBySleeve(rows,at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS");
+    expect([t.stockBuyGross,t.safeSellGross,t.stockSellGross,t.safeBuyGross,t.feeTotal].map(String)).toEqual(["100","50","0","0","1"]);
+  });
+  it("fails closed on an unmapped execution or a foreign currency",()=>{
+    expect(()=>sigReviewTradesBySleeve([row({exposure:null})],at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS")).toThrow("SIG_UNMANAGED_EXECUTION");
+    expect(()=>sigReviewTradesBySleeve([row({currency:"GBP"})],at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS")).toThrow("SIG_EXECUTION_CURRENCY_MISMATCH");
+  });
+});

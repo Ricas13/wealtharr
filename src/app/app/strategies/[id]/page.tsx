@@ -47,6 +47,19 @@ function strategyRuleRows(engine:string,config:Record<string,unknown>){
       {label:"Maximum cash used per action",value:percent(config.maxCashUse??1)}
     ];
   }
+  if(engine==="QUARTERLY_SIGNAL_TARGET"){
+    const protection=(config.protection??{}) as Record<string,unknown>;
+    return [
+      {label:"Risk exposure",value:readableExposure(config.targetExposure)},
+      {label:"Safe exposure",value:readableExposure(config.safeExposure)},
+      {label:"Target growth per quarter",value:percent(config.quarterlyGrowth)},
+      {label:"Starting split",value:percent(config.initialTargetRatio)+" risk exposure"},
+      {label:"New-money target share",value:percent(config.contributionTargetRatio)},
+      {label:"Purchase budget per quarter",value:percent(config.buyBudgetRatio)+" of the safe reserve"},
+      {label:"Act window",value:String(config.actWindowTradingDays)+" trading days after quarter end"},
+      {label:"Sell-skip protection",value:`Skips up to ${String(protection.skippedSells)} sells after a fall of ${percent(1-Number(protection.triggerRatio))}`}
+    ];
+  }
   if(engine==="FIXED_ALLOCATION"){
     const allocations=Array.isArray(config.allocations)?config.allocations as Array<Record<string,unknown>>:[];
     return [
