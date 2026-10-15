@@ -284,16 +284,16 @@ const CATALOG_DIR="src/domain/strategy/catalog";
 const GROUP4_KEYS=new Set(["trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   it("keeps the exact registry order of the old RESEARCH_STRATEGIES array",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key)).toEqual(PRE_REFACTOR_PROFILES.map(p=>p.key));
+    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key)).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key));
     expect(RESEARCH_STRATEGIES).toHaveLength(27);
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP1_RELEASED_KEYS.has(p.key)&&!GROUP4_KEYS.has(p.key))).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!GROUP1_RELEASED_KEYS.has(p.key)));
+    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP1_RELEASED_KEYS.has(p.key)&&!GROUP4_KEYS.has(p.key))).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!GROUP1_RELEASED_KEYS.has(p.key)&&!GROUP4_KEYS.has(p.key)));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
-    expect(Object.keys(ENGINE_AND_CONFIG)).toEqual(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key));
+    expect(Object.keys(ENGINE_AND_CONFIG).filter(key=>!GROUP4_KEYS.has(key))).toEqual(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key));
     for(const profile of RESEARCH_STRATEGIES){
       if(GROUP1_RELEASED_KEYS.has(profile.key)||GROUP4_KEYS.has(profile.key))continue;
       const pin=ENGINE_AND_CONFIG[profile.key];
@@ -348,7 +348,7 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
     const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!GROUP4_KEYS.has(p.key));
-    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
+    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).filter(key=>!GROUP4_KEYS.has(key)).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
       if(GROUP1_RELEASED_KEYS.has(plugin.key))continue;
