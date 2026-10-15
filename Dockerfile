@@ -1,21 +1,22 @@
-FROM public.ecr.aws/docker/library/node:22-alpine AS deps
+ARG NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:22-alpine
+FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM public.ecr.aws/docker/library/node:22-alpine AS build
+FROM ${NODE_BASE_IMAGE} AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM public.ecr.aws/docker/library/node:22-alpine AS production-deps
+FROM ${NODE_BASE_IMAGE} AS production-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-FROM public.ecr.aws/docker/library/node:22-alpine AS runner
+FROM ${NODE_BASE_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

@@ -35,8 +35,8 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
 describe("isMethodComplete: the real catalogue",()=>{
   it("marks the currently source-verified fixed allocation methods complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
-    expect(complete(realFiles)).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+    expect(complete()).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
+    expect(complete(realFiles)).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){
@@ -52,7 +52,7 @@ describe("isMethodComplete: the real catalogue",()=>{
     }
   });
   it("keeps 9Sig, HFEA and the other fixed allocations incomplete",()=>{
-    for(const key of ["9sig","dual-momentum"])
+    for(const key of ["9sig","income-sig"])
       expect(isMethodComplete(getStrategyPlugin(key)),key).toBe(false);
     expect(isMethodComplete(undefined)).toBe(false);
   });

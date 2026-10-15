@@ -29,11 +29,12 @@ describe("VAA research signal safety",()=>{
   expect(()=>run(h)).toThrow("VAA_AMBIGUOUS_OR_MISSING_HISTORY");
  });
  it("checks G12 fractional protective breadth and weights",()=>{
-  const h=build(["AGG"]); const many=[...offensive,"IWM"];
-  h.push({exposure:"IWM",currency:"USD",source:"licensed",points:h[1].points});
+  const h=build(["AGG","EFA"]); const extra=["IWM","QQQ","VGK","EWJ","VNQ","GSG","GLD","HYG"];
+  const many=[...offensive,...extra];
+  for(const exposure of extra)h.push({exposure,currency:"USD",source:"licensed",points:h[0].points});
   const out=vaaAllocation({variant:"VAA_G12",offensive:many,defensive,history:h,currency:"USD",reviewMonth:"2026-10"});
   const total=out.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
   expect(total.eq(1)).toBe(true);
-  expect(out.find(x=>x.exposure==="LQD")?.weight).toBe("0.25");
+  expect(out.find(x=>x.exposure==="LQD")?.weight).toBe("0.5");
  });
 });

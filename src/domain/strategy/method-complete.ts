@@ -61,6 +61,8 @@ function referencedExposures(config:Readonly<Record<string,unknown>>|undefined):
   if(Array.isArray(config.staticAllocations))for(const row of config.staticAllocations){ids.push(typeof (row as {exposure?:unknown})?.exposure==="string"?(row as {exposure:string}).exposure:"");}
   if(Array.isArray(config.signalUniverse))for(const exposure of config.signalUniverse){ids.push(typeof exposure==="string"?exposure:"");}
   if(typeof config.defensiveAsset==="string")ids.push(config.defensiveAsset);
+  if(Array.isArray(config.riskAssets))for(const x of config.riskAssets)ids.push(typeof x==="string"?x:"");
+  if(Array.isArray(config.defensiveAssets))for(const x of config.defensiveAssets)ids.push(typeof x==="string"?x:"");
   return ids;
 }
 

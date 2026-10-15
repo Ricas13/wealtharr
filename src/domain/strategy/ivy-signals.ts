@@ -40,7 +40,6 @@ export function ivyTenMonthSignals(
     });
     const avg=prices.reduce((a,b)=>a.plus(b),new Decimal(0)).div(10);
     const last=prices[9];
-    if(last.eq(avg))throw new Error("IVY_SIGNAL_ON_THRESHOLD_REQUIRES_POLICY");
     return {exposure,invested:last.gt(avg),lastPrice:last.toString(),movingAverage:avg.toString()};
   });
 }

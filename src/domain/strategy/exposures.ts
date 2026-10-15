@@ -1,3 +1,4 @@
+import {GROUP4_EXPOSURES} from "./group4-exposures";
 /**
  * Registry of the economic exposures strategies may reference. Strategies name exposures, never
  * tickers or funds; the instrument mapping layer resolves an exposure to a tradable line per
@@ -184,9 +185,9 @@ const GROUP_2_DESCRIPTORS:ReadonlyMap<string,Partial<ExposureDefinition>>=new Ma
   ["EMERGING_MARKETS_EQUITY",{region:"EMERGING_MARKETS",maturityBand:"NOT_APPLICABLE",currencyPolicy:"UNHEDGED",creditQuality:"NOT_APPLICABLE",coverage:"Broad emerging markets equities",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
   ["US_TIPS",{region:"US",maturityBand:"ALL_MATURITIES",currencyPolicy:"LOCAL",creditQuality:"INVESTMENT_GRADE",coverage:"US Treasury inflation-protected securities; no nominal Treasury substitute",domicileRequirement:"Only an evidenced eligible trading line for the investor's country, wrapper and broker"}],
 ]);
-export const EXPOSURES:readonly ExposureDefinition[]=BASE_EXPOSURES.map((exposure)=>({
+export const EXPOSURES:readonly ExposureDefinition[]=[...GROUP4_EXPOSURES,...BASE_EXPOSURES.map((exposure)=>({
   ...exposure,...(GROUP_2_DESCRIPTORS.get(exposure.id)??{})
-}));
+}))];
 const byId = new Map(EXPOSURES.map((exposure) => [exposure.id,exposure]));
 
 export function getExposure(id: string) {

@@ -12,8 +12,8 @@ export type ExposurePosition = {
   tradingLineId?: string;
 };
 
-export type HistoricalPricePoint = { at: Date; adjustedClose: Decimal }; 
-export type TrustedHistoricalSeries = { exposure: string; currency: string; points: HistoricalPricePoint[]; source: string }; 
+export type HistoricalPricePoint = { at: Date; adjustedClose: Decimal; monthTerminalCertified?: boolean }; 
+export type TrustedHistoricalSeries = { exposure: string; currency: string; points: HistoricalPricePoint[]; source: string; calendarCertified?: boolean; totalReturnCertified?: boolean }; 
 
 export type EngineContext = {
   strategyInstanceId: string;

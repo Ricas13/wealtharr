@@ -1,5 +1,6 @@
 import {STRATEGY_PLUGINS,curatedRelease} from "../src/domain/strategy/catalog/index";
 import {strategiesToSeed} from "../src/domain/strategy/seed-plan";
+import {insertSafeTacticalRelease} from "../src/lib/tactical-release-upgrade";
 import postgres from "postgres";
 
 async function main(){
@@ -72,6 +73,19 @@ async function main(){
         );
       }
 
+      // Source-complete tactical releases upgrade safely without altering historical instances.
+      if(engine==="TACTICAL_ALLOCATION"&&entry.initialVersion==="PUBLISHED"&&!syntheticCiCatalogue){
+        const release=curatedRelease(plugin);
+        if(!release?.config)throw new Error("TACTICAL_RELEASE_CONFIG_MISSING:"+key);
+        await sql.begin(async tx=>{
+          await insertSafeTacticalRelease(tx,{
+            definitionId:String(id),name,description,family,
+            config:release.config!,inputSchema:release.inputSchema??[],
+            disclosure:release.disclosure??"Rules-based portfolio calculation, not suitability or individual investment advice."
+          });
+        });
+        continue;
+      }
       if(entry.initialVersion===null)continue;
 
       const release=curatedRelease(plugin);

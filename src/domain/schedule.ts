@@ -183,3 +183,20 @@ export function nextCalendarMonthDueAt(input:{
   }
   throw new Error("CALENDAR_MONTH_DATE_UNAVAILABLE");
 }
+
+/** First eligible business morning after a completed calendar month; source-confirmed
+ * final trading sessions are validated separately by the tactical history loader. */
+export function nextCompletedMonthReviewDueAt(input:{
+ lastReviewAt:Date;timeZone:string;cutoffLocal?:string;holidays?:string[];
+}):Date{
+ const date=localDateInZone(input.lastReviewAt,input.timeZone);
+ const {year,month}=parseDate(date);
+ for(let i=0;i<24;i++){
+  const nextMonth=new Date(Date.UTC(year,month+i,1));
+  const candidate=nextMonth.toISOString().slice(0,10);
+  const eligible=rollBusinessDay(candidate,input.holidays??[],"NEXT");
+  const due=zonedLocalDateTimeToUtc(eligible,input.cutoffLocal??"09:00",input.timeZone);
+  if(due.getTime()>input.lastReviewAt.getTime())return due;
+ }
+ throw new Error("TACTICAL_MONTHLY_REVIEW_DATE_UNAVAILABLE");
+}
