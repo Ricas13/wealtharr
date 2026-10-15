@@ -13,7 +13,7 @@ describe("binary production strategy release policy",()=>{
     expect(()=>assertReleaseMethodComplete("9sig")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     // 60-40 was listed here while its method was incomplete; it is now the one complete method
     // (see the case below). A still-incomplete fixed allocation takes its place.
-    expect(()=>assertReleaseMethodComplete("dual-momentum")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
+    expect(()=>assertReleaseMethodComplete("income-sig")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     expect(()=>assertReleaseMethodComplete("income-sig")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     expect(()=>assertReleaseMethodComplete("unknown-strategy")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
@@ -22,7 +22,7 @@ describe("binary production strategy release policy",()=>{
     vi.stubEnv("CI","false");
     vi.stubEnv("GITHUB_ACTIONS","false");
     vi.stubEnv("DATABASE_URL","postgresql://production@private-db:5432/wealtharr");
-    for(const key of ["60-40","80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10","hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]) expect(()=>assertReleaseMethodComplete(key)).not.toThrow();
+    for(const key of ["60-40","80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10","hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]) expect(()=>assertReleaseMethodComplete(key)).not.toThrow();
     for(const key of ["9sig","dual-momentum","paa","vaa","3sig","6sig","nope"])
       expect(()=>assertReleaseMethodComplete(key),key).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
