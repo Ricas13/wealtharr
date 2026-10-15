@@ -1,33 +1,35 @@
-# Group 4 tactical-strategy implementation boundary (work in progress)
+# Group 4 tactical strategies — complete code-level methods and market-gated release
 
-This branch deliberately does **not** publish any Group 4 strategy. Existing production gates must continue to fail closed. A correct mathematical helper does not imply an executable strategy.
+Seven immutable methods implement the six requested Group 4 strategy families, with VAA G4 and G12 as separate named variants.
 
-## Verified reference variants
-
-| Strategy | Selected methodological definition | Required additional implementation |
+| Strategy | Variant | Immutable signal and review |
 | --- | --- | --- |
-| 200-day trend | Single risky exposure versus cash; simple moving average of exactly the last 200 **exchange sessions** of corporate-action-adjusted daily closes, decision after signal-session close; equality means cash (explicit Wealtharr convention) | Named exposure/defensive sleeve, session-complete calendar, approved total-return data, execution mapping, monthly or daily decision policy, lifecycle |
-| Risk parity | Long-only, unleveraged, equal **volatility risk contribution**, using positive-definite covariance and full-investment weights. Strictly one *Wealtharr-specified* variant, **not** Bridgewater proprietary All Weather | Licensed multivariate return history; locked lookback, sample covariance estimator, instrument universe, schedule, lifecycle, volatility/covariance golden cases |
-| Global Dual Momentum | Antonacci classic GEM: 12-month total return US versus ex-US stocks; if US 12-month return <= 12-month T-bills return, hold US aggregate bonds; otherwise choose higher-return equity; month-end observation, trade next session | Four complete monthly total-return histories, risk-free series provenance, exact benchmark exposures and execution integration |
-| Ivy / GTAA | Faber's equal 20% slices across US equities, foreign equities, bonds, real estate and commodities. Each slice independently invested or in cash based on the 10-month moving average at completed month-end | Verify final close by actual exchange/benchmark calendar, treasury/cash substitute, monthly multi-sleeve target execution |
-| PAA | Keller/Keuning named 12-risk-asset variant with momentum and breadth multiplier, **not generic best-asset momentum** | Check original edition and protection formula independently; validate full universe and safe-asset selection; lifecycle |
-| VAA | Keller/Keuning G4 and G12 are distinct variants with separate offensive universes, breadth counts, 1/3/6/12 weighted momentum and defensive ranking | Original-edition universe/version confirmation; 13 month-end observations, distinct immutable strategy versions, multi-sleeve execution |
+| 200-day trend | TREND_200_DAILY | 200 consecutive verified daily trading sessions, last close vs simple average; equality exits to bills; monthly completed-calendar-month review |
+| Equal risk contribution | RISK_PARITY_ERC_252 | Four-sleeve unleveraged ERC: 252 aligned daily returns, unbiased sample covariance, positive weights; monthly |
+| GEM | GEM_CLASSIC | US vs ACWI ex-US 12-month total return; US vs 3-month bills absolute hurdle, US aggregate defensive; monthly |
+| Ivy / GTAA | IVY_GTAA5 | Five independent 20% sleeves vs their 10-month SMA; failed or equal sleeves allocated to 3-month bills; monthly |
+| PAA | PAA_12_A2 | Twelve risky assets, 13-month SMA momentum and breadth a=2, single IEF-equivalent protective sleeve; monthly |
+| VAA Global 4 | VAA_G4 | Weighted 1/3/6/12 momentum, Top 1 / Breadth 1, strongest LQD/IEF/SHY defensive asset; monthly |
+| VAA Global 12 | VAA_G12 | Weighted 1/3/6/12 momentum, Top 2 / Breadth 4, original Easy Trading discrete floor rule; monthly |
 
-## Engine modules added here
+## Availability and activation
 
-- `src/domain/strategy/tactical-math.ts` exports composable pure calculations without exposing any customer strategy.
-- `tests/tactical-math.test.ts` contains independently computed arithmetic examples. These tests alone do **not** satisfy comprehensive financial-data and lifecycle verification.
-- The solver assumes the **supplied** covariance matrix is validated and symmetric/strictly positive definite; it does not infer covariance from prices or accept stale observations.
+Method-completeness (`releaseStatus: COMPLETE`) is a code claim with spec, golden checks, source-defined exposures and executable engine; it does **not** confirm actual investment availability. Fresh installs seed all seven definitions **disabled**, with published immutable canonical versions. Prior installations with legacy research drafts receive an additional immutable version only when disabled, with no customer instances and no previously published version; no customer ledgers or existing published rules are rewritten.
 
-## Non-negotiable historical-data requirements
+The global admin Enable action requires an entire compatible, EXACT, operator-approved market and a successful actual calculation from complete licensed provider history. Signals require explicit per-observation certification of total-return dividends/splits, provider corporate-action revision, venue exchange-calendar identity, sequential completed sessions, and provider-confirmed month-end terminal bars. Existing adjusted-only observations default to uncertified. Neither admin input nor a user-provided price can bypass these requirements. Provider contracts and actual fund/broker market mappings are external prerequisites; no default tradable instrument is assumed.
 
-The current `TrustedHistoricalSeries` contract has only exposure, currency, source and adjustedClose/date. It cannot certify: final month-end exchange close, total-return dividends, instrument venue/session calendar, adjustment vintage, or provider legal provenance per individual observation. A data adapter and storage schema capable of proving these properties are required before any tactical strategy can be switched on. Never assume the final point in a month was the final trading session of that month. Never calculate with current-month incomplete bars.
+Customer actions use the existing immutable strategy ledger and execution confirmation. Tactical calculations sell excess positions first and buy with actual reconciled cash, recalculating after each reported execution. Unverified sources, missing sessions, stale quotes, ambiguous mappings, inconsistent currencies and unavailable trading lines return `DATA_REQUIRED` or suppress strategy availability. Wealtharr never places brokerage orders automatically.
 
-## Original-method references
+## Implementation map
 
-- Gary Antonacci: *Dual Momentum Investing* (2014) and [Optimal Momentum](https://www.optimalmomentum.com/global-equities-momentum/). Threshold is T-bill return rather than a zero-return threshold.
-- Meb Faber: [QTAA update, Global Tactical Asset Allocation](https://mebfaber.com/2013/06/08/qtaa-update-global-tactical-5/) and [timing model FAQ](https://mebfaber.com/timing-model/).
-- Keller and Keuning: [Protective Asset Allocation paper](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2759734) and [Vigilant Asset Allocation paper](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3002624).
-- Maillard, Roncalli and Teïletche (2010), *The Properties of Equally Weighted Risk Contribution Portfolios*. The equal-risk contribution definition does not dictate a unique covariance estimation horizon.
+- `src/domain/strategy/tactical-math.ts`, `tactical-allocation.ts`, `tactical-engine.ts`: mathematical methods and guarded transaction proposals
+- `risk-parity-estimator.ts`, `paa-signals.ts`, `vaa-signals.ts`, `ivy-signals.ts`: independent signal functions
+- `src/domain/strategy/catalog/group4-configs.ts`, `src/domain/strategy/group4-exposures.ts`: immutable variants and economic exposures
+- `db/migrations/0059_tactical_history_certification.sql`, `src/lib/tactical-history-loader.ts`, `src/lib/price-history-ingest.ts`: historical provider certification
+- `src/lib/tactical-enable-preflight.ts`, `src/lib/tactical-release-upgrade.ts`, `src/lib/action-service.ts`: admin and customer lifecycle integration
+- `docs/strategy-specs/{trend-200d,risk-parity,dual-momentum,gtaa-ivy,paa,vaa,vaa-g12}.md`: source references, assumptions, cash rules and specific golden cases
+- `tests/*golden.test.ts`, `tests/tactical*.test.ts`, `tests/db/tactical*.test.ts`: arithmetic, fail-closed and database integration checks
 
-**Release state: incomplete.** Do not enable, advertise, seed as released, or claim a final implementation from these primitives alone.
+## External validation that source code cannot fabricate
+
+Passing repository CI does not establish that a market-data vendor is licensed, that its dividends-inclusive histories cover the required sessions, that a broker offers the exact instruments in a particular tax wrapper, that an investor's holdings are reconciled, or that the deployed Wealtharr host is healthy. These are enforced operator prerequisites. Deploy migration and workers, configure provider/licensing through the existing operator controls, verify exact instrument mappings and exercise a real market before enabling in Admin Strategy Studio. This document is not investment advice and does not represent external security or FCA clearance.
