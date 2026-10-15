@@ -10,5 +10,6 @@ export const plugin:StrategyPlugin={
  engine:"TACTICAL_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],
  initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false},
  specCard:"docs/strategy-specs/paa.md",
- goldenTests:"tests/paa-golden.test.ts"
+ goldenTests:"tests/paa-golden.test.ts",
+ releaseStatus:"COMPLETE"
 };
