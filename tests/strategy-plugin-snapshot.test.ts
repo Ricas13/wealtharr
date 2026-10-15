@@ -278,6 +278,9 @@ const canonical=(value:unknown):string=>JSON.stringify((function walk(v:unknown)
   return v;
 })(value));
 
+const GROUP1_RELEASED_KEYS=new Set(["80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]);
+const GROUP2_RELEASED_KEYS=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
+const RELEASED_KEYS=new Set([...GROUP1_RELEASED_KEYS,...GROUP2_RELEASED_KEYS]);
 const CATALOG_DIR="src/domain/strategy/catalog";
 
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
@@ -287,12 +290,13 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&p.key!=="hfea"&&p.key!=="all-weather")).toEqual(PRE_REFACTOR_PROFILES.filter(p=>p.key!=="merriman-ultimate"&&p.key!=="hfea"&&p.key!=="all-weather"));
+    expect(RESEARCH_STRATEGIES.filter(p=>!RELEASED_KEYS.has(p.key))).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!RELEASED_KEYS.has(p.key)));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
     expect(Object.keys(ENGINE_AND_CONFIG)).toEqual(RESEARCH_STRATEGIES.map(p=>p.key));
-    for(const profile of RESEARCH_STRATEGIES.filter(p=>p.key!=="merriman-ultimate"&&p.key!=="hfea"&&p.key!=="all-weather")){
+    for(const profile of RESEARCH_STRATEGIES){
+      if(RELEASED_KEYS.has(profile.key))continue;
       const pin=ENGINE_AND_CONFIG[profile.key];
       expect(profile.engine,profile.key).toBe(pin.engine);
       if(pin.config===undefined)expect(profile.config,profile.key).toBeUndefined();
@@ -328,7 +332,8 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
   it("curated-rule enforcement accepts exactly the pinned rules and nothing else",()=>{
     expect(()=>assertCuratedRules("9sig","VALUE_TARGET",CANONICAL_9SIG_LITERAL,[])).not.toThrow();
-    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG).filter(([key])=>key!=="merriman-ultimate"&&key!=="hfea"&&key!=="all-weather")){
+    for(const [key,pin] of Object.entries(ENGINE_AND_CONFIG)){
+      if(RELEASED_KEYS.has(key))continue;
       if(pin.config&&pin.engine!=="RESEARCH_PENDING"){
         expect(()=>assertCuratedRules(key,pin.engine,pin.config,[]),key).not.toThrow();
         expect(()=>assertCuratedRules(key,"VALUE_TARGET",pin.config,[]),key).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
@@ -343,11 +348,11 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
-    const group2Keys=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
-    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!group2Keys.has(p.key));
-    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).filter(key=>!group2Keys.has(key)).sort());
+    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&p.key!=="merriman-ultimate");
+    expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
+      if(RELEASED_KEYS.has(plugin.key))continue;
       const pin=SEED_DEFINITIONS[plugin.key];
       expect({name:d.name,family:d.family,description:d.description,engine:d.engine,proprietary:d.proprietary,
         enabled:d.enabled,initialVersion:d.initialVersion,realign:d.realignsResearchOnlyDefinition},plugin.key).toEqual(pin);
@@ -360,7 +365,7 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","hfea","all-weather","60-40","coffeehouse","core-four","swensen","merriman-ultimate"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate"]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
