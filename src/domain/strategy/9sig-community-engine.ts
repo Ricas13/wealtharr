@@ -8,7 +8,7 @@ export const nineSigCommunityEngine:StrategyEngine={
   key:"NINE_SIG_COMMUNITY",
   validateConfig(c){
     if(c.ruleVersion!=="COMMUNITY_2026_TQQQ_TWO_SELL_SKIP"||
-       c.targetExposure!=="NASDAQ_100_3X_LONG")throw new Error("SIG_UNVERIFIED_VARIANT");
+       c.targetExposure!=="NASDAQ_100_3X_LONG"||c.referenceCurrency!=="USD")throw new Error("SIG_UNVERIFIED_VARIANT");
   },
   calculate(ctx){
     this.validateConfig(ctx.config);
@@ -19,11 +19,11 @@ export const nineSigCommunityEngine:StrategyEngine={
     if(ctx.dataHealth.status!=="CURRENT")return fail("Verified current market values are required");
     if(!ctx.reviewDue)return {actionType:"NO_ACTION",title:"Not due",instruction:"Next quarterly review",
       explanation:[],nextState:ctx.state,confidence:"HIGH",dueAt:ctx.nextReviewAt};
-    const h=ctx.trustedHistory?.find(s=>s.exposure==="NASDAQ_100_3X_LONG");
+    const h=ctx.trustedHistory?.find(s=>s.exposure==="NASDAQ_100_3X_LONG"&&s.currency==="USD");
     let closes:Decimal[];
     try{
       if(!Array.isArray(ctx.config.referenceCloseDates))throw new Error("MISSING_SCHEDULE");
-      closes=verifiedSigQuarterCloses(h,ctx.config.referenceCloseDates.map(String),ctx.baseCurrency);
+      closes=verifiedSigQuarterCloses(h,ctx.config.referenceCloseDates.map(String),"USD");
     }catch{return fail("Exact verified quarterly reference dates and prices are required");}
     const quarter=Number(ctx.state.sigQuarterIndex);
     if(!Number.isInteger(quarter)||quarter<8)return fail("Verified quarter index required");
