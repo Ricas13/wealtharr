@@ -55,6 +55,8 @@ export async function GET(_request:Request,context:Context){
 export async function PUT(request:Request,context:Context){
  try{
   assertSameOrigin(request);
+  const {id}=await context.params;
+  const invalid=invalidPathId(id);if(invalid)return invalid;
   const scope=await access(context);if(scope.denied)return scope.denied;
   await consumeRateLimit("broker-connect:"+scope.user.id,4,3600);
   if(!(await providerEnabled()))return Response.json({error:"Trading 212 read-only connection is disabled by Master Admin."},{status:409});
@@ -87,6 +89,8 @@ export async function PUT(request:Request,context:Context){
 export async function DELETE(request:Request,context:Context){
  try{
   assertSameOrigin(request);
+  const {id}=await context.params;
+  const invalid=invalidPathId(id);if(invalid)return invalid;
   const scope=await access(context);if(scope.denied)return scope.denied;
   await consumeRateLimit("broker-disconnect:"+scope.user.id,8,3600);
   await sql.begin(async tx=>{
