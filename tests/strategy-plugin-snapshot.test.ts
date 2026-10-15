@@ -280,7 +280,7 @@ const canonical=(value:unknown):string=>JSON.stringify((function walk(v:unknown)
 
 const CATALOG_DIR="src/domain/strategy/catalog";
 // Group 3 source-verified releases intentionally supersede the frozen 2026 refactor snapshot.
-const GROUP3_KEYS=new Set(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity",...GROUP4_KEYS]);
+const GROUP3_KEYS=new Set(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
 const GROUP1_KEYS=new Set(["80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]);
 const GROUP2_KEYS=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
 const GROUP4_KEYS=new Set(["trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
