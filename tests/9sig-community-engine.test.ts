@@ -7,6 +7,7 @@ const ctx={
   now:new Date("2026-04-02T20:00:00Z"),baseCurrency:"USD",
   cash:D("2109.40"),exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D("3564.30")}],
   contributionsSinceReview:D("0"),state:{sigConfirmedAnchor:"7128.60",sigQuarterIndex:8},
+  confirmedQuarterTrades:{buyGross:D("0"),sellGross:D("0"),feeTotal:D("0"),reserveBeforeTrades:D("2109.40")},
   config:{ruleVersion:"COMMUNITY_2026_TQQQ_TWO_SELL_SKIP",targetExposure:"NASDAQ_100_3X_LONG",referenceCurrency:"USD",
     referenceCloseDates:Array.from({length:9},(_,i)=>new Date(Date.UTC(2024,i*3,1)).toISOString().slice(0,10))},
   settings:{},reviewDue:true,dataHealth:{status:"CURRENT" as const},
