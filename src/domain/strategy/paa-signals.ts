@@ -1,13 +1,13 @@
 import Decimal from "decimal.js";
 import type {TrustedHistoricalSeries} from "./types";
 export type PaaWeight={exposure:string;weight:string};
-/** Research-stage PAA variant, N=12, protection factor 2, top six assets. */
+/** Canonical PAA-12 a=2 reference calculator, single intermediate-Treasury protection. */
 export function paaReferenceAllocation(args:{
  riskAssets:string[];safeAssets:string[];history:TrustedHistoricalSeries[];
  currency:string;reviewMonth:string;
 }):PaaWeight[]{
  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(args.reviewMonth))throw new Error("PAA_INVALID_REVIEW_MONTH");
- if(args.riskAssets.length!==12||args.safeAssets.length<1||
+ if(args.riskAssets.length!==12||args.safeAssets.length!==1||
   new Set(args.riskAssets).size!==12||new Set(args.safeAssets).size!==args.safeAssets.length||
   [...args.riskAssets,...args.safeAssets].some(x=>!x))throw new Error("PAA_INVALID_UNIVERSE");
  const [year,month]=args.reviewMonth.split("-").map(Number);
