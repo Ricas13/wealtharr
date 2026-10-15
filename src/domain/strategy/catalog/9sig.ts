@@ -16,7 +16,7 @@ export const plugin:StrategyPlugin={
     summary:"Quarterly signal-based value targeting; full source-methodology audit remains outstanding."
   },
   seedDefinition:{
-    name:"9Sig",family:"SIGNAL_VALUE_TARGET",description:"Rules-based value target strategy",
+    name:"Leveraged Nasdaq Quarterly Target",family:"SIGNAL_VALUE_TARGET",description:"Rules-based value target strategy",
     engine:"VALUE_TARGET",proprietary:true,enabled:true,
     supportedRegions:[],supportedWrappers:[],
     initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false
