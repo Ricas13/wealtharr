@@ -1,0 +1,49 @@
+name: Group 5 Sig validation
+
+on:
+  pull_request:
+    paths:
+      - "src/domain/strategy/sig-*.ts"
+      - "src/domain/strategy/3sig-30down-research.ts"
+      - "src/domain/strategy/3sig-workbook-research.ts"
+      - "src/domain/strategy/9sig-community-rules.ts"
+      - "src/domain/strategy/9sig-community-engine.ts"
+      - "src/domain/strategy/sig-confirmed-ledger.ts"
+      - "src/domain/strategy/types.ts"
+      - "src/lib/action-service.ts"
+      - "src/domain/strategy/registry.ts"
+      - "src/domain/strategy/income-sig-research.ts"
+      - "tests/sig-*.test.ts"
+      - "tests/3sig-30down-research.test.ts"
+      - "tests/3sig-workbook-research.test.ts"
+      - "tests/9sig-community-rules.test.ts"
+      - "tests/9sig-community-engine.test.ts"
+      - "tests/sig-confirmed-ledger.test.ts"
+      - "tests/income-sig-research.test.ts"
+      - "docs/strategy-specs/3sig.md"
+      - "docs/strategy-specs/6sig.md"
+      - "docs/strategy-specs/9sig.md"
+      - "docs/strategy-specs/income-sig.md"
+      - ".github/workflows/group-5-sig.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Group 5 scope lint
+        run: npx eslint src/domain/strategy/sig-calendar-quarter.ts tests/sig-calendar-quarter.test.ts src/domain/strategy/sig-two-sleeve-research.ts tests/sig-two-sleeve-research.test.ts src/domain/strategy/sig-confirmed-ledger.ts tests/sig-confirmed-ledger.test.ts src/domain/strategy/sig-quarter-closes.ts tests/sig-quarter-closes.test.ts src/domain/strategy/9sig-community-engine.ts tests/9sig-community-engine.test.ts src/domain/strategy/registry.ts src/domain/strategy/sig-anchor-conventions.ts tests/sig-anchor-conventions.test.ts src/domain/strategy/sig-historical-reset-preview.ts tests/sig-historical-reset-preview.test.ts src/domain/strategy/9sig-community-rules.ts tests/9sig-community-rules.test.ts src/domain/strategy/sig-quarter-simulator.ts tests/sig-quarter-simulator.test.ts src/domain/strategy/3sig-workbook-research.ts tests/3sig-workbook-research.test.ts src/domain/strategy/3sig-30down-research.ts src/domain/strategy/sig-research.ts src/domain/strategy/sig-timeline-research.ts src/domain/strategy/sig-buy-budget-research.ts src/domain/strategy/income-sig-research.ts tests/3sig-30down-research.test.ts tests/sig-research.test.ts tests/sig-timeline-research.test.ts tests/sig-buy-budget-research.test.ts tests/income-sig-research.test.ts
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Source-confirmed arithmetic tests
+        run: npx vitest run tests/sig-research.test.ts tests/sig-timeline-research.test.ts tests/income-sig-research.test.ts
