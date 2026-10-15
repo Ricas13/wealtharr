@@ -33,10 +33,10 @@ const failed=(plugin:StrategyPlugin,files?:MethodFileEvidence)=>
   evaluateMethodCompleteness(plugin,files).checks.filter(c=>!c.ok).map(c=>c.id);
 
 describe("isMethodComplete: the real catalogue",()=>{
-  it("marks exactly the Global 60/40 (GBP) model complete, with and without file evidence",()=>{
+  it("marks the currently source-verified fixed allocation methods complete, with and without file evidence",()=>{
     const complete=(files?:MethodFileEvidence)=>STRATEGY_PLUGINS.filter(p=>isMethodComplete(p,files)).map(p=>p.key);
-    expect(complete()).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate"]);
-    expect(complete(realFiles)).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate"]);
+    expect(complete()).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+    expect(complete(realFiles)).toEqual(["hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
   });
   it("every plugin declared COMPLETE satisfies every checklist item against the real files",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.releaseStatus==="COMPLETE")){
