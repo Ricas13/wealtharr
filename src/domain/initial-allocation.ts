@@ -13,7 +13,11 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
   const amount=new Decimal(cash);
   if(!amount.isFinite()||amount.lte(0))return null;
   let targets:Array<{exposure:string;weight:Decimal}>=[];
-  if(engine==="TRINITY_HYBRID") {
+  if(engine==="QUARTERLY_SIGNAL_TARGET"){
+    const stockWeight=new Decimal(String(config.initialTargetRatio??"0.6"));
+    targets=[{exposure:String(config.targetExposure),weight:stockWeight},
+      {exposure:String(config.safeExposure),weight:new Decimal(1).minus(stockWeight)}].filter(x=>x.weight.gt(0));
+  } else if(engine==="TRINITY_HYBRID") {
     if(!trustedHistory)return null;
     try {
       targets=trinityWeights({now:at,trustedHistory}).filter(x=>new Decimal(x.weight).gt(0))
@@ -27,16 +31,12 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
       const a=x as {exposure:string;weight:string};
       return {exposure:a.exposure,weight:new Decimal(a.weight)};
     });
-  } else if(engine==="QUARTERLY_SIGNAL_TARGET"){
-    const stockWeight=new Decimal(String(config.initialTargetRatio??"0.6"));
-    targets=[{exposure:String(config.targetExposure),weight:stockWeight},
-      {exposure:String(config.safeExposure),weight:new Decimal(1).minus(stockWeight)}].filter(x=>x.weight.gt(0));
   } else if(engine==="VALUE_TARGET"){
     targets=[{exposure:String(config.targetExposure),weight:new Decimal(String(config.initialTargetRatio??"0.6"))}];
   } else return null;
   if(targets.length<1||targets.some(x=>!x.exposure||!x.weight.isFinite()||x.weight.lte(0)))return null;
   let totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
-  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID","QUARTERLY_SIGNAL_TARGET"].includes(engine)){
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine)){
     // Engine validation tolerates tiny weight rounding errors. Do not reject an otherwise
     // valid allocation on onboarding, or leave its residual cents uninvested.
     const residue=new Decimal(1).minus(totalWeight);
