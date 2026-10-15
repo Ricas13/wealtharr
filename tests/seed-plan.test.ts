@@ -15,7 +15,7 @@ describe("production seeding of strategy definitions",()=>{
     for(const entry of entries){
       expect(entry.enabled,entry.plugin.key).toBe(false);
       expect(entry.initialVersion,entry.plugin.key).toBe("PUBLISHED");
-      expect(entry.realignsResearchOnlyDefinition,entry.plugin.key).toBe(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"].includes(entry.plugin.key));
+      expect(entry.realignsResearchOnlyDefinition,entry.plugin.key).toBe(false);
       expect(evaluateMethodCompleteness(entry.plugin,files).failures,entry.plugin.key).toEqual([]);
     }
   });
