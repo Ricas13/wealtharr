@@ -18,7 +18,10 @@ export function calendarQuarterReviewDates(tradingDays:readonly string[],through
     const [year,quarter]=q.split("-Q").map(Number);
     const endMonth=quarter*3;
     const last=new Date(Date.UTC(year,endMonth,0)).toISOString().slice(0,10);
-    return last<=through;
+    const chosen=byQuarter.get(q)!;
+    // A missing final week must never masquerade as an exchange holiday.
+    const distance=(Date.parse(last+"T00:00:00Z")-Date.parse(chosen+"T00:00:00Z"))/86400000;
+    return last<=through&&distance>=0&&distance<=5;
   });
   if(complete.length<9)throw new Error("SIG_NINE_COMPLETE_QUARTERS_REQUIRED");
   return complete.slice(-9).map(([,day])=>day);
