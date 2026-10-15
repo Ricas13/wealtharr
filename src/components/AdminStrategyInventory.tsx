@@ -5,7 +5,7 @@ import {useRouter} from "next/navigation";
 import {CuratedStrategyToggle} from "@/components/CuratedStrategyToggle";
 
 export type CatalogEntry = {
- key:string;name:string;family:string;engine:string;enabled:boolean;
+ key:string;name:string;family:string;engine:string;enabled:boolean;methodComplete:boolean;marketEligible:boolean;
  version:string|null;status:"ENABLED"|"READY"|"NO_RELEASE"|"NO_SIGNOFF"|"NO_MARKET"|"NEEDS_REVIEW"|"RESEARCH";
  reason:string;rules:string|null;
 };
@@ -43,14 +43,16 @@ export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
    setBulkBusy(false);
    router.refresh();
  }
- const enabled=entries.filter(s=>s.status==="ENABLED").length;
+ const enabled=entries.filter(s=>s.enabled).length;
+ const complete=entries.filter(s=>s.methodComplete).length;
+ const markets=entries.filter(s=>s.marketEligible).length;
  const awaiting=entries.filter(s=>s.status!=="ENABLED"&&s.status!=="READY").length;
  return <section className="admin-catalogue">
    <div className="admin-stats-strip" aria-label="Catalogue overview">
-     <div><span>Total profiles</span><strong>{entries.length}</strong><small>Visible to administrators</small></div>
-     <div><span>Customer enabled</span><strong>{enabled}</strong><small>Live catalogue</small></div>
-     <div><span>Eligible now</span><strong>{eligible.length}</strong><small>Can pass enable checks</small></div>
-     <div><span>Unavailable</span><strong>{awaiting}</strong><small>Not trade-ready</small></div>
+     <div><span>Registered profiles</span><strong>{entries.length}</strong><small>Admin inventory</small></div>
+     <div><span>Method complete</span><strong>{complete}</strong><small>Code-verified rules</small></div>
+     <div><span>Market eligible</span><strong>{markets}</strong><small>At least one verified market</small></div>
+     <div><span>Globally enabled</span><strong>{enabled}</strong><small>Customer access has additional gates</small></div>
    </div>
    <div className="admin-catalogue-toolbar">
      <div><h2>Strategy Studio catalogue</h2><p>Explore every reference profile. Customer availability is controlled by global toggles, plans, customer access and exact account instrument eligibility.</p></div>
