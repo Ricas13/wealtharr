@@ -17,7 +17,20 @@ try{
     "SELECT v.id FROM strategy_versions v JOIN strategy_definitions d ON d.id=v.strategy_definition_id "+
     "WHERE d.key='9sig' AND v.lifecycle_status='PUBLISHED' ORDER BY v.published_at DESC NULLS LAST LIMIT 1"
   );
-  if(!rows[0])throw new Error("CI_9SIG_TEST_VERSION_MISSING");
+  // Fresh-install safety now seeds 9Sig as DRAFT. Promote only the disposable CI
+  // fixture so creation/permission tests can exercise published-version code paths.
+  if(!rows[0]){
+    const drafts=await sql.unsafe(
+      "SELECT v.id FROM strategy_versions v JOIN strategy_definitions d ON d.id=v.strategy_definition_id "+
+      "WHERE d.key='9sig' AND v.lifecycle_status='DRAFT' ORDER BY v.created_at DESC LIMIT 1"
+    );
+    if(!drafts[0])throw new Error("CI_9SIG_TEST_VERSION_MISSING");
+    await sql.unsafe(
+      "UPDATE strategy_versions SET lifecycle_status='PUBLISHED', published_at=NOW() WHERE id=$1 AND lifecycle_status='DRAFT'",
+      [drafts[0].id]
+    );
+    rows[0]=drafts[0];
+  }
   // Disposable CI-only synthetic customer paths. Never apply this enablement in production.
   await sql.unsafe("UPDATE strategy_definitions SET enabled=true WHERE key='9sig'");
   await sql.unsafe(
