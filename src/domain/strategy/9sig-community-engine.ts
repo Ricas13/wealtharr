@@ -24,6 +24,10 @@ export const nineSigCommunityEngine:StrategyEngine={
     try{
       if(!Array.isArray(ctx.config.referenceCloseDates))throw new Error("MISSING_SCHEDULE");
       closes=verifiedSigQuarterCloses(h,ctx.config.referenceCloseDates.map(String),"USD");
+      const lastDate=String(ctx.config.referenceCloseDates[8]);
+      const observedDate=ctx.now.toISOString().slice(0,10);
+      if(lastDate!==observedDate&&ctx.state.sigReviewedReferenceDate!==lastDate)
+        throw new Error("SIG_REFERENCE_SCHEDULE_STALE");
     }catch{return fail("Exact verified quarterly reference dates and prices are required");}
     const quarter=Number(ctx.state.sigQuarterIndex??8);
     if(!Number.isInteger(quarter)||quarter<8)return fail("Verified quarter index required");
@@ -32,7 +36,11 @@ export const nineSigCommunityEngine:StrategyEngine={
     if(ctx.exposures.some(p=>p.economicExposure!=="NASDAQ_100_3X_LONG"&&!p.value.isZero()))
       return fail("Other holdings require classification");
     const anchor=ctx.state.sigConfirmedAnchor;
-    // A newly started portfolio receives the historical 60/40 base, without\n    // inventing a growth step before its first confirmed allocation.\n    const target=typeof anchor==="string"\n      ?new Decimal(anchor).mul("1.09").plus(ctx.contributionsSinceReview.mul("0.5"))\n      :exposure.plus(ctx.cash).mul("0.60");
+    // A newly started portfolio receives the historical 60/40 base, without
+    // inventing a growth step before its first confirmed allocation.
+    const target=typeof anchor==="string"
+      ?new Decimal(anchor).mul("1.09").plus(ctx.contributionsSinceReview.mul("0.5"))
+      :exposure.plus(ctx.cash).mul("0.60");
     if(!target.isFinite()||target.lt(0)||ctx.cash.lt(0))return fail("Invalid balances");
     const gap=target.minus(exposure);
     let protection;
@@ -45,6 +53,7 @@ export const nineSigCommunityEngine:StrategyEngine={
       });
     }catch{return fail("Current 30 Down state cannot be verified");}
     const nextState={...ctx.state,sigProtection:protection.protection,
+      sigReviewedReferenceDate:String(ctx.config.referenceCloseDates[8]),
       reviewTargetValue:target.toString(),reviewContributionsSnapshot:ctx.contributionsSinceReview.toString()};
     if(protection.effectiveSignal==="HOLD"||gap.abs().lt("0.01"))
       return {actionType:"HOLD",title:"No order",instruction:"Model hold",explanation:[],
