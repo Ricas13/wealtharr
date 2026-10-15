@@ -15,9 +15,8 @@ const input=z.object({
   secret:z.string().min(8).max(300).refine(v=>!/[\r\n]/.test(v)),
   readOnlyConsent:z.literal(true)
 }).strict();
-async function access(context:Context){
+async function access(id:string){
   const user=await requireUser();
-  const {id}=await context.params;
   const strategy=await getStrategyForUser(user.id,id);
   if(!strategy)return {user,id,denied:Response.json({error:"Strategy not found."},{status:404})};
   return {user,id,strategy};
@@ -39,7 +38,7 @@ export async function GET(_request:Request,context:Context){
  try{
   const {id}=await context.params;
   const invalid=invalidPathId(id);if(invalid)return invalid;
-  const scope=await access(context);if(scope.denied)return scope.denied;
+  const scope=await access(id);if(scope.denied)return scope.denied;
   const rows=await sql.unsafe(
    "SELECT environment,external_account_ref,account_currency,consented_read_only_at,last_synced_at,last_sync_status,last_sync_summary FROM strategy_broker_connections WHERE user_id=$1 AND strategy_instance_id=$2 AND provider='TRADING212'",
    [scope.user.id,scope.id]);
@@ -57,7 +56,7 @@ export async function PUT(request:Request,context:Context){
   assertSameOrigin(request);
   const {id}=await context.params;
   const invalid=invalidPathId(id);if(invalid)return invalid;
-  const scope=await access(context);if(scope.denied)return scope.denied;
+  const scope=await access(id);if(scope.denied)return scope.denied;
   await consumeRateLimit("broker-connect:"+scope.user.id,4,3600);
   if(!(await providerEnabled()))return Response.json({error:"Trading 212 read-only connection is disabled by Master Admin."},{status:409});
   const credentials=input.parse(await request.json());
@@ -91,7 +90,7 @@ export async function DELETE(request:Request,context:Context){
   assertSameOrigin(request);
   const {id}=await context.params;
   const invalid=invalidPathId(id);if(invalid)return invalid;
-  const scope=await access(context);if(scope.denied)return scope.denied;
+  const scope=await access(id);if(scope.denied)return scope.denied;
   await consumeRateLimit("broker-disconnect:"+scope.user.id,8,3600);
   await sql.begin(async tx=>{
     await tx.unsafe(
