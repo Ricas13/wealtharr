@@ -126,7 +126,7 @@ const PRE_REFACTOR_PROFILES: readonly StrategyProfile[] = [
     research:["https://www.paulmerriman.com/"],risks:["Many sleeves and dealing costs"]
   },
   {
-    key:"income-sig",name:"Income Sig (Jason Kelly)",engine:"RESEARCH_PENDING",launchState:"DRAFT_REQUIRES_VERIFICATION",
+    key:"income-sig",name:"Wealtharr Income & Reserve Model",engine:"RESEARCH_PENDING",launchState:"DRAFT_REQUIRES_VERIFICATION",
     rules:"Official quarterly Income Sig leveraged allocation and surplus-skimming methodology; exact weights, reserve management and all reset rules must be verified from the author's materials.",
     research:["https://jasonkelly.com/"],risks:["Daily-reset leverage","Proprietary licensed rules","High downside risk"]
   },
@@ -187,7 +187,7 @@ const PRE_REFACTOR_PROFILES: readonly StrategyProfile[] = [
     research:["https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3002624"],risks:["Whipsaw","Trading-calendar precision"]
   },
   ...(["3sig","6sig"] as const).map(key=>({
-    key,name:key.toUpperCase()+" (research pending)",engine:"RESEARCH_PENDING" as const,launchState:"DRAFT_REQUIRES_VERIFICATION" as const,
+    key,name:key==="3sig"?"Small-Cap Quarterly Target (research pending)":"Leveraged Mid-Cap Quarterly Target (research pending)",engine:"RESEARCH_PENDING" as const,launchState:"DRAFT_REQUIRES_VERIFICATION" as const,
     rules:"Do not infer "+key+" parameters by renaming the 9Sig engine. Verify the source book's target growth, signal frequency, bands, cash management and reset rules before publication.",
     research:["https://jasonkelly.com/2017/01/how-my-signal-system-works/","https://jasonkelly.com/books/3sig/","https://jasonkelly.com/"], risks:["Proprietary method ambiguity","Version-specific interpretation"]
   }))
@@ -253,7 +253,7 @@ type SeedPin={name:string;family:string;description:string;engine:string;proprie
  * only in the order of independent rows). Regions and wrappers were literal empty arrays for all.
  */
 const SEED_DEFINITIONS:Record<string,SeedPin>={
-  "9sig":{name:"9Sig",family:"SIGNAL_VALUE_TARGET",description:"Rules-based value target strategy",engine:"VALUE_TARGET",proprietary:true,enabled:true,initialVersion:"PUBLISHED",realign:false},
+  "9sig":{name:"Leveraged Nasdaq Quarterly Target",family:"SIGNAL_VALUE_TARGET",description:"Rules-based value target strategy",engine:"VALUE_TARGET",proprietary:true,enabled:true,initialVersion:"PUBLISHED",realign:false},
   hfea:{name:"HFEA",family:"FIXED_ALLOCATION",description:"Leveraged fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "golden-butterfly":{name:"Golden Butterfly",family:"FIXED_ALLOCATION",description:"Diversified fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},
   "three-fund":{name:"Three-Fund Portfolio — 40/40/20 model",family:"FIXED_ALLOCATION",description:"Named fixed-allocation strategy",engine:"FIXED_ALLOCATION",proprietary:false,enabled:false,initialVersion:"DRAFT",realign:false},

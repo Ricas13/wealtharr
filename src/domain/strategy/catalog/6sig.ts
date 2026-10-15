@@ -3,7 +3,7 @@ import type {StrategyPlugin} from "./plugin";
 export const plugin:StrategyPlugin={
   key:"6sig",
   profile:{
-    key:"6sig",name:"6SIG (research pending)",engine:"RESEARCH_PENDING",launchState:"DRAFT_REQUIRES_VERIFICATION",
+    key:"6sig",name:"Leveraged Mid-Cap Quarterly Target (research pending)",engine:"RESEARCH_PENDING",launchState:"DRAFT_REQUIRES_VERIFICATION",
     rules:"Do not infer 6sig parameters by renaming the 9Sig engine. Verify the source book's target growth, signal frequency, bands, cash management and reset rules before publication.",
     research:["https://jasonkelly.com/2017/01/how-my-signal-system-works/","https://jasonkelly.com/books/3sig/","https://jasonkelly.com/"], risks:["Proprietary method ambiguity","Version-specific interpretation"]
   },
