@@ -10,5 +10,6 @@ export const plugin:StrategyPlugin={
  engine:"TACTICAL_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],
  initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false},
  specCard:"docs/strategy-specs/trend-200d.md",
- goldenTests:"tests/trend-200d-golden.test.ts"
+ goldenTests:"tests/trend-200d-golden.test.ts",
+ releaseStatus:"COMPLETE"
 };
