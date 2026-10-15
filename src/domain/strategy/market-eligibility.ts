@@ -35,6 +35,11 @@ export function requiredPositions(engine: string, config: Record<string, unknown
     const small=one(config.smallCapValueExposure);
     return tdf&&small?[tdf,small]:[];
   }
+  if (engine === "QUARTERLY_SIGNAL_TARGET") {
+    const stock = one(config.targetExposure, config.targetLeverage);
+    const safe = one(config.safeExposure);
+    return stock && safe ? [stock, safe] : [];
+  }
   if (engine === "VALUE_TARGET") {
     const required = one(config.targetExposure, config.targetLeverage);
     return required ? [required] : [];

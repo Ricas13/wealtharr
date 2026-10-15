@@ -27,13 +27,17 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
       const a=x as {exposure:string;weight:string};
       return {exposure:a.exposure,weight:new Decimal(a.weight)};
     });
+  } else if(engine==="QUARTERLY_SIGNAL_TARGET"){
+    const stockWeight=new Decimal(String(config.initialTargetRatio??"0.6"));
+    targets=[{exposure:String(config.targetExposure),weight:stockWeight},
+      {exposure:String(config.safeExposure),weight:new Decimal(1).minus(stockWeight)}].filter(x=>x.weight.gt(0));
   } else if(engine==="VALUE_TARGET"){
     targets=[{exposure:String(config.targetExposure),weight:new Decimal(String(config.initialTargetRatio??"0.6"))}];
   } else return null;
   if(targets.length<1||targets.some(x=>!x.exposure||!x.weight.isFinite()||x.weight.lte(0)))return null;
   const totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
   if(totalWeight.gt(1))return null;
-  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine)&&!totalWeight.eq(1))return null;
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID","QUARTERLY_SIGNAL_TARGET"].includes(engine)&&!totalWeight.eq(1))return null;
   const orders:AllocationLine[]=[];
   let allocated=new Decimal(0);
   for(let i=0;i<targets.length;i++){

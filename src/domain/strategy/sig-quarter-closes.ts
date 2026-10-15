@@ -3,8 +3,9 @@ import Decimal from "decimal.js";
 
 /**
  * Locate exact, independently specified quarterly-review closes.
- * Never infer the Kelly Letter's review dates from calendar quarter ends:
- * its 2026 review schedule differs on multiple occasions.
+ * The caller supplies the dates. The quarterly signal engine derives them from the last NYSE trading
+ * day of each calendar quarter (`sig-nyse-quarters.ts`, an owner decision); a missing close on a
+ * derived date fails closed here rather than being replaced by a nearby day.
  */
 export function verifiedSigQuarterCloses(
   series:TrustedHistoricalSeries|undefined,

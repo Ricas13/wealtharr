@@ -14,7 +14,8 @@ import {trinityNyseHolidayWindow} from "@/domain/strategy/trinity-calendar";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
 import { getStrategyEngine } from "@/domain/strategy/registry";
-import { confirmedSigReviewTrades } from "@/domain/strategy/sig-confirmed-ledger";
+import { sigReviewTradesBySleeve } from "@/domain/strategy/sig-confirmed-ledger";
+import { latestSigReference, nyseCloseInstant } from "@/domain/strategy/sig-nyse-quarters";
 import { exposureLeverage, resolveMapping, type MappingCandidate } from "@/domain/instruments";
 import { assertExecutionCurrencyMatch, executionPriceBand, normalizeExecutionConstraints, planPracticalTrade, validateExecution } from "@/domain/execution";
 import { nextReviewDueAt } from "@/domain/schedule";
@@ -208,7 +209,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   const frequency=String(config.reviewFrequency??"QUARTERLY");
   const lastReview=scenario?.resetTimeline?new Date():state.lastReviewAt?new Date(String(state.lastReviewAt)):new Date(instance.started_at);
   const reviewTimezone=String(config.reviewTimezone??instance.user_timezone??"UTC");
-  const holidayDates=calculationEngineKey==="TRINITY_HYBRID"
+  const holidayDates=calculationEngineKey==="TRINITY_HYBRID"||calculationEngineKey==="QUARTERLY_SIGNAL_TARGET"
     ?trinityNyseHolidayWindow(new Date())
     :Array.isArray(config.marketHolidays)?config.marketHolidays.filter((v):v is string=>typeof v==="string"):[];
   const convention: "PREVIOUS"|"NEXT"=config.businessDayConvention==="NEXT"?"NEXT":"PREVIOUS";
@@ -227,9 +228,11 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
         ?nextCalendarMonthDueAt(scheduleInput)
       :nextReviewDueAt({...scheduleInput,frequency});
   const reviewDue=Boolean(state.forceReview)||new Date()>=dueAt;
+  // The quarterly signal family treats distributions (dividends, fund distributions, interest) as new money.
+  const newMoneyTypes=calculationEngineKey==="QUARTERLY_SIGNAL_TARGET"?["CONTRIBUTION","DIVIDEND","DISTRIBUTION","INTEREST"]:["CONTRIBUTION"];
   const contributionRows=scenario?.resetTimeline
     ?[{amount:"0"}]
-    :await db.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='CONTRIBUTION' AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview]);
+    :await db.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type=ANY($3::text[]) AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview,newMoneyTypes]);
   const contributionsSinceReview=new Decimal(String(contributionRows[0]?.amount??0)).plus(new Decimal(scenario?.contributionDelta??0));
   const engine=getStrategyEngine(calculationEngineKey);
   const fullyEligibleAccountIds=new Set<string>();
@@ -271,22 +274,39 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)
     ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String)])]:null;
   const tacticalReviewMonth=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)).toISOString().slice(0,7);
-  const sigResearchReference=calculationEngineKey==="NINE_SIG_COMMUNITY";
+  const quarterlySignal=calculationEngineKey==="QUARTERLY_SIGNAL_TARGET";
   const trustedHistory=tacticalUniverse
     ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,
       tacticalSignalMapping.map(m=>({exposure:m.economicExposure,tradingLineId:m.tradingLineId})),new Date(),db)
-    :sigResearchReference
-      ?await loadTrustedHistory(["NASDAQ_100_3X_LONG"],"USD",32,new Date(),db)
+    :quarterlySignal
+      ?await loadTrustedHistory([String(config.targetExposure)],String(config.referenceCurrency??"USD"),32,new Date(),db)
     :momentumUniverse
       ?await loadTrustedHistory(momentumUniverse,String(instance.currency),calculationEngineKey==="TRINITY_HYBRID"?14:(Number(config.lookbackMonths)||12),new Date(),db)
       :undefined;
-  const confirmedQuarterTrades=sigResearchReference
-    ?confirmedSigReviewTrades(ledgerRows.map(row=>({
-      id:String(row.id),correctionOfEventId:row.correction_of_event_id?String(row.correction_of_event_id):null,
-      eventType:String(row.event_type),currency:String(row.currency),
-      cashAmount:String(row.cash_amount),feeAmount:String(row.fee_amount),
-      occurredAt:new Date(row.occurred_at)
-    })),lastReview,baseCurrency,effectiveCash):undefined;
+  // Confirmed fills of the current quarterly review, split by managed sleeve (risk exposure / safe exposure).
+  // An unmapped or unmanaged execution fails closed: the engine cannot size a purchase budget around it.
+  let sigReviewTrades:ReturnType<typeof sigReviewTradesBySleeve>|undefined;
+  if(quarterlySignal&&dataStatus==="CURRENT"){
+    try{
+      const ids=[...new Set(ledgerRows.map(row=>row.instrument_id).filter(Boolean).map(String))];
+      const exposureRows=ids.length
+        ?await db.unsafe("SELECT id,economic_exposure FROM instruments WHERE id=ANY($1::uuid[])",[ids]):[];
+      const exposureOf=new Map(exposureRows.map(row=>[String(row.id),String(row.economic_exposure)]));
+      const signalReview=state.sigConfirmedAnchor!=null||state.sigReviewKind==="SIGNAL";
+      const reviewReference=typeof state.sigReviewReference==="string"?state.sigReviewReference:latestSigReference(new Date()).referenceDate;
+      const reviewStarted=signalReview?nyseCloseInstant(reviewReference):lastReview;
+      sigReviewTrades=sigReviewTradesBySleeve(ledgerRows.map(row=>({
+        id:String(row.id),correctionOfEventId:row.correction_of_event_id?String(row.correction_of_event_id):null,
+        eventType:String(row.event_type),currency:String(row.currency),
+        cashAmount:String(row.cash_amount),feeAmount:String(row.fee_amount),
+        occurredAt:new Date(row.occurred_at),exposure:row.instrument_id?exposureOf.get(String(row.instrument_id))??null:null
+      })),reviewStarted,baseCurrency,String(config.targetExposure),String(config.safeExposure));
+    }catch(error){
+      dataStatus="MISSING";
+      dataMessage="The strategy's executed trades cannot be reconciled with its two managed exposures ("+
+        (error instanceof Error?error.message:"unknown")+"). Reconcile the ledger before the quarterly review.";
+    }
+  }
   const findMapping=async(economicExposure:string,leverage:string,account:typeof accounts[number])=>{
     const mappingRows=await db.unsafe(
       "SELECT m.id,m.economic_exposure,m.leverage,m.direction,m.country,m.wrapper,m.broker,m.preferred_currency,m.fidelity,m.effective_from,m.effective_to,m.trading_line_id,tl.currency AS trading_line_currency,tl.effective_from AS trading_line_effective_from,tl.effective_to AS trading_line_effective_to FROM regional_instrument_mappings m JOIN trading_lines tl ON tl.id=m.trading_line_id JOIN instruments i ON i.id=tl.instrument_id AND i.economic_exposure=m.economic_exposure AND i.leverage=m.leverage AND i.direction=m.direction WHERE m.economic_exposure=$1 AND m.country=$2 AND m.wrapper=$3 AND m.enabled=true AND m.fidelity='EXACT'",
@@ -382,7 +402,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
   let sizingBand:Decimal|null=null;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,confirmedQuarterTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,sigReviewTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
   if(override&&"proposal" in override)proposal=override.proposal;
   if(override&&"trade" in override){
     const forcedTrade=override.trade;
@@ -512,7 +532,14 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           heldQuantity,
           constraints:scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>)
         });
-        if(practical.status==="BLOCKED"){
+        const residueClose=practical.status==="BLOCKED"&&proposal.residueCloseState&&
+          (practical.reason==="BELOW_ONE_SHARE"||practical.reason==="BELOW_MINIMUM_TRADE"||
+            (proposal.optionalSweep===true&&practical.reason==="INSUFFICIENT_SPENDABLE_CASH"));
+        if(practical.status==="BLOCKED"&&residueClose){
+          // The remaining difference is smaller than the smallest order the investor allows: the review is
+          // complete with the actual holdings as its confirmed starting point (never a permanent block).
+          proposal={actionType:"HOLD",title:"Review complete",instruction:"The remaining difference is smaller than the smallest order your preferences allow, so this quarter's review is complete.",explanation:[...proposal.explanation,{label:"Remainder",value:practical.reason.replaceAll("_"," ")}],nextState:proposal.residueCloseState!,confidence:"HIGH",dueAt:proposal.dueAt};
+        }else if(practical.status==="BLOCKED"){
           proposal={actionType:"DATA_REQUIRED",title:"Trade does not fit your preferences",instruction:PRACTICAL_BLOCK_MESSAGES[practical.reason],explanation:[...proposal.explanation,{label:"Execution constraint",value:practical.reason.replaceAll("_"," ")}],nextState:state,confidence:"HIGH",dueAt:proposal.dueAt};
         }else{
           sizingPrice=effectivePrice;

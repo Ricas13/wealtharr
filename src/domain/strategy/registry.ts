@@ -2,7 +2,7 @@ import type { StrategyEngine } from "./types";
 import { valueTargetEngine } from "./value-target";
 import { fixedAllocationEngine } from "./fixed-allocation";
 import { momentumRotationEngine } from "./momentum-rotation";
-import { nineSigCommunityEngine } from "./9sig-community-engine";
+import { quarterlySignalEngine } from "./quarterly-signal-engine";
 import { tacticalAllocationEngine } from "./tactical-engine";
 import { twoFundsEngine } from "./two-funds-engine";
 import {trinityEngine} from "./trinity-engine";
@@ -11,7 +11,7 @@ const engines = new Map<string, StrategyEngine>([
   [valueTargetEngine.key, valueTargetEngine],
   [fixedAllocationEngine.key, fixedAllocationEngine],
   [momentumRotationEngine.key, momentumRotationEngine],
-  [nineSigCommunityEngine.key, nineSigCommunityEngine],
+  [quarterlySignalEngine.key, quarterlySignalEngine],
   [tacticalAllocationEngine.key,tacticalAllocationEngine],
   [twoFundsEngine.key, twoFundsEngine],
   [trinityEngine.key, trinityEngine]
@@ -35,7 +35,7 @@ export function supportedEngineKeys() {
  * Engine presence means it is available for internal calculation and research,
  * NOT that an admin can publish it to customers. Require separate release review.
  */
-const customerPublishableEngines = new Set(["VALUE_TARGET","FIXED_ALLOCATION","TACTICAL_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"]);
+const customerPublishableEngines = new Set(["VALUE_TARGET","FIXED_ALLOCATION","TACTICAL_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID","QUARTERLY_SIGNAL_TARGET"]);
 export function assertCustomerPublishableEngine(key:string) {
   if (!customerPublishableEngines.has(key)) throw new Error("ENGINE_NOT_CUSTOMER_VERIFIED");
   getStrategyEngine(key);
