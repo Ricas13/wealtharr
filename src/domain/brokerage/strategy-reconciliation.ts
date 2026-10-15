@@ -17,6 +17,8 @@ export type BrokerOrderCheck={
   reason:string;observedQuantity:string|null;
 };
 export function reconcileConfirmedOrders(links:readonly ConfirmedLink[],orders:readonly BrokerOrder[]):BrokerOrderCheck[]{
+  if(orders.some(order=>typeof order.id==="number"&&!Number.isSafeInteger(order.id)))
+    throw new Error("BROKER_ORDER_ID_PRECISION_UNSAFE");
   const ids=new Set(links.map(l=>l.externalTradeId));
   if(ids.size!==links.length)throw new Error("BROKER_DUPLICATE_ASSIGNED_ID");
   const {matched,missing,ambiguous}=selectConfirmedStrategyLots(orders,ids);
