@@ -16,7 +16,7 @@ export function strictMonthlyCloses(series:TrustedHistoricalSeries, reviewMonth:
  const monthlyPoints=series.points.some(p=>p.monthTerminalCertified!==undefined)
   ?series.points.filter(p=>p.monthTerminalCertified===true):series.points;
  for(const p of monthlyPoints){
-  if(!Number.isFinite(p.at.getTime())||p.at>asOf.getTime()||!p.adjustedClose.isFinite()||p.adjustedClose.lte(0))throw new Error("MONTHLY_HISTORY_INVALID_BAR");
+  if(!Number.isFinite(p.at.getTime())||p.at.getTime()>asOf.getTime()||!p.adjustedClose.isFinite()||p.adjustedClose.lte(0))throw new Error("MONTHLY_HISTORY_INVALID_BAR");
   const key=p.at.toISOString().slice(0,7);
   if(key>reviewMonth)continue;
   if(map.has(key))throw new Error("MONTHLY_HISTORY_DUPLICATE_CLOSE:"+key);
