@@ -3,11 +3,11 @@ import type {StrategyEngine} from "./types";
 import {assess2026Community9Sig30Down} from "./9sig-community-rules";
 import {verifiedSigQuarterCloses} from "./sig-quarter-closes";
 
-/** Research-only executable signal engine. Never approved for customer order issuance. */
+/** Owner-selected Wealtharr Sig variant; publication requires full per-account workflow and market verification. */
 export const nineSigCommunityEngine:StrategyEngine={
   key:"NINE_SIG_COMMUNITY",
   validateConfig(c){
-    if(c.ruleVersion!=="COMMUNITY_2026_TQQQ_TWO_SELL_SKIP"||
+    if(c.ruleVersion!=="WEALTHARR_OWNER_2026_V1"||
        c.targetExposure!=="NASDAQ_100_3X_LONG"||c.referenceCurrency!=="USD")throw new Error("SIG_UNVERIFIED_VARIANT");
   },
   calculate(ctx){
@@ -35,11 +35,12 @@ export const nineSigCommunityEngine:StrategyEngine={
       .reduce((a,p)=>a.plus(p.value),new Decimal(0));
     if(ctx.exposures.some(p=>p.economicExposure!=="NASDAQ_100_3X_LONG"&&!p.value.isZero()))
       return fail("Other holdings require classification");
-    const anchor=ctx.state.sigConfirmedAnchor;
+    const anchor=ctx.state.sigPreviousSignalTarget;
     // A newly started portfolio receives the historical 60/40 base, without
     // inventing a growth step before its first confirmed allocation.
-    const target=typeof anchor==="string"
-      ?new Decimal(anchor).mul("1.09").plus(ctx.contributionsSinceReview.mul("0.5"))
+    const stable=ctx.state.reviewTargetValue;
+    const target=typeof stable==="string" ? new Decimal(stable)
+      :typeof anchor==="string" ?new Decimal(anchor).mul("1.09").plus(ctx.contributionsSinceReview.mul("0.5"))
       :exposure.plus(ctx.cash).mul("0.60");
     if(!target.isFinite()||target.lt(0)||ctx.cash.lt(0))return fail("Invalid balances");
     const gap=target.minus(exposure);
@@ -57,7 +58,7 @@ export const nineSigCommunityEngine:StrategyEngine={
       reviewTargetValue:target.toString(),reviewContributionsSnapshot:ctx.contributionsSinceReview.toString()};
     if(protection.effectiveSignal==="HOLD"||gap.abs().lt("0.01"))
       return {actionType:"HOLD",title:"No order",instruction:"Model hold",explanation:[],
-        nextState:{...nextState,sigConfirmedAnchor:exposure.toString(),sigQuarterIndex:quarter+1},
+        nextState:{...nextState,sigPreviousSignalTarget:target.toString(),sigQuarterIndex:quarter+1},
         confidence:"MEDIUM",dueAt:ctx.now};
     if(gap.isNegative())return {actionType:"SELL",title:"Model sell",instruction:"Model stock reduction",
       amount:gap.neg(),currency:ctx.baseCurrency,economicExposure:"NASDAQ_100_3X_LONG",
@@ -72,7 +73,7 @@ export const nineSigCommunityEngine:StrategyEngine={
     const allowed=Decimal.min(gap,ctx.cash,Decimal.max(0,opening.mul("0.9").minus(used)));
     if(allowed.lt("0.01"))return {actionType:"HOLD",title:"Buying power exhausted",
       instruction:"Model quarter review finished without buying",explanation:[],
-      nextState:{...nextState,sigConfirmedAnchor:exposure.toString(),sigQuarterIndex:quarter+1},confidence:"MEDIUM",dueAt:ctx.now};
+      nextState:{...nextState,sigPreviousSignalTarget:target.toString(),sigQuarterIndex:quarter+1},confidence:"MEDIUM",dueAt:ctx.now};
     return {actionType:"BUY",title:"Model buy",instruction:"Model stock addition",
       amount:allowed,currency:ctx.baseCurrency,economicExposure:"NASDAQ_100_3X_LONG",
       explanation:[],nextState,confidence:"MEDIUM",dueAt:ctx.now};
