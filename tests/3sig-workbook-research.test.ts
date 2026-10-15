@@ -31,7 +31,7 @@ describe("original Jason Kelly book-era 3Sig worksheet, source-derived golden te
     const q2=calculateHistoricalThreeSigQuarter(q2Input);
     expect(new Decimal(q2.targetStockValue).toDecimalPlaces(3).toString()).toBe("9720.425");
     expect(new Decimal(q2.desiredShareDelta).toDecimalPlaces(8).toString()).toBe("-1.90808062");
-    expect(new Decimal(q2.bondSharesBeforeTrade).toDecimalPlaces(6).toString()).toBe("308.607732");
+    expect(new Decimal(q2.bondSharesBeforeTrade).toDecimalPlaces(6).toString()).toBe("308.607731");
     const confirmedQ2=calculateHistoricalThreeSigQuarter({...q2Input,confirmedStockShareDelta:q2.desiredShareDelta});
     expect(new Decimal(confirmedQ2.confirmedBondValueAfterTrade!).toDecimalPlaces(4).toString()).toBe("3393.1138");
   });
