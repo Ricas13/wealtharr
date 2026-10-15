@@ -3,6 +3,8 @@ import {describe,it,expect} from "vitest";
 import {getStrategyPlugin} from "@/domain/strategy/catalog";
 import {initialAllocationPlan} from "@/domain/initial-allocation";
 import {planRebalance} from "@/domain/strategy/rebalance-plan";
+import {evaluateMethodCompleteness} from "@/domain/strategy/method-complete";
+import {strategiesToSeed} from "@/domain/strategy/seed-plan";
 import {nextCalendarQuarterDueAt,rollBusinessDay} from "@/domain/schedule";
 import type {ResolvedPosition} from "@/domain/strategy/market-eligibility";
 
@@ -87,6 +89,18 @@ describe("group 2 independently calculated reference outcomes",()=>{
    expect(trade("merriman-ultimate",drift)).toEqual([
      ["SELL","US_LARGE_CAP","500.00"],["BUY","EMERGING_MARKETS_EQUITY","500.00"]
    ]);
+ });
+ it("every Group 2 release is code complete but disabled until market-specific admin activation",()=>{
+   for(const key of keys){
+     const plugin=getStrategyPlugin(key)!;
+     expect(evaluateMethodCompleteness(plugin).failures,key).toEqual([]);
+     const [release]=strategiesToSeed([plugin],"PRODUCTION");
+     expect(release.plugin.key).toBe(key);
+     expect(release.enabled).toBe(false);
+     expect(release.initialVersion).toBe("PUBLISHED");
+     expect(release.definition.supportedRegions).toEqual([]);
+     expect(release.definition.supportedWrappers).toEqual([]);
+   }
  });
  for(const key of keys){
    it(key+" immutable weights add up to exactly 100% and review threshold is explicit",()=>{
