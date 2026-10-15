@@ -31,6 +31,13 @@ export type EngineContext = {
   dataHealth: DataHealth;
   /** Must be populated by an authenticated licensed market-data adapter, never user settings. */
   trustedHistory?: TrustedHistoricalSeries[];
+  /** Ledger-derived confirmed gross fills for the current review. Never include unfilled proposals. */
+  confirmedQuarterTrades?: {
+    buyGross: Decimal;
+    sellGross: Decimal;
+    feeTotal: Decimal;
+    reserveBeforeTrades: Decimal;
+  };
 };
 
 export type ExplanationRow = {
