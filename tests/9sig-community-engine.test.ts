@@ -33,6 +33,11 @@ describe("nonpublished 9Sig community engine integration",()=>{
     expect(result.actionType).toBe("HOLD");
     expect(result.nextState.sigProtection).toEqual({startQuarter:8,skippedSellCount:1});
   });
+  it("fails closed when a quarter review reuses old dated reference snapshots",()=>{
+    const result=engine.calculate({...ctx,now:new Date("2026-07-01T20:00:00Z")});
+    expect(result.actionType).toBe("DATA_REQUIRED");
+    expect(result.instruction).toContain("reference dates");
+  });
   it("rejects unverified price histories",()=>{
     const result=engine.calculate({...ctx,trustedHistory:[]});
     expect(result.actionType).toBe("DATA_REQUIRED");
