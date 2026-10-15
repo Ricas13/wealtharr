@@ -26,7 +26,7 @@ describe("nonpublished 9Sig community engine integration",()=>{
     expect(result.actionType).toBe("BUY");
     expect(result.amount?.toFixed(2)).toBe("1898.46");
   });
-  it("uses the 2026 community 30-down skip to suppress a proposed sell",()=>{
+  it("only spends remaining quarter budget after a verified partial fill",()=>{\n    const result=engine.calculate({...ctx,cash:D("1108.40"),\n      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D("4564.30")}],\n      confirmedQuarterTrades:{buyGross:D("1000"),sellGross:D("0"),feeTotal:D("1"),reserveBeforeTrades:D("2109.40")}});\n    expect(result.actionType).toBe("BUY");\n    expect(result.amount?.toFixed(2)).toBe("898.46");\n  });\n  it("uses the 2026 community 30-down skip to suppress a proposed sell",()=>{
     const result=engine.calculate({...ctx,cash:D("4000"),exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D("8000")}],
       trustedHistory:[{...ctx.trustedHistory[0],points:ctx.trustedHistory[0].points.map((p,i)=>({
         ...p,adjustedClose:D(i===8?"69":"100")}))}]});
