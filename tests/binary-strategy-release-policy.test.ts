@@ -13,18 +13,17 @@ describe("binary production strategy release policy",()=>{
     expect(()=>assertReleaseMethodComplete("9sig")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     // 60-40 was listed here while its method was incomplete; it is now the one complete method
     // (see the case below). A still-incomplete fixed allocation takes its place.
-    expect(()=>assertReleaseMethodComplete("golden-butterfly")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
-    expect(()=>assertReleaseMethodComplete("three-fund")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
+    expect(()=>assertReleaseMethodComplete("dual-momentum")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
+    expect(()=>assertReleaseMethodComplete("all-weather")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     expect(()=>assertReleaseMethodComplete("unknown-strategy")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
-  it("accepts code-complete Group 2 and 60/40 while failing closed for unfinished groups",()=>{
+  it("accepts only the complete Global 60/40 (GBP) method on a live host, and still fails closed for the rest",()=>{
     vi.stubEnv("NODE_ENV","production");
     vi.stubEnv("CI","false");
     vi.stubEnv("GITHUB_ACTIONS","false");
     vi.stubEnv("DATABASE_URL","postgresql://production@private-db:5432/wealtharr");
-    for(const key of ["hfea","all-weather","60-40","coffeehouse","core-four","swensen","merriman-ultimate"])expect(()=>assertReleaseMethodComplete(key),key).not.toThrow();
-    for(const key of ["9sig","golden-butterfly","permanent-portfolio","three-fund","80-20",
-      "buffett-90-10","dual-momentum","paa","vaa","3sig","6sig","nope"])
+    for(const key of ["60-40","80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10","hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]) expect(()=>assertReleaseMethodComplete(key)).not.toThrow();
+    for(const key of ["9sig","dual-momentum","paa","vaa","3sig","6sig","nope"])
       expect(()=>assertReleaseMethodComplete(key),key).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
   it("CI exception is allowed only on the exact disposable localhost test database",()=>{
