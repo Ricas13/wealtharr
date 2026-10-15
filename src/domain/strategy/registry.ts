@@ -2,11 +2,13 @@ import type { StrategyEngine } from "./types";
 import { valueTargetEngine } from "./value-target";
 import { fixedAllocationEngine } from "./fixed-allocation";
 import { momentumRotationEngine } from "./momentum-rotation";
+import { nineSigCommunityEngine } from "./9sig-community-engine";
 
 const engines = new Map<string, StrategyEngine>([
   [valueTargetEngine.key, valueTargetEngine],
   [fixedAllocationEngine.key, fixedAllocationEngine],
-  [momentumRotationEngine.key, momentumRotationEngine]
+  [momentumRotationEngine.key, momentumRotationEngine],
+  [nineSigCommunityEngine.key, nineSigCommunityEngine]
 ]);
 
 export function getStrategyEngine(key: string) {
