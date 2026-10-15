@@ -13,14 +13,15 @@ export const plugin:StrategyPlugin={
   codeRelease:{
     engine:"VALUE_TARGET",
     config:CANONICAL_9SIG_CONFIG,
-    summary:"Quarterly signal-based value targeting; full source-methodology audit remains outstanding."
+    summary:"Research-only value-target model; original 9Sig protection/reset rules are not fully verified. Do not enable for customers."
   },
   seedDefinition:{
     name:"9Sig",family:"SIGNAL_VALUE_TARGET",description:"Rules-based value target strategy",
-    engine:"VALUE_TARGET",proprietary:true,enabled:true,
+    engine:"VALUE_TARGET",proprietary:true,enabled:false,
     supportedRegions:[],supportedWrappers:[],
-    initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false
+    initialVersion:"DRAFT",realignsResearchOnlyDefinition:false
   },
   specCard:null,
-  goldenTests:"tests/value-target.test.ts"
+  goldenTests:"tests/value-target.test.ts",
+  releaseStatus:"INCOMPLETE"
 };
