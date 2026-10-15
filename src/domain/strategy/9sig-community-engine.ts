@@ -23,7 +23,10 @@ export const nineSigCommunityEngine:StrategyEngine={
     const h=ctx.trustedHistory?.find(s=>s.exposure==="NASDAQ_100_3X_LONG"&&s.currency==="USD");
     let closes:Decimal[];
     try{
-      const dates=calendarQuarterReviewDates((h?.points??[]).map(p=>p.at.toISOString().slice(0,10)),ctx.now.toISOString().slice(0,10));
+      const calendar=ctx.config.verifiedTradingDays;
+      if(!Array.isArray(calendar)||calendar.length<9||calendar.some(d=>typeof d!=="string"))
+        throw new Error("SIG_VERIFIED_EXCHANGE_CALENDAR_REQUIRED");
+      const dates=calendarQuarterReviewDates(calendar as string[],ctx.now.toISOString().slice(0,10));
       closes=verifiedSigQuarterCloses(h,dates,"USD");
       const lastDate=dates[8];
       const observedDate=ctx.now.toISOString().slice(0,10);
