@@ -18,8 +18,6 @@ const input=z.object({
 async function access(context:Context){
   const user=await requireUser();
   const {id}=await context.params;
-  const invalid=invalidPathId(id);
-  if(invalid)return {user,id,denied:invalid};
   const strategy=await getStrategyForUser(user.id,id);
   if(!strategy)return {user,id,denied:Response.json({error:"Strategy not found."},{status:404})};
   return {user,id,strategy};
@@ -39,6 +37,8 @@ function failure(error:unknown){
 }
 export async function GET(_request:Request,context:Context){
  try{
+  const {id}=await context.params;
+  const invalid=invalidPathId(id);if(invalid)return invalid;
   const scope=await access(context);if(scope.denied)return scope.denied;
   const rows=await sql.unsafe(
    "SELECT environment,external_account_ref,account_currency,consented_read_only_at,last_synced_at,last_sync_status,last_sync_summary FROM strategy_broker_connections WHERE user_id=$1 AND strategy_instance_id=$2 AND provider='TRADING212'",
