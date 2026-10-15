@@ -46,7 +46,6 @@ export function AdminStrategyInventory({entries}:{entries:CatalogEntry[]}){
  const enabled=entries.filter(s=>s.enabled).length;
  const complete=entries.filter(s=>s.methodComplete).length;
  const markets=entries.filter(s=>s.marketEligible).length;
- const awaiting=entries.filter(s=>s.status!=="ENABLED"&&s.status!=="READY").length;
  return <section className="admin-catalogue">
    <div className="admin-stats-strip" aria-label="Catalogue overview">
      <div><span>Registered profiles</span><strong>{entries.length}</strong><small>Admin inventory</small></div>
