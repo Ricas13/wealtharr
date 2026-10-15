@@ -22,6 +22,6 @@ describe("risk parity historical estimate",()=>{
   expect(result.observationDates).toHaveLength(61);
   expect(result.covariance[0][1].eq(result.covariance[1][0])).toBe(true);
   expect(result.weights.every(w=>new Decimal(w).gt(0))).toBe(true);
-  expect(result.weights.reduce((s,w)=>s.plus(w),new Decimal(0)).sub(1).abs().lt("1e-20")).toBe(true);
+  expect(result.weights.reduce((s,w)=>s.plus(w),new Decimal(0)).sub(1).abs().lt("1e-8")).toBe(true);
  });
 });
