@@ -13,6 +13,22 @@ describe("curated initial allocation plan",()=>{
    expect(plan?.orders.map(x=>[x.ticker,x.amount])).toEqual([["UPRO","5500.00"],["TMF","4500.00"]]);
    expect(plan?.cashReserve).toBe("0.00");
  });
+ it("normalizes near-unity weights without leaving a cash residue",()=>{
+   const plan=initialAllocationPlan("FIXED_ALLOCATION",{allocations:[
+     {exposure:"US_EQUITY_3X_LONG",weight:"0.55"},
+     {exposure:"LONG_TREASURY_3X_LONG",weight:"0.449999995"}
+   ]},"10000","USD",positions);
+   expect(plan?.orders.map(x=>[x.ticker,x.amount])).toEqual([["UPRO","5500.00"],["TMF","4500.00"]]);
+   expect(plan?.cashReserve).toBe("0.00");
+ });
+ it("rejects materially underweight or overweight model weights",()=>{
+   for(const last of ["0.44","0.46"]){
+     expect(initialAllocationPlan("FIXED_ALLOCATION",{allocations:[
+       {exposure:"US_EQUITY_3X_LONG",weight:"0.55"},
+       {exposure:"LONG_TREASURY_3X_LONG",weight:last}
+     ]},"10000","USD",positions)).toBeNull();
+   }
+ });
  it("9Sig initial value target retains its configured cash reserve",()=>{
    const plan=initialAllocationPlan("VALUE_TARGET",{targetExposure:"NASDAQ_100_3X_LONG",initialTargetRatio:"0.60"},
     "10000","USD",[m("NASDAQ_100_3X_LONG","TQQQ")]);
