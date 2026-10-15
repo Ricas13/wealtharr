@@ -31,9 +31,17 @@ export function initialAllocationPlan(engine:string,config:Record<string,unknown
     targets=[{exposure:String(config.targetExposure),weight:new Decimal(String(config.initialTargetRatio??"0.6"))}];
   } else return null;
   if(targets.length<1||targets.some(x=>!x.exposure||!x.weight.isFinite()||x.weight.lte(0)))return null;
-  const totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
-  if(totalWeight.gt(1))return null;
-  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine)&&!totalWeight.eq(1))return null;
+  let totalWeight=targets.reduce((sum,x)=>sum.plus(x.weight),new Decimal(0));
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(engine)){
+    // Engine validation tolerates tiny weight rounding errors. Do not reject an otherwise
+    // valid allocation on onboarding, or leave its residual cents uninvested.
+    const residue=new Decimal(1).minus(totalWeight);
+    if(residue.abs().gt("0.00000001"))return null;
+    const last=targets[targets.length-1];
+    if(last.weight.plus(residue).lte(0))return null;
+    targets[targets.length-1]={...last,weight:last.weight.plus(residue)};
+    totalWeight=new Decimal(1);
+  } else if(totalWeight.gt(1))return null;
   const orders:AllocationLine[]=[];
   let allocated=new Decimal(0);
   for(let i=0;i<targets.length;i++){
