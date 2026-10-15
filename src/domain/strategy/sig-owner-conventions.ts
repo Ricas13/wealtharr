@@ -41,9 +41,10 @@ export function assessWealtharr9SigDailySpike(input:{
   stockValue:Decimal.Value;
   bondValue:Decimal.Value;
 }):{triggered:boolean;targetStockWeight:"0.60"|null;gain:string}{
-  const iso=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+"T00:00:00Z"));
+  const iso=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+"T00:00:00Z"))&&new Date(v+"T00:00:00Z").toISOString().slice(0,10)===v;
   if(!iso(input.observationDate)||!iso(input.previousQuarterLastTradingDay)||
-    input.observationDate<=input.previousQuarterLastTradingDay)
+    input.observationDate<=input.previousQuarterLastTradingDay||
+    Math.floor((Number(input.observationDate.slice(5,7))-1)/3)===Math.floor((Number(input.previousQuarterLastTradingDay.slice(5,7))-1)/3)&&input.observationDate.slice(0,4)===input.previousQuarterLastTradingDay.slice(0,4))
     throw new Error("SIG_INVALID_SPIKE_OBSERVATION_DATE");
   if(!input.verifiedDailyClose)throw new Error("SIG_DAILY_CLOSE_NOT_VERIFIED");
   const before=positive(input.previousQuarterTqqqClose,"PREVIOUS_CLOSE");
