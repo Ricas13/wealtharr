@@ -10,5 +10,6 @@ export const plugin:StrategyPlugin={
  engine:"TACTICAL_ALLOCATION",proprietary:false,enabled:false,supportedRegions:[],supportedWrappers:[],
  initialVersion:"PUBLISHED",realignsResearchOnlyDefinition:false},
  specCard:"docs/strategy-specs/dual-momentum.md",
- goldenTests:"tests/dual-momentum-golden.test.ts"
+ goldenTests:"tests/dual-momentum-golden.test.ts",
+ releaseStatus:"COMPLETE"
 };
