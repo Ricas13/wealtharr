@@ -23,7 +23,7 @@ describe("binary production strategy release policy",()=>{
     vi.stubEnv("GITHUB_ACTIONS","false");
     vi.stubEnv("DATABASE_URL","postgresql://production@private-db:5432/wealtharr");
     for(const key of ["60-40","80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10","hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate","trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]) expect(()=>assertReleaseMethodComplete(key)).not.toThrow();
-    for(const key of ["9sig","dual-momentum","paa","vaa","3sig","6sig","nope"])
+    for(const key of ["9sig","3sig","6sig","income-sig","nope"])
       expect(()=>assertReleaseMethodComplete(key),key).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
   it("CI exception is allowed only on the exact disposable localhost test database",()=>{
