@@ -49,6 +49,8 @@ export async function POST(request:Request,context:Context){
     if(identity.id!==String(connection.external_account_ref)||identity.currency!==String(connection.account_currency))
       return Response.json({error:"Broker account identity changed. Reconnect and reauthorise."},{status:409});
     const unfiltered=await trading212ReadHistory<BrokerOrder>({mode,resource:"orders",credentials,maxPages:pages});
+    if(unfiltered.some(order=>typeof order.id==="number"&&!Number.isSafeInteger(order.id)))
+      throw new Error("BROKER_ORDER_ID_PRECISION_UNSAFE");
     // Retain in application memory only the fields necessary for explicitly linked IDs.
     // Raw account-wide positions/orders/cash must never reach storage, telemetry or the response.
     const wanted=new Set(verifiedLinks.map(link=>link.externalTradeId));
