@@ -54,17 +54,19 @@ export const nineSigCommunityEngine:StrategyEngine={
     if(gap.isNegative())return {actionType:"SELL",title:"Model sell",instruction:"Model stock reduction",
       amount:gap.neg(),currency:ctx.baseCurrency,economicExposure:"NASDAQ_100_3X_LONG",
       explanation:[],nextState,confidence:"MEDIUM",dueAt:ctx.now};
-    const opening=new Decimal(String(ctx.state.sigQuarterReserve??ctx.cash));
-    const used=new Decimal(String(ctx.state.sigQuarterBuySpent??0));
+    // The cap is based on CONFIRMED ledger fills, not proposed quantities.
+    const traded=ctx.confirmedQuarterTrades;
+    if(!traded)return fail("Confirmed current-review trades are required");
+    const opening=traded.reserveBeforeTrades;
+    const used=traded.buyGross;
     if(!opening.isFinite()||!used.isFinite()||opening.lt(0)||used.lt(0))
-      return fail("Invalid quarter budget");
+      return fail("Invalid confirmed quarter budget");
     const allowed=Decimal.min(gap,ctx.cash,Decimal.max(0,opening.mul("0.9").minus(used)));
     if(allowed.lt("0.01"))return {actionType:"HOLD",title:"Buying power exhausted",
       instruction:"Model quarter review finished without buying",explanation:[],
       nextState:{...nextState,sigConfirmedAnchor:exposure.toString()},confidence:"MEDIUM",dueAt:ctx.now};
     return {actionType:"BUY",title:"Model buy",instruction:"Model stock addition",
       amount:allowed,currency:ctx.baseCurrency,economicExposure:"NASDAQ_100_3X_LONG",
-      explanation:[],nextState:{...nextState,sigQuarterReserve:opening.toString(),
-        sigQuarterBuySpent:used.plus(allowed).toString()},confidence:"MEDIUM",dueAt:ctx.now};
+      explanation:[],nextState,confidence:"MEDIUM",dueAt:ctx.now};
   }
 };
