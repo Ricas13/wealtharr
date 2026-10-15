@@ -3,6 +3,7 @@ import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 
 const home=readFileSync(resolve(process.cwd(),"src/app/page.tsx"),"utf8");
+const heroPreview=readFileSync(resolve(process.cwd(),"src/components/HeroStrategyPreview.tsx"),"utf8");
 const interactivity=readFileSync(resolve(process.cwd(),"src/components/PublicLandingInteractivity.tsx"),"utf8");
 const css=readFileSync(resolve(process.cwd(),"src/app/marketing-home.css"),"utf8");
 const planApi=readFileSync(resolve(process.cwd(),"src/app/api/admin/plans/route.ts"),"utf8");
@@ -12,7 +13,7 @@ describe("approved public homepage financial and commercial boundaries",()=>{
   it("does not market proprietary 9Sig or claim example data are real",()=>{
     expect(home).not.toMatch(/9Sig.*ISA|Buy £842/);
     expect(home).toContain('plugin.key.toLowerCase()==="9sig"');
-    expect(home).toContain("ILLUSTRATIVE DATA");
+    expect(heroPreview).toContain("ILLUSTRATIVE DATA");
     expect(home).toContain("No trades placed");
   });
   it("only displays published, code-verified, fully mapped strategies",()=>{
@@ -34,6 +35,16 @@ describe("approved public homepage financial and commercial boundaries",()=>{
     expect(planEditor).toContain("Homepage card highlights");
     expect(interactivity).toContain("wm-marketing-notes");
     expect(home).toContain("catch{/* No invented plans/prices");
+    expect(home).toContain("planCurrencyPrices(row.prices)");
+    expect(home).toContain("currencyForVisitorCountry(");
+    expect(interactivity).toContain("p.prices[currency]");
+    expect(interactivity).toContain("No estimated conversion.");
+    expect(interactivity).toContain("LandingCurrencyProvider");
+    expect(home).toContain('cards={carouselCards}');
+    expect(home).not.toContain("Elegant where it matters");
+    expect(home.indexOf('id="strategies"')).toBeLessThan(home.indexOf('id="how"'));
+    expect(interactivity).toContain("pausedUntil.current");
+    expect(interactivity).toContain("window.localStorage.setItem(STORAGE_KEY,next)");
     expect(interactivity).toContain("if(!plans.length)");
     expect(interactivity).toContain("p.features.map(");
     expect(interactivity).toContain("p.channels.map(");
