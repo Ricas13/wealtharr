@@ -1,13 +1,30 @@
-# Harry Browne Permanent Portfolio
+# Permanent Portfolio — US Treasury bills reference
 
-**Status: allocation externally corroborated 2026-10-09; original book and rebalance bands NOT reviewed.**
+## Definition
+Frozen reference profile `permanent-portfolio`, engine `FIXED_ALLOCATION`. Allocation:
+- `G1_US_LARGE_BLEND`: 25%
+- `G1_US_LONG_TREASURY`: 25%
+- `G1_US_TREASURY_BILLS`: 25%
+- `G1_PHYSICAL_GOLD`: 25%
 
-https://portfoliocharts.com/portfolios/permanent-portfolio/ attributes to Harry Browne four equal 25% sleeves: US large-cap stocks, long Treasury bonds, **Treasury bills** and gold. It explicitly notes bills are Browne's choice; short-term bonds are a follower variation. The code's `CASH_BILLS` must be an actually eligible bill/cash exposure rather than an intermediate-term fund.
+Source: https://portfoliocharts.com/portfolios/permanent-portfolio/
 
-The code's annual 0% threshold is a **Wealtharr variant convention**. Do not imply Browne prescribed it. The often-described 15%–35% band policy requires direct original-author source validation, boundary testing and a separately versioned release. The investor never adjusts the method.
+The cash-like sleeve means US Treasury bills, not unconstrained cash or generic short-term corporate bonds. Wealtharr adopts annual zero-threshold review; this is distinct from threshold-band implementations.
 
-Initial £10,000: £2,500 per sleeve. UK/other wrapper fidelity, independent golden tests, authored rebalance policy, market data and reviewer sign-off are outstanding. Research alone does not enable customer trading.
+This profile is not guaranteed equivalent to home-country adaptations. In particular, US Treasury securities remain US government obligations even in a GBP account. No UK ISA, SIPP or GIA product is asserted as eligible or mapped.
 
-Reviewer: PENDING; independent approval: NO.
+## Rebalancing rule
+Wealtharr convention: `reviewFrequency: ANNUAL`; `rebalanceThreshold: 0.00`. When the account has a due review, compute target holding value as total invested positions plus free strategy cash, times the frozen weight. Sell overweight holdings before buying underweight holdings, subject to execution constraints. New contributions become strategy cash and are incorporated at the next permitted review; they do not independently change the method's review cadence. Withdrawals and executed trades enter the immutable account ledger and affect subsequent holdings and cash, without silently altering weights. Fractional vs whole-unit restrictions, available cash, fees, smallest order, half-even monetary rounding and unsettled execution residue are handled by the existing shared planner and documented under `docs/strategy-engines.md`. No rebalancing trade executes without recorded investor action. Stale prices and missing exact market mappings fail closed.
 
-**Execution convention (Wealtharr implementation, not part of this strategy):** residual drift left by order sizing is handled by the execution convention in docs/strategy-engines.md, "Execution convention for residual drift".
+## Instrument requirements
+Every sleeve requires one independently verified eligible tradable instrument mapping with the exact named economic exposure, current prices, domicile and fund eligibility for the user's country, broker, trading currency and wrapper (ISA, SIPP or GIA as applicable). An equivalent sounding ticker or alternative asset is not automatically allowed. Listing eligibility is not inferable from strategy weights. Require positive verification of leverage (1x), security instrument type, price currency, hedging policy, tracking scope, maturity or gold backing as appropriate. UK-accessible listings are not assumed to offer US-domiciled assets directly. No symbols or mappings are inserted by this release.
+
+## Owner-decision list
+- The source's allocation and the separately chosen Wealtharr annual, zero-band schedule are explicitly distinguished.
+- This frozen model cannot be modified by user-selected weights; alternative schedules or weights require a new immutable version.
+- A complete method does not waive the exact instrument-mapping / wrapper / account / global / plan / per-user gates.
+- Existing published versions and active customer positions must remain pinned and must not be edited in place.
+- Administrator verification of an actual mapping is an operational precondition, not a request for source-method attestation.
+
+## Golden tests
+`tests/strategy-golden-permanent-portfolio.test.ts` independently verifies target allocations, overweight sale, contribution inclusion, review due, stale data and exact mapping omission. Arithmetic assertions use explicit reference weights, not weights read from the code under test.
