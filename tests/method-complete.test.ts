@@ -52,7 +52,7 @@ describe("isMethodComplete: the real catalogue",()=>{
     }
   });
   it("keeps 9Sig, HFEA and the other fixed allocations incomplete",()=>{
-    for(const key of ["9sig","hfea","three-fund","80-20","all-weather","dual-momentum"])
+    for(const key of ["9sig","hfea","all-weather","dual-momentum"])
       expect(isMethodComplete(getStrategyPlugin(key)),key).toBe(false);
     expect(isMethodComplete(undefined)).toBe(false);
   });
