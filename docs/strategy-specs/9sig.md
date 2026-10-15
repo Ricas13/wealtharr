@@ -4,6 +4,9 @@ Status: **DRAFT, NOT SIGNED OFF.** Research compiled 2026-10-12 from public web 
 
 Reviewer: PENDING; independent approval: NO.
 
+
+> **Source-version conflict confirmed (2026-10-14):** In an October 6, 2019 author comment on https://jasonkelly.com/3sig/, Jason Kelly states that the next line is based on the previous quarter's **desired price**, rather than the eventual fill price, while other author examples discuss a partially funded post-order stock balance affecting later lines. These rules can diverge following capped/unfilled buys. This is a *material unresolved historical-versus-current variant distinction*. Do not release a live 9Sig engine until the current Kelly Letter guide unambiguously determines its target anchor and fill-date treatment.
+
 ## Engine
 VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See `docs/9SIG_IMPLEMENTATION_GAP.md` for how the code differs from this card.
 
@@ -58,6 +61,13 @@ VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See 
 | R15 | Reset to the base allocation when bonds grow too large (">30% bonds"). | S5 (a 3Sig spreadsheet note); S8 contradicts itself on whether this is Kelly's rule | **Unverified** for 9Sig (Q6) |
 | R16 | Withdrawals / decumulation. | Not found for 9Sig | **Unverified** (Q7) |
 | R17 | No floor on the TQQQ weight: repeated sells may take it below 60%. | S6 | **Single source** (primary) |
+
+
+## October 2026 forum cross-check (not author-certified)
+- March 2026 r/KellyLetter discussion reports TQQQ **quarterly close** 30% below its preceding two-year quarterly-close high as the contemporary 9Sig 30 Down trigger, and **two sell signals** skipped (intervening buys remain executable). https://www.reddit.com/r/KellyLetter/comments/1s8473h/30_down_rule_price_point/ and https://www.reddit.com/r/KellyLetter/comments/1q7e2v9/query_on_30_down_rule/ . This contradicts earlier SPY/one-skip accounts: source version is crucial.
+- A separate 2026 thread reports that resets occur after the 30 Down skips and describes a 100% spike. https://www.reddit.com/r/KellyLetter/comments/1s51l8j/30_down_rule/ . Forum posts disagree on exact later reset condition and calendar offset; no unverified reset is activated.
+- Public Kelly 2018 primary source explicitly requires spike gain >=100% in one quarter, stock portfolio weight between 60% and 100% **after normal rebalance**, and no 30 Down period: https://jasonkelly.com/resources/strategies/ . The 90% buy-power throttle is likewise author-documented; the current guide revision remains to be verified.
+- `src/domain/strategy/9sig-community-rules.ts` and `tests/9sig-community-rules.test.ts` implement these as **research-only** version-labelled, fail-closed predicates. They do not certify the full 2026 plan and do not issue trades.
 
 ## Hand-worked examples
 
@@ -137,3 +147,23 @@ Use independently computed expected values for Example A Q1–Q2 and Example B Q
 
 ## Sign-off
 Reviewer: ______  Date: ______  Source checked (URL + date retrieved): ______
+
+
+## Material live dispute found 2026-10-14 — defensive price benchmark
+- March 30 2026 r/KellyLetter participants explicitly quote a **TQQQ** quarterly closing trigger (April 2 2026 TQQQ threshold $36.90, next two sells skipped): https://www.reddit.com/r/KellyLetter/comments/1s8473h/30_down_rule_price_point/ . The price is a dated signal, **not** a reusable live threshold.
+- Jason Kelly's **2020** primary article describes the *SPY* 8-quarter-close reference and says that 6Sig/9Sig then skipped **one** sell, not four: https://jasonkelly.com/2020/04/the-30-down-rule/ . Jason's **2023** primary article confirms 9Sig by then skipped **two** sell signals and reset to 60/40 afterward: https://jasonkelly.com/2023/02/tqqq-and-volatility-decay/ . Neither establishes the benchmark underlying **2026** subscriber calculations by itself.
+- BestFolio's independently published **Oct 13 2026** methodology update *claims* 6Sig/9Sig use **SPY**, and acknowledges that its model used the plan ETF previously: https://bestfolio.app/changelog . This directly conflicts with community reports about 2026 subscriber TQQQ-trigger prices. A third-party platform is not authoritative for Jason Kelly. Version/date/source evidence must resolve this before activation.
+- Jan 2026 r/KellyLetter commenters describe base reset to 60/40 **after two skipped sells, at the next qualifying sell**, with buys between skips not resetting the count: https://www.reddit.com/r/KellyLetter/comments/1q7e2v9/query_on_30_down_rule/ . This is stronger than a blanket rule to reset immediately when protection expires but is still community testimony.
+- Forum participants note Kelly Letter quarter boundaries need not equal calendar quarter ends; June 26 2026 is identified as a subscriber Q2 close, not June 30: https://www.reddit.com/r/KellyLetter/comments/1vh8b1z/9sig_and_done/ . A normal calendar-quarter scheduler is **not** a verified replacement for the letter's trading schedule.
+
+## 2026-10-15 correction: third-party backtest rules are NOT Kelly's original
+BestFolio explicitly acknowledges that (1) the portfolio-level **10% bond floor**, (2) the **automatic reset when bonds exceed 30% after sells**, and (3) its choice to **never adjust the target line down** were third-party model conventions, not author-verified current 9Sig rules: https://bestfolio.app/blog/kelly-signal-danger . In https://www.reddit.com/r/KellyLetter/comments/1nz1xjk/questions_about_9sig/ an October 2025 subscriber says there is no routine bond percentage threshold and the mix may drift far from 60/40. Do not implement a generic >30% bond trigger as a Kelly 9Sig rule. The original author primary source (January 2018) does verify a 90% bond buy throttle and **conditional** 100%-gain spike reset, https://jasonkelly.com/resources/strategies/ . The exact timing and equity-bond accounting still require versioned integration.
+
+## Wealtharr owner-defined variant — decisions 2026-10-15 (supersedes earlier alternatives)
+**This variant is a Wealtharr-customized implementation, not a certified reproduction of current Kelly Letter rules.** The owner explicitly selects:
+1. 30 Down benchmark: **USD TQQQ quarterly closing price**, not SPY. Two skipped sell signals (historical/community evidence). The 30% trigger uses preceding eight quarterly closes.
+2. Underfunded quarter anchor: **ACTUAL confirmed post-fill stock value × 1.09** next review, **not** previous desired target. This is the owner's recollection of Kelly's methodology, *not independently re-verified*. Keep the in-progress review's signal target frozen until confirmed fills finish and the review is closed; then anchor the next review to actual holdings.
+3. **Last trading day of each calendar quarter**, rather than newsletter dates. Use a verified exchange trading calendar and exact authenticated price history, refusing stale/incomplete data. Optional Kelly Letter date override can be introduced later as a separate version; do not silently switch schedule after a strategy has started.
+4. 3Sig and 6Sig may use clearly labelled Wealtharr custom assumptions based on public sources. Do not claim source-certified proprietary methods.
+5. Income Sig will be a configurable Wealtharr model; do not advertise undocumented inner weights as Jason Kelly originals.
+Existing PUBLISHED 9Sig versions remain immutable. Research engine `NINE_SIG_COMMUNITY` now accepts `ruleVersion: WEALTHARR_OWNER_2026_V1`. This is **not yet a production-approved, customer-enabled strategy** and cannot bypass the method completeness or VERIFIED EXACT market mapping requirements. The trading engine must also complete two-sleeve bond fund order management before release.

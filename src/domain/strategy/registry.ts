@@ -2,6 +2,7 @@ import type { StrategyEngine } from "./types";
 import { valueTargetEngine } from "./value-target";
 import { fixedAllocationEngine } from "./fixed-allocation";
 import { momentumRotationEngine } from "./momentum-rotation";
+import { nineSigCommunityEngine } from "./9sig-community-engine";
 import { tacticalAllocationEngine } from "./tactical-engine";
 import { twoFundsEngine } from "./two-funds-engine";
 import {trinityEngine} from "./trinity-engine";
@@ -10,6 +11,7 @@ const engines = new Map<string, StrategyEngine>([
   [valueTargetEngine.key, valueTargetEngine],
   [fixedAllocationEngine.key, fixedAllocationEngine],
   [momentumRotationEngine.key, momentumRotationEngine],
+  [nineSigCommunityEngine.key, nineSigCommunityEngine],
   [tacticalAllocationEngine.key,tacticalAllocationEngine],
   [twoFundsEngine.key, twoFundsEngine],
   [trinityEngine.key, trinityEngine]
