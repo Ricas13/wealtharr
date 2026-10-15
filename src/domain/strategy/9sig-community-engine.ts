@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type {StrategyEngine} from "./types";
 import {assess2026Community9Sig30Down} from "./9sig-community-rules";
+import {verifiedSigQuarterCloses} from "./sig-quarter-closes";
 
 /** Research-only executable signal engine. Never approved for customer order issuance. */
 export const nineSigCommunityEngine:StrategyEngine={
@@ -19,8 +20,11 @@ export const nineSigCommunityEngine:StrategyEngine={
     if(!ctx.reviewDue)return {actionType:"NO_ACTION",title:"Not due",instruction:"Next quarterly review",
       explanation:[],nextState:ctx.state,confidence:"HIGH",dueAt:ctx.nextReviewAt};
     const h=ctx.trustedHistory?.find(s=>s.exposure==="NASDAQ_100_3X_LONG");
-    if(!h||h.points.length<9)return fail("Eight prior and one current trusted quarterly closes required");
-    const closes=h.points.slice(-9).map(p=>p.adjustedClose);
+    let closes:Decimal[];
+    try{
+      if(!Array.isArray(ctx.config.referenceCloseDates))throw new Error("MISSING_SCHEDULE");
+      closes=verifiedSigQuarterCloses(h,ctx.config.referenceCloseDates.map(String),ctx.baseCurrency);
+    }catch{return fail("Exact verified quarterly reference dates and prices are required");}
     const quarter=Number(ctx.state.sigQuarterIndex);
     if(!Number.isInteger(quarter)||quarter<8)return fail("Verified quarter index required");
     const exposure=ctx.exposures.filter(p=>p.economicExposure==="NASDAQ_100_3X_LONG")
