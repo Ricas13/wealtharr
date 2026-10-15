@@ -51,6 +51,14 @@ describe("nonpublished 9Sig community engine integration",()=>{
     expect(result.actionType).toBe("DATA_REQUIRED");
     expect(result.instruction).toContain("reference dates");
   });
+  it("uses confirmed post-fill stock, not the previous unfilled target, for next review",()=>{
+    const result=engine.calculate({...ctx,state:{sigConfirmedAnchor:"5462.76",sigQuarterIndex:8},
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D("6009.036")}],
+      confirmedQuarterTrades:{buyGross:D("0"),sellGross:D("0"),feeTotal:D("0"),reserveBeforeTrades:D("2109.40")}});
+    expect(result.actionType).toBe("SELL");
+    expect(result.amount?.toFixed(2)).toBe("54.63");
+    expect(result.nextState.reviewTargetValue).toBe("5954.4084");
+  });
   it("rejects unverified price histories",()=>{
     const result=engine.calculate({...ctx,trustedHistory:[]});
     expect(result.actionType).toBe("DATA_REQUIRED");
