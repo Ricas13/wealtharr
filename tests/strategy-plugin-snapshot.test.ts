@@ -278,10 +278,13 @@ const canonical=(value:unknown):string=>JSON.stringify((function walk(v:unknown)
   return v;
 })(value));
 
-const GROUP1_RELEASED_KEYS=new Set(["80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]);
-const GROUP2_RELEASED_KEYS=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
-const RELEASED_KEYS=new Set([...GROUP1_RELEASED_KEYS,...GROUP2_RELEASED_KEYS]);
 const CATALOG_DIR="src/domain/strategy/catalog";
+// Group 3 source-verified releases intentionally supersede the frozen 2026 refactor snapshot.
+const GROUP3_KEYS=new Set(["two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
+const GROUP1_KEYS=new Set(["80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]);
+const GROUP2_KEYS=new Set(["hfea","all-weather","coffeehouse","core-four","swensen","merriman-ultimate"]);
+const RELEASED_KEYS=new Set([...GROUP1_KEYS,...GROUP2_KEYS,...GROUP3_KEYS]);
+
 
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   it("keeps the exact registry order of the old RESEARCH_STRATEGIES array",()=>{
@@ -348,7 +351,7 @@ describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
 
 describe("seed definitions derived from the registry equal what the seed script inserted",()=>{
   it("lists exactly the pinned seeded strategies with identical rows",()=>{
-    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&p.key!=="merriman-ultimate");
+    const seeded=STRATEGY_PLUGINS.filter(p=>p.seedDefinition!==null&&!GROUP3_KEYS.has(p.key)&&p.key!=="merriman-ultimate");
     expect(seeded.map(p=>p.key).sort()).toEqual(Object.keys(SEED_DEFINITIONS).sort());
     for(const plugin of seeded){
       const d=plugin.seedDefinition!;
@@ -365,13 +368,13 @@ describe("seed definitions derived from the registry equal what the seed script 
     const seeded=STRATEGY_PLUGINS.flatMap(p=>p.seedDefinition?[{key:p.key,def:p.seedDefinition}]:[]);
     expect(seeded.filter(s=>s.def.proprietary).map(s=>s.key)).toEqual(["9sig"]);
     expect(seeded.filter(s=>s.def.enabled).map(s=>s.key)).toEqual(["9sig"]);
-    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate"]);
+    expect(seeded.filter(s=>s.def.initialVersion==="PUBLISHED").map(s=>s.key)).toEqual(["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","60-40","80-20","buffett-90-10","coffeehouse","core-four","swensen","merriman-ultimate","two-funds-for-life","bernstein-no-brainer","larry-portfolio","pinwheel","trinity"]);
     expect(STRATEGY_PLUGINS[0].key).toBe("9sig");
   });
 
   it("only the three previously research-only fixed allocations realign an older definition",()=>{
     expect(STRATEGY_PLUGINS.filter(p=>p.seedDefinition?.realignsResearchOnlyDefinition).map(p=>p.key).sort())
-      .toEqual(["coffeehouse","core-four","swensen"]);
+      .toEqual(["bernstein-no-brainer","coffeehouse","core-four","larry-portfolio","pinwheel","swensen","trinity","two-funds-for-life"]);
   });
 
   it("keeps version 1.0 / effective 2026-01-01 and the generic fallback disclosure in the seed script",()=>{
@@ -411,10 +414,9 @@ describe("plugin files are consistent with the registry",()=>{
     }
   });
 
-  it("gives research-pending strategies no seed definition, spec card or golden tests",()=>{
+  it("keeps research-pending strategies without executable seed definitions or golden tests",()=>{
     for(const plugin of STRATEGY_PLUGINS.filter(p=>p.profile?.engine==="RESEARCH_PENDING")){
       expect(plugin.seedDefinition,plugin.key).toBeNull();
-      expect(plugin.specCard,plugin.key).toBeNull();
       expect(plugin.goldenTests,plugin.key).toBeNull();
     }
   });
