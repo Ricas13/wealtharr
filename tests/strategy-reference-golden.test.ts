@@ -42,12 +42,12 @@ describe("independently worked portfolio allocation golden cases",()=>{
  it("Golden Butterfly US original is five £2k sleeves; sell large cap to buy small value",()=>{
   expect(fresh("golden-butterfly")).toEqual(Array(5).fill("2000.00"));
   expect(plan("golden-butterfly",["3000","1000","2000","2000","2000"])).toEqual([
-   ["SELL","US_LARGE_CAP","1000.00"],["BUY","US_SMALL_CAP_VALUE","1000.00"]
+   ["SELL","G1_US_LARGE_BLEND","1000.00"],["BUY","G1_US_SMALL_VALUE","1000.00"]
   ]);
  });
  it("Permanent Portfolio has four equal sleeves including bills, not intermediate Treasuries",()=>{
   expect(fresh("permanent-portfolio")).toEqual(Array(4).fill("2500.00"));
-  expect(allocation("permanent-portfolio").map(a=>a.exposure)).toContain("CASH_BILLS");
+  expect(allocation("permanent-portfolio").map(a=>a.exposure)).toContain("G1_US_TREASURY_BILLS");
  });
  it("Coffeehouse US reference fixes six 10% sleeves and 40% intermediate Treasury",()=>{
   expect(fresh("coffeehouse")).toEqual(["1000.00","1000.00","1000.00","1000.00","1000.00","4000.00","1000.00"]);
@@ -155,7 +155,7 @@ describe("independently worked portfolio allocation golden cases",()=>{
   ]);
   expect(fresh("buffett-90-10")).toEqual(["9000.00","1000.00"]);
   expect(plan("buffett-90-10",["9500","500"])).toEqual([
-   ["SELL","US_LARGE_CAP","500.00"],["BUY","SHORT_TREASURY","500.00"]
+   ["SELL","G1_SP500_INDEX","500.00"],["BUY","G1_US_SHORT_GOVERNMENT","500.00"]
   ]);
  });
 });

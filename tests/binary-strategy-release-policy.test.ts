@@ -14,7 +14,7 @@ describe("binary production strategy release policy",()=>{
     // 60-40 was listed here while its method was incomplete; it is now the one complete method
     // (see the case below). A still-incomplete fixed allocation takes its place.
     expect(()=>assertReleaseMethodComplete("hfea")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
-    expect(()=>assertReleaseMethodComplete("three-fund")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
+    expect(()=>assertReleaseMethodComplete("all-weather")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
     expect(()=>assertReleaseMethodComplete("unknown-strategy")).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
   it("accepts only the complete Global 60/40 (GBP) method on a live host, and still fails closed for the rest",()=>{
@@ -22,9 +22,8 @@ describe("binary production strategy release policy",()=>{
     vi.stubEnv("CI","false");
     vi.stubEnv("GITHUB_ACTIONS","false");
     vi.stubEnv("DATABASE_URL","postgresql://production@private-db:5432/wealtharr");
-    expect(()=>assertReleaseMethodComplete("60-40")).not.toThrow();
-    for(const key of ["9sig","hfea","golden-butterfly","permanent-portfolio","all-weather","three-fund","80-20",
-      "buffett-90-10","coffeehouse","core-four","swensen","dual-momentum","paa","vaa","3sig","6sig","nope"])
+    for(const key of ["60-40","80-20","three-fund","golden-butterfly","permanent-portfolio","buffett-90-10"]) expect(()=>assertReleaseMethodComplete(key)).not.toThrow();
+    for(const key of ["9sig","hfea","all-weather","coffeehouse","core-four","swensen","dual-momentum","paa","vaa","3sig","6sig","nope"])
       expect(()=>assertReleaseMethodComplete(key),key).toThrow("STRATEGY_METHOD_NOT_COMPLETE");
   });
   it("CI exception is allowed only on the exact disposable localhost test database",()=>{
