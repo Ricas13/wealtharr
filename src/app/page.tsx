@@ -89,7 +89,7 @@ async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
       if(plugin.key.toLowerCase()==="9sig")return [];
       const release=releaseByKey.get(plugin.key);
       const canonical=curatedRelease(plugin);
-      if(!release||!canonical?.config||!["VALUE_TARGET","FIXED_ALLOCATION"].includes(release.engine_key))return [];
+      if(!release||!canonical?.config||!["VALUE_TARGET","FIXED_ALLOCATION","QUARTERLY_SIGNAL_TARGET"].includes(release.engine_key))return [];
       try{
         assertCuratedRules(plugin.key,String(release.engine_key),release.config,release.input_schema);
         // Public discovery targets a GB ISA account in GBP only (stated in the card category); no
