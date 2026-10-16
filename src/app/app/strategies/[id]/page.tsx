@@ -324,11 +324,12 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
     </section>:<section className={"glass strategy-focus "+(isHealthy?"healthy":"attention")}>
       <div className="strategy-focus-main">
         <div className="focus-topline">
-          <span className="soft-label">{isActive?"What to do now":"Strategy status"}</span>
+          <span className="soft-label">{isActive?"Your rule-based calculation":"Strategy status"}</span>
           {action?.confidence&&<span className={"pill "+(action.confidence==="HIGH"?"good":"warn")}>{action.confidence} confidence</span>}
         </div>
         <h2>{actionReady?action.title:isActive?"Nothing to do right now.":"Strategy "+String(s.status).toLowerCase()}</h2>
         <p>{actionReady?action.instruction:isActive?"We will show your next action here as soon as the strategy needs you.":"Resume this strategy when you want new actions to be calculated."}</p>
+        {actionReady&&<p className="help"><strong>Research calculation only — not personal financial advice.</strong> Verify prices, account eligibility and the methodology before deciding whether to trade. <Link href="/research-disclaimer">Read the risks and limitations.</Link></p>}
         {actionReady&&accountOptions.length>1&&action.account_name&&<div className="action-account-hint"><WalletCards size={14}/><span>Use <strong>{String(action.account_name)}</strong>{action.account_wrapper?" · "+String(action.account_wrapper):""}</span></div>}
         {actionReady&&plainReason&&<div className="plain-reason"><Sparkles size={14}/><span>{plainReason}</span></div>}
         {action&&isActive&&action.action_type!=="DATA_REQUIRED"&&action.action_type!=="NO_ACTION"&&<div className="focus-action"><ExecuteAction action={{id:String(action.id),actionType:String(action.action_type)}} currency={String(action.currency??s.currency)}/></div>}
