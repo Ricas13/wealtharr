@@ -3,8 +3,8 @@ test("interactive observatory reacts to keyboard, cash and target without showin
  await page.goto("/");
  const instrument=page.getByRole("region",{name:/THE ALLOCATION OBSERVATORY/i});
  await expect(instrument).toBeVisible();
- await expect(instrument.getByText("−£100")).toBeVisible();
- await expect(instrument.getByText("+£600")).toBeVisible();
+ await expect(instrument.locator(".wm-obs-equation strong").nth(0)).toHaveText(/−.*100/);
+ await expect(instrument.locator(".wm-obs-equation strong").nth(1)).toHaveText(/\\+.*600/);
  const cash=page.getByRole("slider",{name:/ADD CASH/i});
  const target=page.getByRole("slider",{name:/EQUITY TARGET/i});
  await expect(cash).toHaveValue("500");
@@ -12,11 +12,11 @@ test("interactive observatory reacts to keyboard, cash and target without showin
  await target.focus();
  await page.keyboard.press("ArrowRight");
  await expect(target).toHaveValue("65");
- await expect(instrument.getByText("+£425")).toBeVisible();
- await expect(instrument.getByText("+£75")).toBeVisible();
+ await expect(instrument.locator(".wm-obs-equation strong").nth(0)).toHaveText(/\\+.*425/);
+ await expect(instrument.locator(".wm-obs-equation strong").nth(1)).toHaveText(/\\+.*75/);
  await cash.fill("1000");
- await expect(instrument.getByText("+£750")).toBeVisible();
- await expect(instrument.getByText("+£250")).toBeVisible();
+ await expect(instrument.locator(".wm-obs-equation strong").nth(0)).toHaveText(/\\+.*750/);
+ await expect(instrument.locator(".wm-obs-equation strong").nth(1)).toHaveText(/\\+.*250/);
  await instrument.getByRole("button",{name:"30 days"}).click();
  await expect(instrument.getByText("15 Nov 2026")).toBeVisible();
  await instrument.getByRole("button",{name:"365 days"}).click();
@@ -26,7 +26,7 @@ test("interactive observatory reacts to keyboard, cash and target without showin
 test("direct orbit dragging updates the same accessible slider",async({page})=>{
  await page.goto("/");
  const svg=page.locator(".wm-obs-visual svg");
- const rect=await svg.boundingBox();
+ await svg.scrollIntoViewIfNeeded();\n const rect=await svg.boundingBox();
  expect(rect).not.toBeNull();
  const point=(percent:number,radius:number)=>{const theta=(percent/100*360-90)*Math.PI/180;return {
   x:rect!.x+(280+Math.cos(theta)*radius)*rect!.width/560,
@@ -49,6 +49,6 @@ test("instrument remains usable on mobile and with reduced motion",async({page})
  expect(rect!.x+rect!.width).toBeLessThanOrEqual((page.viewportSize()?.width??1280)+1);
  const slider=page.getByRole("slider",{name:/ADD CASH/i});
  await slider.fill("0");
- await expect(page.getByText("Portfolio + cash",{exact:false}).first()).toBeVisible();
- await expect(region.getByText("£10,000")).toBeVisible();
+ await expect(region.locator(".wm-obs-svg-eyebrow")).toHaveText("PORTFOLIO + CASH");
+ await expect(region.locator(".wm-obs-svg-value")).toHaveText(/10[.,]000/);
 });
