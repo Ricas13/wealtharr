@@ -247,6 +247,39 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(await row()).toMatchObject({slug:before.slug,status:before.status});
   });
 
+  it("never assigns an entitlement from one item of an ambiguous or unsupported Stripe subscription",async()=>{
+    const subB="sub_lc_b_"+run;
+    const before=await row();
+    const invalid=[
+      {name:"two active prices",code:"STRIPE_SUBSCRIPTION_ITEM_COUNT_INVALID",
+        mutate:(items:Record<string,unknown>[])=>{items.push({price:{id:PRICES.investorMonthly,recurring:{interval:"month"}}});}},
+      {name:"double charged quantity",code:"STRIPE_SUBSCRIPTION_QUANTITY_INVALID",
+        mutate:(items:Record<string,unknown>[])=>{items[0].quantity=2;}},
+      {name:"weekly recurring price",code:"STRIPE_SUBSCRIPTION_INTERVAL_UNSUPPORTED",
+        mutate:(items:Record<string,unknown>[])=>{
+          const price=items[0].price as {recurring:Record<string,unknown>};
+          price.recurring.interval="week";
+        }},
+      {name:"three-month price",code:"STRIPE_SUBSCRIPTION_INTERVAL_UNSUPPORTED",
+        mutate:(items:Record<string,unknown>[])=>{
+          const price=items[0].price as {recurring:Record<string,unknown>};
+          price.recurring.interval_count=3;
+        }}
+    ];
+    for(const test of invalid){
+      const current=subscription(subB,userId,{price:PRICES.proAnnual,interval:"year"});
+      test.mutate((current.items as {data:Record<string,unknown>[]}).data);
+      const reply=await deliver("customer.subscription.updated",current);
+      expect(reply,test.name).toMatchObject({status:500,errorCode:test.code});
+      const unchanged=await row();
+      expect(unchanged,test.name).toMatchObject({
+        slug:before.slug,status:before.status,cadence:before.cadence,
+        stripe_subscription_id:before.stripe_subscription_id
+      });
+      expect(unchanged.current_period_end,test.name).toEqual(before.current_period_end);
+    }
+  });
+
   it("refuses an event whose metadata names a different owner",async()=>{
     const subB="sub_lc_b_"+run;
     const before=await row();
