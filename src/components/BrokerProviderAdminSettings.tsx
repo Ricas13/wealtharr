@@ -41,7 +41,7 @@ export function BrokerProviderAdminSettings({initial}:Props){
     <small>After this time, previous verification is marked stale. This is not an automatic polling schedule.</small>
    </label>
   </div>
-  <p className="help">Trading 212's official API is in beta and currently supports Invest and Stocks ISA. The key is account-scoped even though Wealtharr displays only confirmed strategy trades. Verify provider scope before enabling live accounts.</p>
+  <p className="help">Trading 212&apos;s official API is in beta and currently supports Invest and Stocks ISA. The key is account-scoped even though Wealtharr displays only confirmed strategy trades. Verify provider scope before enabling live accounts.</p>
   <button className="button primary" type="submit" disabled={busy||maxPages<1||maxPages>6||interval<5||interval>1440}>
    {busy?"Saving…":"Save broker settings"}
   </button>
