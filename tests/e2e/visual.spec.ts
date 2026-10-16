@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 
-// Landing baselines reviewed 2026-10-15 from PR #113 latest CI trace PNG captures (390×7116 and 1280×4940), with identical raster digests across retry captures.
+// Visual baselines reviewed 2026-10-16 from PR #134 CI run 38886542313 trace PNG attachments.\n// Inspected desktop landing (1280×5086), mobile landing (390×7452), desktop demo (1280×1630) and\n// mobile demo (390×2980): the research-only notice is visible, dark landing colours align and mobile\n// footer links wrap without clipping. Two mobile demo rasters differ only in settled chart text.\n// Do not accept arbitrary/new digests without screenshot inspection; strict full-page visual check remains.\n// Previous landing baselines were reviewed 2026-10-15 from PR #113.
 // Intentional differences: animated dashboard screenshot at reduced-motion final frame, constantly
 // populated strategy carousel directly below hero, removed trust strip, and published-price fallback.\n// Reviewed 2026-10-08 against the rendered Wealtharr pages (accessible mobile menu, demo chart
 // settled). Digests are those produced by CI's renderer (Playwright Chromium 153, ubuntu-latest) and
@@ -12,16 +12,15 @@ const expected:Record<string,Record<string,string | string[]>>={
   // Two equivalent mobile-demo renders were visually reviewed from the CI retry traces; tiny
   // subpixel raster differences affect only text/chart labels, not layout or user-visible content.
   "mobile-chromium":{
-    landing:"09dc73250fe633fed6a5afd0fd37b5128dfbc02e54ff0ca3afe2bedac84bc988",
-    demo:["5c2d458e3777c7e31fdbd1ef3f923b872f0a67f10a8f32beafb5bb1b8a349df9","9f0a4b76fdef0f9d5dd38544e85667e3725b6a928a8ac71484f9f20a804da288"]
+    landing:"ad93b987cc91420c9bc3860e436e756b892bd550f3fec66e7f2cfa5befcbbf0f",
+    demo:["21de51ab1bc02ebbc12d404cf3c9e79389b417b929850cfe695e6363fff90f18","c0507be37c31e90542b665ce564c324219bf73eeb476e6d71e65e58426124a80"]
   },
   "desktop-chromium":{
-    landing:"d3fe7741840271514614d81f9dd3f4c1d39f01b7898fb5d28b8d1e81bc210e33",
+    landing:"eda61dfd8e7e368a81c21ca8922100fd442caefc1aefc0883110d8222ea9f352",
     // 2026-10-09: the second settled raster was inspected from the GitHub trace PNG
     // (1280x1442). Header, value cards, next-action panel, chart, legends and
     // footer cards are intact; differences are rendering-only, not missing UI.
-    demo:["e33b2064ae861de5277a378e9d390367f9ecc1aba0b326c50b2f99791b57d3a8",
-      "c407471ad87c3e1c996a9cd55e3343b4898cc90a3546c7e23a90e5c99c3e411d"]
+    demo:"d8fafda68f503f12850f22395eecd965cd9638fefacb691dc701d5545b406da5"
   }
 };
 
