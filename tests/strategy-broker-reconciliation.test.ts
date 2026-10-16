@@ -28,6 +28,11 @@ describe("strategy-scoped Trading 212 verification",()=>{
    {id:"101",side:"BUY",status:"FILLED",filledQuantity:5}]);
   expect(x[0]?.status).toBe("AMBIGUOUS");
  });
+ it("never certifies a partially filled order as settled even when interim quantity equals the ledger",()=>{
+  const result=reconcileConfirmedOrders([link("101")],[{id:"101",side:"BUY",status:"PARTIALLY_FILLED",filledQuantity:5}]);
+  expect(result[0]?.status).toBe("UNSETTLED");
+  expect(result[0]?.reason).toContain("partial fills");
+ });
  it("does not treat an unfilled order as a confirmed trade",()=>{
   expect(reconcileConfirmedOrders([link("101")],[{id:"101",side:"BUY",status:"CANCELLED",filledQuantity:0}])[0]?.status).toBe("UNSETTLED");
  });

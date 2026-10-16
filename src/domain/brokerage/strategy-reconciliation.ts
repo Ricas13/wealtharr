@@ -33,9 +33,11 @@ export function reconcileConfirmedOrders(links:readonly ConfirmedLink[],orders:r
     if(missingOrder)return {...base,status:"MISSING" as const,
       reason:"Linked order missing from complete provider history. Reconciliation required.",observedQuantity:null};
     const order=byId.get(link.externalTradeId)!;
-    if(order.status!=="FILLED"&&order.status!=="PARTIALLY_FILLED")
+    // An open partially-filled order may execute further shares after this review.
+    // Never certify it as a settled strategy trade even if quantity currently matches.
+    if(order.status!=="FILLED")
       return {...base,status:"UNSETTLED" as const,
-        reason:"Provider does not confirm the order as filled.",observedQuantity:null};
+        reason:"Provider has not confirmed the order fully settled; partial fills can change.",observedQuantity:null};
     if(order.side!=="BUY"&&order.side!=="SELL")
       return {...base,status:"MISMATCH" as const,
         reason:"Provider order side is unknown.",observedQuantity:null};

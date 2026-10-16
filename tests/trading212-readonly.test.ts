@@ -33,6 +33,26 @@ describe("Trading212 read-only transport boundary",()=>{
    const page=vi.fn(async()=>({ok:true,json:async()=>({items:[{id:1}],nextPagePath:"/api/v0/equity/history/orders?limit=50&cursor=2"})})) as unknown as typeof fetch;
    await expect(trading212ReadHistory({mode:"demo",resource:"orders",credentials:{key:"a",secret:"b"},fetcher:page,maxPages:1})).rejects.toThrow("BROKER_HISTORY_TRUNCATED");
  });
+ it("runs a server-supplied per-account quota guard before EVERY provider history page",async()=>{
+   const pages:number[]=[];
+   let count=0;
+   const fetcher=vi.fn(async()=>({ok:true,json:async()=>{
+     count++;
+     return count===1?{items:[{id:1}],nextPagePath:"/api/v0/equity/history/orders?limit=50&cursor=100"}:
+       {items:[{id:2}],nextPagePath:null};
+   }})) as unknown as typeof fetch;
+   const result=await trading212ReadHistory({mode:"demo",resource:"orders",credentials:{key:"a",secret:"b"},fetcher,
+     beforePage:async page=>{pages.push(page);}});
+   expect(result).toEqual([{id:1},{id:2}]);
+   expect(pages).toEqual([1,2]);
+   expect(fetcher).toHaveBeenCalledTimes(2);
+ });
+ it("fails closed before fetching an unbudgeted second page",async()=>{
+   const fetcher=vi.fn(async()=>({ok:true,json:async()=>({items:[{id:1}],nextPagePath:"/api/v0/equity/history/orders?limit=50&cursor=100"})})) as unknown as typeof fetch;
+   await expect(trading212ReadHistory({mode:"demo",resource:"orders",credentials:{key:"a",secret:"b"},fetcher,
+     beforePage:async page=>{if(page===2)throw new Error("BROKER_RATE_LIMIT");}})).rejects.toThrow("BROKER_RATE_LIMIT");
+   expect(fetcher).toHaveBeenCalledTimes(1);
+ });
  it("enforces response-size limits and authentication errors",async()=>{
    const invalid=vi.fn(async()=>({ok:true,json:async()=>({items:[{id:1}],nextPagePath:"https://evil.com/"})})) as unknown as typeof fetch;
    await expect(trading212ReadPage({mode:"demo",resource:"orders",credentials:{key:"a",secret:"b"},fetcher:invalid})).rejects.toThrow("BROKER_PATH_UNSUPPORTED");
