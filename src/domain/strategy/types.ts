@@ -25,6 +25,10 @@ export type EngineContext = {
   contributionsSinceReview: Decimal;
   /** Withdrawals since the last completed review (positive amount); read only by engines that use it. */
   withdrawalsSinceReview?: Decimal;
+  /** User-selected estimated flat fee per executed trade, in the account currency.
+   * Only used for practical multi-leg funding: NEVER a substitute for the actual broker fee in the ledger.
+   */
+  executionFlatFee?: Decimal;
   state: Record<string, unknown>;
   config: Record<string, unknown>;
   settings: Record<string, unknown>;
