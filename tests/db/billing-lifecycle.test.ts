@@ -188,6 +188,30 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect((await row()).stripe_subscription_id).toBe(subB);
   });
 
+  it("allows only one stale webhook lease claimant during concurrent Stripe redeliveries",async()=>{
+    const duplicate="sub_lc_stale_race_"+run;
+    const eventId="evt_lc_"+run+"_stale_race";
+    // An interrupted handler left this same Stripe event in PROCESSING beyond its lease.
+    await sql!.unsafe(
+      "INSERT INTO billing_webhook_events (event_id,event_type,status,created_at) "+
+      "VALUES ($1,'customer.subscription.created','PROCESSING',now()-interval '10 minutes') "+
+      "ON CONFLICT (event_id) DO UPDATE SET status='PROCESSING',created_at=now()-interval '10 minutes'",
+      [eventId]
+    );
+    const incoming=subscription(duplicate,userId);
+    // All callers have the same signed event ID. None may execute the cancellation twice.
+    const replies=await Promise.all(Array.from({length:6},()=>
+      deliver("customer.subscription.created",incoming,{eventId})
+    ));
+    expect(replies.some(reply=>reply.status===200)).toBe(true);
+    expect(replies.every(reply=>reply.status===200||reply.status===503)).toBe(true);
+    expect(stripeState.cancelled.filter(id=>id===duplicate)).toHaveLength(1);
+    const [claimed]=await sql!.unsafe(
+      "SELECT status FROM billing_webhook_events WHERE event_id=$1",[eventId]
+    );
+    expect(claimed.status).toBe("SUCCESS");
+  });
+
   it("ignores a replayed event",async()=>{
     const subB="sub_lc_b_"+run;
     const before=await row();
