@@ -2,9 +2,10 @@ import {describe,expect,it} from "vitest";
 import {readFileSync} from "node:fs";
 
 const home=readFileSync("src/app/page.tsx","utf8");
-const hero=readFileSync("src/components/HeroStrategyPreview.tsx","utf8");
+const hero=readFileSync("src/components/AllocationObservatory.tsx","utf8");
 const interaction=readFileSync("src/components/PublicLandingInteractivity.tsx","utf8");
 const css=readFileSync("src/app/marketing-home.css","utf8");
+const observatoryCss=readFileSync("src/app/marketing-observatory.css","utf8");
 
 describe("marketing page animated strategy story",()=>{
  it("always fills the strategy carousel with clearly educational examples when nothing is released",()=>{
@@ -16,19 +17,17 @@ describe("marketing page animated strategy story",()=>{
   expect(interaction).toContain("requestAnimationFrame(tick)");
   expect(interaction).toContain("onMouseEnter={()=>held.current=true}");
  });
- it("animates an explicitly illustrative portfolio value alongside its SVG clip reveal",()=>{
-  expect(home).toContain("<HeroStrategyPreview/>");
-  expect(hero).toContain("ILLUSTRATIVE DATA");
-  expect(hero).toContain("MarketingHeroChart");
-  expect(hero).toContain("setProgress(1-Math.pow(1-t,3))");
-  expect(hero).toContain("revealProgress={progress}");
-  const chart=readFileSync("src/components/MarketingHeroChart.tsx","utf8");
-  expect(chart).toContain("width={400*revealProgress}");
-  expect(chart).toContain("fmt.format(visibleCurrent)");
-  expect(chart).toContain("Fictional example · not investment performance");
-  expect(hero).toContain("START+(END-START)*progress");
-  expect(hero).toContain("prefers-reduced-motion: reduce");
-  expect(hero).toContain("IntersectionObserver");
+ it("replaces the fictional line reveal with truthful and accessible allocation geometry",()=>{
+  expect(home).toContain("<AllocationObservatory/>");
+  expect(home).not.toContain("<HeroStrategyPreview/>");
+  expect(hero).toContain("calculateInstrument(contribution,equity)");
+  expect(hero).toContain("strokeDasharray");
+  expect(hero).toContain("onPointerDown=");
+  expect(hero).toContain('type="range"');
+  expect(hero).toContain("Illustrative");
+  expect(hero).toContain("No market prices, returns, trades or actual strategy schedules");
+  expect(observatoryCss).toContain("prefers-reduced-motion:reduce");
+  expect(observatoryCss).toContain(".wm-hero.wm-hero-observatory");
  });
  it("removes the redundant reassurance banner and compresses the strategy display",()=>{
   expect(home).not.toContain("Elegant where it matters");
