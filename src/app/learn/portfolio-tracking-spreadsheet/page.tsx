@@ -38,11 +38,11 @@ export default function SpreadsheetPage(){
    individual strategies and external services remain subject to verified configuration.</p>
   <h2>A practical checking list</h2>
   <ol>
-   <li>Confirm every instrument's complete identity, exchange listing and trading currency.</li>
+   <li>Confirm every instrument&apos;s complete identity, exchange listing and trading currency.</li>
    <li>Separate the market quote date from the actual execution timestamp.</li>
    <li>Use confirmed quantities and fees to reconcile remaining cash.</li>
-   <li>Apply the selected method's review calendar rather than assuming all methods rebalance monthly.</li>
-   <li>Check the result against your broker's statement before recording a transaction as complete.</li>
+   <li>Apply the selected method&apos;s review calendar rather than assuming all methods rebalance monthly.</li>
+   <li>Check the result against your broker&apos;s statement before recording a transaction as complete.</li>
   </ol>
   <p><Link href="/tools/rebalance-calculator">Try the free portfolio rebalancing calculator</Link> for illustrative
    target-weight arithmetic, or <Link href="/learn/portfolio-rebalancing">read the worked guide</Link> first.</p>
