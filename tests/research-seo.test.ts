@@ -54,6 +54,7 @@ describe("indexable educational content and investment risk honesty",()=>{
   expect(disclosure).toContain("never places trades");
   expect(disclosure).toContain('href="/research-disclaimer"');
   expect(layout).toContain("<ResearchDisclaimer/>");
+  expect(file("src/app/app/strategies/[id]/page.tsx")).toContain("Research calculation only — not personal financial advice.");
   expect(file("src/app/research-disclaimer/page.tsx")).toContain("This disclosure does not override applicable law or regulation.");
   expect(layout).not.toContain('alternates:{canonical:"/"}');
   expect(file("src/app/page.tsx")).toContain('alternates:{canonical:"/"}');
