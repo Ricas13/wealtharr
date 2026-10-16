@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type {Metadata} from "next";
 import {headers} from "next/headers";
 import {currencyForVisitorCountry,type LandingCurrency} from "@/domain/visitor-currency";
 import {HeroStrategyPreview} from "@/components/HeroStrategyPreview";
@@ -15,6 +16,7 @@ import {LandingCurrencyProvider,PublicStrategyRail,PublicPricingCards,type Publi
 import "./marketing-home.css";
 
 export const dynamic="force-dynamic";
+export const metadata:Metadata={alternates:{canonical:"/"}};
 type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;homepage_highlights:unknown;monthly_price_minor:number|null;annual_price_minor:number|null;prices:unknown};
 type ReleaseRow={key:string;engine_key:string;config:Record<string,unknown>;input_schema:unknown;supported_regions:unknown;supported_wrappers:unknown};
 function decodeEntitlements(raw:unknown):{features:string[];notificationChannels:string[]}{
@@ -200,7 +202,7 @@ export default async function HomePage(){
       <Link href="/register" className="wm-button main">Get started ↗</Link>
     </div></section>
     <footer className="wm-footer"><div className="wm-shell">
-      <strong>{brand.toLowerCase()}.</strong><div><Link href="/features">Features</Link><Link href="/strategies">Strategies</Link><Link href="/pricing">Pricing</Link><Link href="/faq">FAQ</Link></div>
+      <strong>{brand.toLowerCase()}.</strong><div><Link href="/features">Features</Link><Link href="/strategies">Strategies</Link><Link href="/pricing">Pricing</Link><Link href="/faq">FAQ</Link><Link href="/learn">Learning guides</Link><Link href="/research-disclaimer">Research disclaimer</Link></div>
       <p>Research and portfolio tracking, not a brokerage or investment adviser. Capital is at risk; past performance is not a guide to future results. Illustrative charts do not represent actual performance.</p>
     </div></footer>
   </main></LandingCurrencyProvider>;
