@@ -32,7 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
   description:"Track self-selected investment strategies, portfolio prices, scheduled reviews, and rules-based rebalancing. Transparent calculations and user-confirmed trades.",
   openGraph:{type:"website",locale:"en_GB",siteName:brand,url:"/",title:brand+" | Rules-Based Portfolio Tracker",
     description:"Track portfolio strategies, scheduled reviews and transparent rebalance calculations."},
-  twitter:{card:"summary",title:brand+" | Rules-Based Portfolio Tracker",description:"Keep track of your investment strategies and review dates."},
+  twitter:{card:"summary_large_image",title:brand+" | Rules-Based Portfolio Tracker",description:"Keep track of your investment strategies and review dates."},
   robots:publicIndexingEnabled(process.env)?{index:true,follow:true}:{index:false,follow:false,noarchive:true},
   verification:process.env.GOOGLE_SITE_VERIFICATION?{google:process.env.GOOGLE_SITE_VERIFICATION}:undefined,
   category:"finance",
