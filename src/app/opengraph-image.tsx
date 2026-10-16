@@ -16,8 +16,8 @@ export default function OpenGraphImage(){
     <div style={{fontSize:39,fontWeight:700,letterSpacing:-1}}>Wealtharr</div>
    </div>
    <div style={{display:"flex",flexDirection:"column",gap:20}}>
-    <div style={{fontSize:63,fontWeight:800,lineHeight:1.06,letterSpacing:-2}}>
-     Track your strategy.<br/>Know your next review.
+    <div style={{display:"flex",flexDirection:"column",fontSize:63,fontWeight:800,lineHeight:1.06,letterSpacing:-2}}>
+     <span>Track your strategy.</span><span>Know your next review.</span>
     </div>
     <div style={{fontSize:27,color:"#b5d8c8"}}>
      Portfolio calculations · Research tools · Self-directed investing
