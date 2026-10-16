@@ -3,7 +3,7 @@ import type {EngineContext,ExplanationRow,ProposedAction,StrategyEngine} from ".
 import {assess2026Community9Sig30Down,historical9SigSpikeReset,type Community9SigProtection} from "./9sig-community-rules";
 import {assessWealtharr9SigDailySpike} from "./sig-owner-conventions";
 import {verifiedSigQuarterCloses} from "./sig-quarter-closes";
-import {latestSigReference,newYorkDate,referenceHistoryDates,type SigReference} from "./sig-nyse-quarters";
+import {latestSigReference,newYorkDate,newYorkMinutes,NYSE_CLOSE_MINUTES,referenceHistoryDates,type SigReference} from "./sig-nyse-quarters";
 
 /**
  * Quarterly signal strategy family (Wealtharr owner-selected variants of the published "Sig" method):
@@ -115,7 +115,11 @@ function dailySpikeTriggered(ctx:EngineContext,p:Params,ref:SigReference,protect
   const quarterEnd=series.points.find(point=>day(point.at)===ref.referenceDate);
   if(!quarterEnd)throw new Error("SIG_DAILY_HISTORY_UNAVAILABLE");
   const today=newYorkDate(ctx.now);
-  const later=series.points.filter(point=>day(point.at)>ref.referenceDate&&day(point.at)<=today);
+  // A daily row bearing today's NYSE session date is NOT a completed daily close before 16:00
+  // New York time. Even an adjusted, licensed row must never trigger a live spike intraday.
+  const lastCompletedDay=newYorkMinutes(ctx.now)>=NYSE_CLOSE_MINUTES?today:
+    new Date(Date.parse(today+"T00:00:00Z")-86_400_000).toISOString().slice(0,10);
+  const later=series.points.filter(point=>day(point.at)>ref.referenceDate&&day(point.at)<=lastCompletedDay);
   if(!later.length)return false;
   const latest=later.reduce((a,b)=>day(b.at)>day(a.at)?b:a);
   const assessed=assessWealtharr9SigDailySpike({
