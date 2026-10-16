@@ -29,7 +29,7 @@ describe("high-intent SEO and free spreadsheet quality",()=>{
   expect(read("next.config.ts")).toContain('"/downloads/:path*"');
  });
  it("links useful educational content from actual public pages",()=>{
-  expect(read("src/app/page.tsx")).toContain('href="/learn/portfolio-tracking-spreadsheet"');
+  expect(read("src/app/page.tsx")).toContain('href="/learn"');
   expect(read("src/app/features/page.tsx")).toContain('href="/learn/portfolio-tracking-spreadsheet"');
   expect(read("src/app/tools/rebalance-calculator/page.tsx")).toContain('href="/learn/portfolio-tracking-spreadsheet"');
   expect(read("src/components/LearningGuide.tsx")).toContain('path:"/learn/portfolio-tracking-spreadsheet"');
