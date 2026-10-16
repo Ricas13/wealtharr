@@ -2164,3 +2164,11 @@ html[data-theme="light"] .nav-badge { color:#fff; }
 
 /* Optional broker execution time inside the trade form. */
 .trade-execution-when { flex:1 1 220px; }
+
+/* Sitewide, visible and crawlable educational-risk disclosure; no hidden SEO-only text. */
+.research-disclaimer{max-width:1100px;margin:24px auto 30px;padding:18px 22px;border:1px solid var(--border,rgba(128,128,128,.28));border-radius:12px;font-size:.84rem;line-height:1.65;color:var(--muted,#949ca9)}
+.research-disclaimer p{margin:0 0 8px}.research-disclaimer p:last-child{margin-bottom:0}
+.research-disclaimer strong{color:var(--text,inherit)}
+.research-disclaimer a{text-decoration:underline;text-underline-offset:3px}
+.research-document{max-width:800px}.research-document h2{margin-top:30px}
+@media(max-width:700px){.research-disclaimer{margin:20px 14px;padding:15px}}
