@@ -8,7 +8,8 @@ import {calculateAction,executeAction} from "@/lib/action-service";
  *  - orders were labelled in the USD reference currency, so every fill in a GBP account was refused;
  *  - a cash buffer was offered to the engine as spendable cash, so the review could never close.
  * Hand-computed values: opening cash 10000, buffer 100 -> 9900 belongs to the strategy;
- * 60% = 5940 into the 3x Nasdaq exposure, the remaining 3960 swept into the bond fund.
+ * 60% = 5940 into the 3x Nasdaq exposure, then a 2 GBP first-fill fee leaves 3958 spendable.
+ * The safe-sleeve purchase is 3956 with its own 2 GBP fee, preserving 100 GBP of cash.
  */
 const dbUrl=process.env.DATABASE_URL;
 const db=dbUrl?postgres(dbUrl,{max:2,prepare:false}):null;
@@ -52,7 +53,7 @@ describe.skipIf(!dbUrl)("quarterly target strategy in a GBP ISA, start to first 
   accountId=String(account[0].id);
   const instance=await db!.unsafe(
    "INSERT INTO strategy_instances (user_id,account_id,strategy_definition_id,strategy_version_id,name,execution_constraints) "+
-   "SELECT $1,$2,d.id,v.id,'Quarterly GBP test','{\"cashBufferAmount\":\"100\"}'::jsonb FROM strategy_definitions d "+
+   "SELECT $1,$2,d.id,v.id,'Quarterly GBP test','{\"cashBufferAmount\":\"100\",\"flatFee\":\"2\"}'::jsonb FROM strategy_definitions d "+
    "JOIN strategy_versions v ON v.strategy_definition_id=d.id "+
    "WHERE d.key='quarterly-target-nasdaq-3x' AND v.lifecycle_status='PUBLISHED' ORDER BY v.effective_from DESC LIMIT 1 RETURNING id,strategy_version_id",
    [userId,accountId]);instanceId=String(instance[0].id);
@@ -79,12 +80,12 @@ describe.skipIf(!dbUrl)("quarterly target strategy in a GBP ISA, start to first 
   const first=await calculateAction(instanceId);
   const buy=await actionRow(first.actionId);
   expect([buy.action_type,buy.currency,buy.ticker,Number(buy.amount)]).toEqual(["BUY","GBP","QQ3"+suffix,5940]);
-  const afterBuy=await executeAction(userId,first.actionId,{price:"100",quantity:"59.4",fee:"0"});
+  const afterBuy=await executeAction(userId,first.actionId,{price:"100",quantity:"59.4",fee:"2"});
 
   const sweepId=afterBuy.actionId??(await calculateAction(instanceId)).actionId;
   const sweep=await actionRow(sweepId);
-  expect([sweep.action_type,sweep.currency,sweep.ticker,Number(sweep.amount)]).toEqual(["BUY","GBP","AGG"+suffix,3960]);
-  const afterSweep=await executeAction(userId,sweepId,{price:"100",quantity:"39.6",fee:"0"});
+  expect([sweep.action_type,sweep.currency,sweep.ticker,Number(sweep.amount)]).toEqual(["BUY","GBP","AGG"+suffix,3956]);
+  const afterSweep=await executeAction(userId,sweepId,{price:"100",quantity:"39.56",fee:"2"});
 
   const holdId=afterSweep.actionId??(await calculateAction(instanceId)).actionId;
   expect((await actionRow(holdId)).action_type).toBe("HOLD");
@@ -95,8 +96,13 @@ describe.skipIf(!dbUrl)("quarterly target strategy in a GBP ISA, start to first 
   expect(typeof state.sigLastReviewedReference).toBe("string");
   expect(Object.keys(state).filter((key:string)=>key.startsWith("sigReview"))).toEqual([]);
 
-  const cash=(await db!.unsafe("SELECT sum(cash_amount)::numeric AS cash FROM ledger_events WHERE strategy_instance_id=$1",[instanceId]))[0].cash;
-  expect(Number(cash)).toBe(100);
+  // The ledger stores the cash consideration and the fee in separate columns.
+  // Gross remaining cash is 104, but the spendable balance is 104 - 4 in confirmed fees = 100.
+  const totals=(await db!.unsafe(
+    "SELECT sum(cash_amount)::numeric AS gross_cash,sum(fee_amount)::numeric AS fees,"+
+    "sum(cash_amount-fee_amount)::numeric AS net_cash "+
+    "FROM ledger_events WHERE strategy_instance_id=$1",[instanceId]))[0];
+  expect([Number(totals.gross_cash),Number(totals.fees),Number(totals.net_cash)]).toEqual([104,4,100]);
   // Between quarter ends, with flat verified daily closes: nothing to do (no spike reset).
   const next=await calculateAction(instanceId);
   expect((await actionRow(next.actionId)).action_type).toBe("NO_ACTION");

@@ -345,19 +345,40 @@ function calculateReview(ctx:EngineContext):ProposedAction{
       const amount=Decimal.min(gap.neg(),stock);
       return stockAction("SELL",amount,"Sell "+money(amount)+" of the target exposure");
     }
+    // Fees are cash outflows, not exposure purchases. A two-step bond->risk buy needs to
+    // fund BOTH the safe-sleeve sale fee and the following stock-purchase fee. Sizing only
+    // the gross stock gap used to produce a fee-sized sale after each confirmed fill:
+    // e.g. sell 540 less 2 fee -> 538, sell 2 less 2 fee -> still 538, forever.
+    // The estimate comes from the customer's execution preferences; actual fees remain
+    // authoritative in the append-only ledger and the next recalculation uses actual cash.
+    const fee=new Decimal(ctx.executionFlatFee??ZERO);
+    if(!fee.isFinite()||fee.lt(0))return fail("The estimated execution fee is invalid.");
     const x=gap.gte(TOL)?Decimal.min(gap,budget,bond.plus(cash)):ZERO;
     if(x.gte(TOL)){
-      if(cash.gte(x.minus("0.005")))return stockAction("BUY",Decimal.min(x,cash),"Buy "+money(Decimal.min(x,cash))+" of the target exposure");
+      if(cash.gte(x.plus(fee).minus("0.005")))
+        return stockAction("BUY",x,"Buy "+money(x)+" of the target exposure");
       if(bond.gt(0)){
-        // A confirmed funding sale may execute partially or at a changed price. Do not
-        // treat any earlier safe-sleeve sale as proof that all required funding is available:
-        // continue offering the next sale against ACTUAL remaining bonds until the risk buy
-        // is affordable (or practical order sizing proves the residue untradable).
-        const release=Decimal.min(bond,x.minus(cash));
-        return safeAction("SELL",release,"Release "+money(release)+" from the safe sleeve",false);
+        // A broker may charge more than the stored estimated fee. After a confirmed
+        // zero-net funding sale, continuing with the underestimated fee proposes the
+        // same uneconomic sale indefinitely. Stop until the investor reconciles the fee.
+        const lastNet=ctx.sigReviewTrades?.lastSafeSellNet;
+        const lastFee=ctx.sigReviewTrades?.lastSafeSellFee;
+        if(lastNet!=null&&lastFee!=null&&lastNet.lte("0.005")&&lastFee.gt(fee))
+          return fail("A confirmed safe-sleeve sale yielded no spendable cash because its actual fee exceeded the configured estimate. Reconcile the broker charge and update the execution fee before continuing.","Execution fee needs reconciliation");
+        // A partial funding fill may need another sale. Price and fee changes never let
+        // us infer proceeds: only today's confirmed bond quantity and available cash count.
+        const release=Decimal.min(bond,Decimal.max(x.plus(fee.mul(2)).minus(cash),ZERO));
+        if(release.gt(fee.plus("0.005")))
+          return safeAction("SELL",release,"Release "+money(release)+" from the safe sleeve",false);
+        // Selling a fee-sized residual cannot increase net cash. Consume any genuinely
+        // spendable cash first, then close on actual holdings rather than loop forever.
       }
-      if(cash.gte(TOL))return stockAction("BUY",cash,"Buy "+money(cash)+" of the target exposure");
-      return done("Review complete","There is no cash or safe-sleeve balance left to fund more of the target exposure, so this review is complete.");
+      const spendable=Decimal.max(cash.minus(fee),ZERO);
+      if(spendable.gte(TOL)){
+        const purchase=Decimal.min(x,spendable);
+        return stockAction("BUY",purchase,"Buy "+money(purchase)+" of the target exposure");
+      }
+      return done("Review complete","Remaining safe-sleeve funds cannot cover the estimated execution fees, so no further purchase is practical.");
     }
     if(cash.gte(TOL))return safeAction("BUY",cash,"Move "+money(cash)+" into the safe sleeve",true);
     return done("Review complete","The strategy is at its target for this quarter. No further trade is needed.");

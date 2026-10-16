@@ -410,10 +410,15 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // The quarterly signal family sizes its orders from the cash the investor allows it to spend: a cash
   // buffer from the trade preferences stays outside the strategy (otherwise a purchase of buffered cash
   // is blocked by order sizing and the review never closes).
-  const engineCash=quarterlySignalEngine
-    ?Decimal.max(effectiveCash.minus(normalizeExecutionConstraints(scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>)).cashBufferAmount),0)
+  const quarterlyConstraints=quarterlySignalEngine
+    ?normalizeExecutionConstraints(scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>))
+    :null;
+  const engineCash=quarterlyConstraints
+    ?Decimal.max(effectiveCash.minus(quarterlyConstraints.cashBufferAmount),0)
     :effectiveCash;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,sigReviewTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:engineCash,exposures:engineExposures,contributionsSinceReview,withdrawalsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,sigReviewTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:engineCash,
+    executionFlatFee:quarterlyConstraints?.flatFee,exposures:engineExposures,contributionsSinceReview,withdrawalsSinceReview,
+    state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
   if(override&&"proposal" in override)proposal=override.proposal;
   if(override&&"trade" in override){
     const forcedTrade=override.trade;

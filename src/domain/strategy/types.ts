@@ -25,6 +25,10 @@ export type EngineContext = {
   contributionsSinceReview: Decimal;
   /** Withdrawals since the last completed review (positive amount); read only by engines that use it. */
   withdrawalsSinceReview?: Decimal;
+  /** User-selected estimated flat fee per executed trade, in the account currency.
+   * Only used for practical multi-leg funding: NEVER a substitute for the actual broker fee in the ledger.
+   */
+  executionFlatFee?: Decimal;
   state: Record<string, unknown>;
   config: Record<string, unknown>;
   settings: Record<string, unknown>;
@@ -36,7 +40,10 @@ export type EngineContext = {
   /** Gross confirmed review fills derived from the ledger, never proposals. */
   confirmedQuarterTrades?: {buyGross: Decimal;sellGross: Decimal;feeTotal: Decimal;reserveBeforeTrades: Decimal;};
   /** Confirmed executed fills of the current review split by managed sleeve (quarterly signal family). */
-  sigReviewTrades?: {stockBuyGross: Decimal;stockSellGross: Decimal;safeBuyGross: Decimal;safeSellGross: Decimal;feeTotal: Decimal;};
+  sigReviewTrades?: {stockBuyGross: Decimal;stockSellGross: Decimal;safeBuyGross: Decimal;safeSellGross: Decimal;feeTotal: Decimal;
+    /** Last confirmed safe-sleeve sale, for detecting a real fill consumed by unexpected fees. */
+    lastSafeSellNet?: Decimal|null;lastSafeSellFee?: Decimal|null;
+  };
 };
 
 export type ExplanationRow = {

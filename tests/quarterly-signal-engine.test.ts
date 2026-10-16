@@ -233,6 +233,78 @@ describe("quarterly buy budget is a frozen confirmed opening reserve",()=>{
   });
 });
 
+describe("quarterly funding must cover BOTH broker flat fees",()=>{
+  const reviewState={
+    sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+    reviewTargetValue:"6540",reviewContributionsSnapshot:"0",
+    sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30",
+    sigReviewOpeningReserve:"4000"
+  };
+  const confirmed=(safeSellGross:string,stockBuyGross:string,feeTotal:string)=>({
+    stockBuyGross:D(stockBuyGross),stockSellGross:D(0),
+    safeBuyGross:D(0),safeSellGross:D(safeSellGross),feeTotal:D(feeTotal)
+  });
+  it("funds a 540 risk buy with 544 of bond proceeds for 2+2 of fees",()=>{
+    const opening=engine.calculate(base({executionFlatFee:D(2)}));
+    expect([opening.actionType,opening.economicExposure,opening.amount?.toFixed(2)])
+      .toEqual(["SELL","US_AGGREGATE_BONDS","544.00"]);
+    expect(opening.nextState.sigReviewOpeningReserve).toBe("4000");
+    // Confirmed cash from broker: 544 sale proceeds less 2 SELL fee = 542.
+    const afterSale=engine.calculate(base({
+      executionFlatFee:D(2),state:reviewState,cash:D(542),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3456)}],
+      sigReviewTrades:confirmed("544","0","2")
+    }));
+    expect([afterSale.actionType,afterSale.economicExposure,afterSale.amount?.toFixed(2)])
+      .toEqual(["BUY","NASDAQ_100_3X_LONG","540.00"]);
+    // Broker confirms 540 stock purchase and 2 BUY fee. Cash is exactly zero.
+    const afterPurchase=engine.calculate(base({
+      executionFlatFee:D(2),state:reviewState,cash:D(0),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6540)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3456)}],
+      sigReviewTrades:confirmed("544","540","4")
+    }));
+    expect(afterPurchase.actionType).toBe("HOLD");
+    expect(afterPurchase.nextState.sigConfirmedAnchor).toBe("6540");
+  });
+  it("requests funding for fees even when cash exactly covers the gross buy",()=>{
+    const action=engine.calculate(base({
+      executionFlatFee:D(2),cash:D(540),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(4000)}]
+    }));
+    expect([action.actionType,action.economicExposure,action.amount?.toFixed(2)])
+      .toEqual(["SELL","US_AGGREGATE_BONDS","4.00"]);
+  });
+  it("fails closed after a broker-charged fee consumes the entire latest funding sale",()=>{
+    // Legacy unexpected fee: 540 sale fee 2 -> 538; a subsequent 2 sale fee 2 -> still 538.
+    // This must NOT propose a third fee-sized bond sale with the unchanged zero-fee preference.
+    const ledger={...confirmed("542","0","4"),lastSafeSellNet:D(0),lastSafeSellFee:D(2)};
+    const state={...reviewState,reviewTargetValue:"6540"};
+    const fixed={
+      state,cash:D(538),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3458)}],
+      sigReviewTrades:ledger
+    };
+    const blocked=engine.calculate(base(fixed));
+    expect([blocked.actionType,blocked.title]).toEqual(["DATA_REQUIRED","Execution fee needs reconciliation"]);
+    const correctedEstimate=engine.calculate(base({...fixed,executionFlatFee:D(2)}));
+    expect([correctedEstimate.actionType,correctedEstimate.economicExposure,correctedEstimate.amount?.toFixed(2)])
+      .toEqual(["SELL","US_AGGREGATE_BONDS","6.00"]);
+  });
+  it("does not offer a nominal risk buy smaller than its confirmed fee when bonds are exhausted",()=>{
+    const action=engine.calculate(base({
+      executionFlatFee:D(2),state:reviewState,cash:D(1),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(0)}],
+      sigReviewTrades:confirmed("4000","0","3")
+    }));
+    expect(action.actionType).toBe("HOLD");
+  });
+});
+
 describe("sigReviewTradesBySleeve",()=>{
   const at=new Date("2026-09-30T20:00:00Z");
   const row=(over:Record<string,unknown>)=>({id:"a",correctionOfEventId:null,eventType:"BUY",currency:"USD",cashAmount:"-100",
@@ -242,6 +314,22 @@ describe("sigReviewTradesBySleeve",()=>{
       row({id:"3",occurredAt:new Date("2026-09-01T00:00:00Z")}),row({id:"4"}),row({id:"5",eventType:"CORRECTION",correctionOfEventId:"4",cashAmount:"0"})];
     const t=sigReviewTradesBySleeve(rows,at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS");
     expect([t.stockBuyGross,t.safeSellGross,t.stockSellGross,t.safeBuyGross,t.feeTotal].map(String)).toEqual(["100","50","0","0","1"]);
+  });
+  it("uses the latest chronological confirmed safe-sleeve fill to detect an actual zero-net sale",()=>{
+    const early=row({id:"early",eventType:"SELL",cashAmount:"540",feeAmount:"2",
+      occurredAt:new Date("2026-10-01T09:00:00Z"),exposure:"US_AGGREGATE_BONDS"});
+    const latest=row({id:"latest",eventType:"SELL",cashAmount:"2",feeAmount:"2",
+      occurredAt:new Date("2026-10-01T12:00:00Z"),exposure:"US_AGGREGATE_BONDS"});
+    const corrected=row({id:"corrected",eventType:"SELL",cashAmount:"1",feeAmount:"1",
+      occurredAt:new Date("2026-10-01T13:00:00Z"),exposure:"US_AGGREGATE_BONDS"});
+    const reversal=row({id:"reversal",eventType:"CORRECTION",correctionOfEventId:"corrected",cashAmount:"-1",
+      occurredAt:new Date("2026-10-01T14:00:00Z")});
+    const result=sigReviewTradesBySleeve([latest,corrected,early,reversal],at,"USD",
+      "NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS");
+    expect([result.safeSellGross,result.feeTotal,result.lastSafeSellNet,result.lastSafeSellFee].map(String))
+      .toEqual(["542","4","0","2"]);
+    expect(()=>sigReviewTradesBySleeve([row({occurredAt:new Date("invalid")})],at,"USD",
+      "NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS")).toThrow("SIG_CONFIRMED_LEDGER_INVALID");
   });
   it("fails closed on an unmapped execution or a foreign currency",()=>{
     expect(()=>sigReviewTradesBySleeve([row({exposure:null})],at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS")).toThrow("SIG_UNMANAGED_EXECUTION");
