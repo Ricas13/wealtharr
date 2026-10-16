@@ -16,7 +16,7 @@
 .wm-hero-observatory .wm-benefits{font-size:11px;color:#8ca99a}
 .wm-hero-observatory .wm-hero-index{margin-top:68px;display:flex;align-items:center;gap:15px;font-size:10px;letter-spacing:1.4px;color:#94aaa1;text-transform:uppercase}
 .wm-hero-observatory .wm-hero-index::before{content:"";width:36px;height:1px;background:#9dcab6}
-.wm-hero-observatory .wm-hero-index b{color:#ddf8e7;font-weight:700}
+.wm-hero-observatory .wm-hero-index b{color:#ddf8e7;font-weight:700;white-space:nowrap;flex-shrink:0}
 .wm-obs{position:relative;min-width:0;border:1px solid #354f4b;background:linear-gradient(155deg,#122122,#0b1417 80%);box-shadow:0 48px 125px #03060799,0 0 100px #678d6b0a;overflow:hidden}
 .wm-obs::before{content:"";position:absolute;z-index:0;top:0;left:0;right:0;height:54%;background:radial-gradient(ellipse at 52% 30%,#4e967124,transparent 70%);pointer-events:none}
 .wm-obs>*{position:relative;z-index:1}
