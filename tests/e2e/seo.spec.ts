@@ -10,6 +10,7 @@ for(const [path,heading] of [
  ["/learn/portfolio-rebalancing","How portfolio rebalancing calculations work"],
  ["/learn/uk-isa-portfolio-tracking","Tracking ETFs and ETPs in a UK Stocks and Shares ISA"],
  ["/learn/leveraged-etp-risks","Why daily-reset leveraged ETP returns can surprise investors"],
+ ["/learn/portfolio-tracking-spreadsheet","Portfolio rebalancing spreadsheet vs automatic tracker"],
  ["/research-disclaimer","For research and educational purposes only"]
 ] as const){
  test("public SEO page "+path+" renders a canonical heading and metadata",async({page})=>{
@@ -70,4 +71,26 @@ test("mobile landing footer links and full disclaimer remain within the viewport
  const risk=await page.getByRole("complementary",{name:"Research and financial risk information"}).boundingBox();
  expect(risk).not.toBeNull();
  expect(risk!.x+risk!.width).toBeLessThanOrEqual(width+1);
+});
+
+test("portfolio template link downloads a real CSV of clearly illustrated records",async({page})=>{
+ await page.goto("/learn/portfolio-tracking-spreadsheet");
+ const link=page.getByRole("link",{name:"Download portfolio tracking CSV"});
+ await expect(link).toHaveAttribute("download","");
+ const response=await page.request.get("/downloads/portfolio-tracking-template.csv");
+ expect(response.status()).toBe(200);
+ expect(await response.text()).toContain("ILLUSTRATIVE BUY");
+ expect(response.headers()["x-robots-tag"]).toContain("noindex");
+});
+test("branded social image is a real PNG, not a missing Open Graph asset",async({page})=>{
+ await page.goto("/");
+ const meta=page.locator('meta[property="og:image"]');
+ await expect(meta).toHaveAttribute("content",/opengraph-image/);
+ const url=await meta.getAttribute("content");
+ expect(url).toBeTruthy();
+ const response=await page.request.get(url!);
+ expect(response.status()).toBe(200);
+ expect(response.headers()["content-type"]).toContain("image/png");
+ const data=await response.body();
+ expect([...data.subarray(0,4)]).toEqual([137,80,78,71]);
 });
