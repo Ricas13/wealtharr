@@ -10,7 +10,7 @@ export const metadata:Metadata={
  description:"A practical comparison of spreadsheet and automated portfolio records, with a downloadable CSV starter."}
 };
 export default function SpreadsheetPage(){
- return <LearningGuide title="Portfolio rebalancing spreadsheet vs automatic tracker"
+ return <LearningGuide path="/learn/portfolio-tracking-spreadsheet" title="Portfolio rebalancing spreadsheet vs automatic tracker"
   description="A self-directed comparison of manual spreadsheet records, review calculations and a rules-based portfolio workspace.">
   <h2>What should a portfolio spreadsheet contain?</h2>
   <p>A useful portfolio worksheet needs an investment identifier, account, currency, number of units, confirmed trade price, fees,
