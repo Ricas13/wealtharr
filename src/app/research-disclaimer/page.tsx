@@ -4,7 +4,7 @@ import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
 
 export const metadata:Metadata={
  title:"Research Disclaimer and Investment Risks",
- description:"How Wealtharr's self-directed portfolio calculations work, what the results mean, and important risks about prices, leverage and investment decisions.",
+ description:"How Wealtharr’s self-directed portfolio calculations work, what the results mean, and important risks about prices, leverage and investment decisions.",
  alternates:{canonical:"/research-disclaimer"},
  openGraph:{title:"Research Disclaimer and Investment Risks",url:"/research-disclaimer",
   description:"Understand the limits of rule-based investment calculations and your responsibility for decisions."}
@@ -12,7 +12,7 @@ export const metadata:Metadata={
 export default function ResearchDisclaimerPage(){
  const origin=siteOrigin(process.env.NEXT_PUBLIC_APP_URL).toString();
  const structured={"@context":"https://schema.org","@type":"WebPage",name:"Research disclaimer and investment risks",
-  url:new URL("/research-disclaimer",origin).toString(),description:"The purpose and limitations of Wealtharr's self-directed research and portfolio calculation tools."};
+  url:new URL("/research-disclaimer",origin).toString(),description:"The purpose and limitations of Wealtharr’s self-directed research and portfolio calculation tools."};
  return <main className="container">
   <script type="application/ld+json" dangerouslySetInnerHTML={{__html:safeJsonLd(structured)}}/>
   <nav className="public-nav" aria-label="Public pages"><Link className="brand" href="/">Wealtharr</Link><Link href="/faq">Help and FAQ</Link></nav>
@@ -40,7 +40,7 @@ export default function ResearchDisclaimerPage(){
    <h2>Independent verification</h2>
    <p>Review the underlying methodology, issuer documentation and account eligibility yourself before acting. Consider obtaining
     appropriately qualified independent professional advice where you need a suitability assessment or assistance making a decision.</p>
-   <p><strong>This disclosure does not override applicable law or regulation.</strong> It explains the tool's intended scope
+   <p><strong>This disclosure does not override applicable law or regulation.</strong> It explains the tool’s intended scope
     and should not be read as a determination of regulatory status or an exclusion of rights that cannot legally be excluded.</p>
   </article>
   <footer className="footer"><Link href="/">Home</Link> · <Link href="/learn">Learning guides</Link> · <Link href="/tools/rebalance-calculator">Free calculator</Link> · <Link href="/faq">FAQ</Link></footer>
