@@ -277,6 +277,23 @@ describe("quarterly funding must cover BOTH broker flat fees",()=>{
     expect([action.actionType,action.economicExposure,action.amount?.toFixed(2)])
       .toEqual(["SELL","US_AGGREGATE_BONDS","4.00"]);
   });
+  it("fails closed after a broker-charged fee consumes the entire latest funding sale",()=>{
+    // Legacy unexpected fee: 540 sale fee 2 -> 538; a subsequent 2 sale fee 2 -> still 538.
+    // This must NOT propose a third fee-sized bond sale with the unchanged zero-fee preference.
+    const ledger={...confirmed("542","0","4"),lastSafeSellNet:D(0),lastSafeSellFee:D(2)};
+    const state={...reviewState,reviewTargetValue:"6540"};
+    const fixed={
+      state,cash:D(538),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3458)}],
+      sigReviewTrades:ledger
+    };
+    const blocked=engine.calculate(base(fixed));
+    expect([blocked.actionType,blocked.title]).toEqual(["DATA_REQUIRED","Execution fee needs reconciliation"]);
+    const correctedEstimate=engine.calculate(base({...fixed,executionFlatFee:D(2)}));
+    expect([correctedEstimate.actionType,correctedEstimate.economicExposure,correctedEstimate.amount?.toFixed(2)])
+      .toEqual(["SELL","US_AGGREGATE_BONDS","6.00"]);
+  });
   it("does not offer a nominal risk buy smaller than its confirmed fee when bonds are exhausted",()=>{
     const action=engine.calculate(base({
       executionFlatFee:D(2),state:reviewState,cash:D(1),
@@ -297,6 +314,22 @@ describe("sigReviewTradesBySleeve",()=>{
       row({id:"3",occurredAt:new Date("2026-09-01T00:00:00Z")}),row({id:"4"}),row({id:"5",eventType:"CORRECTION",correctionOfEventId:"4",cashAmount:"0"})];
     const t=sigReviewTradesBySleeve(rows,at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS");
     expect([t.stockBuyGross,t.safeSellGross,t.stockSellGross,t.safeBuyGross,t.feeTotal].map(String)).toEqual(["100","50","0","0","1"]);
+  });
+  it("uses the latest chronological confirmed safe-sleeve fill to detect an actual zero-net sale",()=>{
+    const early=row({id:"early",eventType:"SELL",cashAmount:"540",feeAmount:"2",
+      occurredAt:new Date("2026-10-01T09:00:00Z"),exposure:"US_AGGREGATE_BONDS"});
+    const latest=row({id:"latest",eventType:"SELL",cashAmount:"2",feeAmount:"2",
+      occurredAt:new Date("2026-10-01T12:00:00Z"),exposure:"US_AGGREGATE_BONDS"});
+    const corrected=row({id:"corrected",eventType:"SELL",cashAmount:"1",feeAmount:"1",
+      occurredAt:new Date("2026-10-01T13:00:00Z"),exposure:"US_AGGREGATE_BONDS"});
+    const reversal=row({id:"reversal",eventType:"CORRECTION",correctionOfEventId:"corrected",cashAmount:"-1",
+      occurredAt:new Date("2026-10-01T14:00:00Z")});
+    const result=sigReviewTradesBySleeve([latest,corrected,early,reversal],at,"USD",
+      "NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS");
+    expect([result.safeSellGross,result.feeTotal,result.lastSafeSellNet,result.lastSafeSellFee].map(String))
+      .toEqual(["542","4","0","2"]);
+    expect(()=>sigReviewTradesBySleeve([row({occurredAt:new Date("invalid")})],at,"USD",
+      "NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS")).toThrow("SIG_CONFIRMED_LEDGER_INVALID");
   });
   it("fails closed on an unmapped execution or a foreign currency",()=>{
     expect(()=>sigReviewTradesBySleeve([row({exposure:null})],at,"USD","NASDAQ_100_3X_LONG","US_AGGREGATE_BONDS")).toThrow("SIG_UNMANAGED_EXECUTION");
