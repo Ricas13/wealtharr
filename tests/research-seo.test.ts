@@ -30,6 +30,11 @@ describe("indexable educational content and investment risk honesty",()=>{
  it("never nests private user routes inside the public sitemap",()=>{
   const code=file("src/app/sitemap.ts");
   expect(code).toContain("publicSeoRoutes.map");
+  expect(code).toContain("await ensureSettings()");
+  expect(code).toContain('dynamic="force-dynamic"');
+  const robots=file("src/app/robots.ts");
+  expect(robots).toContain("await ensureSettings()");
+  expect(robots).toContain('dynamic="force-dynamic"');
   expect(code).toContain("publicIndexingEnabled");
  });
  it("prevents markup injection and publishes genuine visible guide content",()=>{
