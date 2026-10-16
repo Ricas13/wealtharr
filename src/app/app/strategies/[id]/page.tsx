@@ -18,6 +18,7 @@ import { assessStrategyMarket } from "@/domain/strategy/market-eligibility";
 import { VERIFIED_MARKET_MAPPINGS_SQL, verifiedCandidates } from "@/lib/verified-market-mappings";
 import { HistoricalQuoteLookup } from "@/components/HistoricalQuoteLookup";
 import { BrokerTradeForm } from "@/components/BrokerTradeForm";
+import {StrategyTrading212Connection} from "@/components/StrategyTrading212Connection";
 import {StrategyBrokerEvidence} from "@/components/StrategyBrokerEvidence";
 import { ManualPriceForm } from "@/components/ManualPriceForm";
 import { actionRecoveryGuidance, plainEnglishActionReason } from "@/domain/action-copy";
@@ -405,7 +406,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
             <section><h3>Other cash movement</h3><p className="help">Withdrawals, dividends, interest, fees and tax belong here.</p><CashEventForm id={id} accounts={accountOptions}/></section>
           </div>
           <section className="drawer-section contribution-plan-settings"><h3>Regular contribution</h3><p className="help">Optional reminder only. Planned money never appears in your portfolio until you record the real deposit.</p><ContributionPlanForm id={id} plan={(s.contribution_plan??{}) as Record<string,unknown>}/></section>
-          <section className="drawer-section"><HistoricalQuoteLookup accounts={accountOptions}/><BrokerTradeForm strategyId={id} accounts={accountOptions}/><ManualPriceForm strategyId={id} instruments={priceOptions.map((o:any)=>({id:String(o.id),ticker:String(o.ticker),exchange:String(o.exchange),currency:String(o.currency)}))}/></section>
+          <section className="drawer-section"><HistoricalQuoteLookup accounts={accountOptions}/><StrategyTrading212Connection strategyId={id}/><BrokerTradeForm strategyId={id} accounts={accountOptions}/><ManualPriceForm strategyId={id} instruments={priceOptions.map((o:any)=>({id:String(o.id),ticker:String(o.ticker),exchange:String(o.exchange),currency:String(o.currency)}))}/></section>
           <StrategyBrokerEvidence total={Number(linkedBrokerTrades[0]?.total??0)}
            rows={linkedBrokerTrades.map(row=>({
             provider:String(row.provider),externalTradeId:String(row.external_trade_id),
