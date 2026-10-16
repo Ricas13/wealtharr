@@ -21,5 +21,6 @@ export default function Page(){
     <h2>A practical research checklist</h2>
     <p>Read the issuer’s current KID or other product disclosure, confirm how leverage resets, inspect historical drawdowns, understand the dealing currency and record the exact product identifier. Review whether your data source reports completed exchange sessions rather than incomplete intraday bars.</p>
     <p>This guide explains calculation mechanics, not whether a leveraged product or strategy is suitable for any individual.</p>
+    <p><strong>Independent risk reference:</strong> <a href="https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-alerts/sec" target="_blank" rel="noopener noreferrer">US SEC Investor.gov — Leveraged and Inverse ETF Investor Bulletin</a>. Individual UK ETPs may have different structures and terms.</p>
   </LearningGuide>;
 }
