@@ -57,3 +57,17 @@ test("crawler can navigate from homepage to useful original guides with honest s
  expect(data["@graph"]?.some(x=>x["@type"]==="Article")).toBe(true);
  expect(data["@graph"]?.some(x=>x["@type"]==="BreadcrumbList")).toBe(true);
 });
+
+test("mobile landing footer links and full disclaimer remain within the viewport",async({page},testInfo)=>{
+ if(!testInfo.project.name.includes("mobile"))return;
+ await page.goto("/");
+ const width=page.viewportSize()?.width??390;
+ for(const link of await page.locator(".wm-footer a").all()){
+  const rect=await link.boundingBox();
+  expect(rect).not.toBeNull();
+  expect(rect!.x+rect!.width).toBeLessThanOrEqual(width+1);
+ }
+ const risk=await page.getByRole("complementary",{name:"Research and financial risk information"}).boundingBox();
+ expect(risk).not.toBeNull();
+ expect(risk!.x+risk!.width).toBeLessThanOrEqual(width+1);
+});
