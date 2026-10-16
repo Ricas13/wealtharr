@@ -5,7 +5,12 @@ for(const [path,heading] of [
  ["/strategies","One portfolio workspace. Different rules."],
  ["/pricing","Start simple. Add strategies as you need them."],
  ["/faq","Frequently asked questions"],
- ["/tools/rebalance-calculator","Portfolio rebalancing calculator"]
+ ["/tools/rebalance-calculator","Portfolio rebalancing calculator"],
+ ["/learn","Portfolio research and rebalancing guides"],
+ ["/learn/portfolio-rebalancing","How portfolio rebalancing calculations work"],
+ ["/learn/uk-isa-portfolio-tracking","Tracking ETFs and ETPs in a UK Stocks and Shares ISA"],
+ ["/learn/leveraged-etp-risks","Why daily-reset leveraged ETP returns can surprise investors"],
+ ["/research-disclaimer","For research and educational purposes only"]
 ] as const){
  test("public SEO page "+path+" renders a canonical heading and metadata",async({page})=>{
   await page.goto(path);
@@ -32,4 +37,23 @@ test("public calculator shows transparent target-weight adjustment",async({page}
  await expect(page.getByRole("heading",{name:"Illustrative sell £500.00"})).toBeVisible();
  await page.getByLabel("Current value of this holding (£)").fill("5000");
  await expect(page.getByRole("heading",{name:"Illustrative buy £1000.00"})).toBeVisible();
+});
+
+test("public pages display a consistent, linked research disclaimer instead of hidden SEO text",async({page})=>{
+ await page.goto("/tools/rebalance-calculator");
+ await expect(page.getByRole("complementary",{name:"Research and financial risk information"})).toBeVisible();
+ await expect(page.getByRole("link",{name:"Read the full research disclaimer"})).toHaveAttribute("href","/research-disclaimer");
+ await page.getByRole("link",{name:"Read the full research disclaimer"}).click();
+ await expect(page.getByRole("heading",{level:1,name:"For research and educational purposes only"})).toBeVisible();
+});
+test("crawler can navigate from homepage to useful original guides with honest structured data",async({page})=>{
+ await page.goto("/");
+ await page.getByRole("link",{name:"Learning guides"}).last().click();
+ await expect(page.getByRole("heading",{level:1,name:"Portfolio research and rebalancing guides"})).toBeVisible();
+ await page.getByRole("link",{name:"Read guide →"}).first().click();
+ await expect(page.getByRole("heading",{level:1,name:"How portfolio rebalancing calculations work"})).toBeVisible();
+ const raw=await page.locator('script[type="application/ld+json"]').first().textContent();
+ const data=JSON.parse(raw||"{}") as {"@graph"?:Array<{"@type"?:string}>};
+ expect(data["@graph"]?.some(x=>x["@type"]==="Article")).toBe(true);
+ expect(data["@graph"]?.some(x=>x["@type"]==="BreadcrumbList")).toBe(true);
 });
