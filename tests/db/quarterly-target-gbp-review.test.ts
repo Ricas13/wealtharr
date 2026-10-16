@@ -96,8 +96,13 @@ describe.skipIf(!dbUrl)("quarterly target strategy in a GBP ISA, start to first 
   expect(typeof state.sigLastReviewedReference).toBe("string");
   expect(Object.keys(state).filter((key:string)=>key.startsWith("sigReview"))).toEqual([]);
 
-  const cash=(await db!.unsafe("SELECT sum(cash_amount)::numeric AS cash FROM ledger_events WHERE strategy_instance_id=$1",[instanceId]))[0].cash;
-  expect(Number(cash)).toBe(100);
+  // The ledger stores the cash consideration and the fee in separate columns.
+  // Gross remaining cash is 104, but the spendable balance is 104 - 4 in confirmed fees = 100.
+  const totals=(await db!.unsafe(
+    "SELECT sum(cash_amount)::numeric AS gross_cash,sum(fee_amount)::numeric AS fees,"+
+    "sum(cash_amount-fee_amount)::numeric AS net_cash "+
+    "FROM ledger_events WHERE strategy_instance_id=$1",[instanceId]))[0];
+  expect([Number(totals.gross_cash),Number(totals.fees),Number(totals.net_cash)]).toEqual([104,4,100]);
   // Between quarter ends, with flat verified daily closes: nothing to do (no spike reset).
   const next=await calculateAction(instanceId);
   expect((await actionRow(next.actionId)).action_type).toBe("NO_ACTION");
