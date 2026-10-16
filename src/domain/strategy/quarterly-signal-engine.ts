@@ -358,6 +358,13 @@ function calculateReview(ctx:EngineContext):ProposedAction{
       if(cash.gte(x.plus(fee).minus("0.005")))
         return stockAction("BUY",x,"Buy "+money(x)+" of the target exposure");
       if(bond.gt(0)){
+        // A broker may charge more than the stored estimated fee. After a confirmed
+        // zero-net funding sale, continuing with the underestimated fee proposes the
+        // same uneconomic sale indefinitely. Stop until the investor reconciles the fee.
+        const lastNet=ctx.sigReviewTrades?.lastSafeSellNet;
+        const lastFee=ctx.sigReviewTrades?.lastSafeSellFee;
+        if(lastNet!=null&&lastFee!=null&&lastNet.lte("0.005")&&lastFee.gt(fee))
+          return fail("A confirmed safe-sleeve sale yielded no spendable cash because its actual fee exceeded the configured estimate. Reconcile the broker charge and update the execution fee before continuing.","Execution fee needs reconciliation");
         // A partial funding fill may need another sale. Price and fee changes never let
         // us infer proceeds: only today's confirmed bond quantity and available cash count.
         const release=Decimal.min(bond,Decimal.max(x.plus(fee.mul(2)).minus(cash),ZERO));
