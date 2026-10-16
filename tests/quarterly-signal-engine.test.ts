@@ -111,6 +111,58 @@ describe("money and rule-version behaviour",()=>{
   });
 });
 
+describe("quarterly buy budget is a frozen confirmed opening reserve",()=>{
+  const reviewState={
+    sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+    reviewTargetValue:"12000",reviewContributionsSnapshot:"0",
+    sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30",
+    sigReviewOpeningReserve:"4000"
+  };
+  const trades={
+    stockBuyGross:D(1000),stockSellGross:D(0),safeBuyGross:D(0),
+    safeSellGross:D(0),feeTotal:D(0)
+  };
+  it("stores the opening reserve in the proposed action and across an executed funding leg",()=>{
+    // The 1 October review starts with 4,000 in bonds and no free cash.
+    // Its 90% maximum is 3,600; the first 540 of funding must not alter that base.
+    const first=engine.calculate(base());
+    expect([first.actionType,first.economicExposure,first.amount?.toString()]).toEqual([
+      "SELL","US_AGGREGATE_BONDS","540"
+    ]);
+    expect(first.nextState.sigReviewOpeningReserve).toBe("4000");
+    const persisted=postActionReviewState(first,{sigConfirmedAnchor:"6000"},new Date("2026-10-01T15:00:00Z"));
+    expect(persisted.sigReviewOpeningReserve).toBe("4000");
+  });
+  it("keeps the remaining 2,600 cap when bond quotes move after a 1,000 confirmed purchase",()=>{
+    // Independent arithmetic: 4,000 * 90% - 1,000 filled = 2,600,
+    // so 500 available cash requires a 2,100 bond sale regardless of bond-market drift.
+    const oldQuote=engine.calculate(base({
+      state:reviewState,cash:D(500),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(3500)}],
+      sigReviewTrades:trades
+    }));
+    const movedQuote=engine.calculate(base({
+      state:reviewState,cash:D(500),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(4200)}],
+      sigReviewTrades:trades
+    }));
+    for(const action of [oldQuote,movedQuote]){
+      expect([action.actionType,action.economicExposure,action.amount?.toFixed(2)]).toEqual([
+        "SELL","US_AGGREGATE_BONDS","2100.00"
+      ]);
+      expect(action.nextState.sigReviewOpeningReserve).toBe("4000");
+    }
+  });
+  it("fails closed for old in-flight reviews with confirmed fills but no opening snapshot",()=>{
+    const {sigReviewOpeningReserve:ignored,...legacyState}=reviewState;
+    void ignored;
+    const unsafe=engine.calculate(base({
+      state:legacyState,cash:D(500),sigReviewTrades:trades
+    }));
+    expect([unsafe.actionType,unsafe.title]).toEqual(["DATA_REQUIRED","Opening reserve needs reconciliation"]);
+  });
+});
+
 describe("sigReviewTradesBySleeve",()=>{
   const at=new Date("2026-09-30T20:00:00Z");
   const row=(over:Record<string,unknown>)=>({id:"a",correctionOfEventId:null,eventType:"BUY",currency:"USD",cashAmount:"-100",
