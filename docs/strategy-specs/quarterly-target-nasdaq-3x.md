@@ -9,9 +9,10 @@ A Wealtharr owner-selected variant of the published quarterly-target ("Sig") met
 - Target line: grows **9% per quarter**.
 - Start: 60% risk exposure / 40% safe exposure of the money put into the strategy.
 - New money (contributions, dividends, fund distributions, interest) raises the target line by **50%** of the new amount.
+- Withdrawals lower the target line by **50%** of the amount withdrawn (from version 1.1; version 1.0 left the line unchanged).
 - Purchase throttle: in one review, purchases of the risk exposure use at most **90%** of the safe reserve (safe exposure plus cash) held when the review began.
 - 30 Down protection: if the reference quarter-end close is at or below **70%** of the highest of the previous eight quarter-end closes, up to **2** sell signal(s) are skipped. Buys are never skipped.
-- Spike reset: if the risk exposure gained at least 100% in the quarter and, after the ordinary rebalance, it would be between 60% and 100% of the plan and no 30 Down window is active, the target is reset to 60% of the plan.
+- Spike reset (version 1.1, owner convention of 2026-10-15): if the latest verified **daily** close of the risk exposure after the last quarter end is at least **2x** that quarter-end close and no 30 Down no-sell window is open, the plan is reset to 60% risk exposure / 40% safe exposure straight away, once per quarter. The reset does not replace the next quarter-end review. (Version 1.0 checked only at the quarter end and also required the post-rebalance 60-100% allocation band of the 2018 source.)
 - Sources: 9Sig-style parameters (9% quarterly growth, 60/40 start, half of new money lifts the line, 90% bond purchase throttle) are described in the author's published material (https://jasonkelly.com/2017/01/how-my-signal-system-works/ and https://jasonkelly.com/resources/strategies/); the 30 Down rule and its two-skip count come from the author's 2020 and 2023 articles plus subscriber testimony.
 
 ## Rebalancing rule
@@ -25,14 +26,15 @@ A Wealtharr owner-selected variant of the published quarterly-target ("Sig") met
 7. Sizing during the act window uses the latest verified quote, not the quarter-end close.
 8. If an order would be smaller than one share or the minimum trade allowed by the investor's preferences, the review closes with the actual holdings as its confirmed starting value, so an unaffordable remainder never blocks the strategy.
 9. When a 30 Down window has run out (skips used or eight quarters) and the price is still below the line, normal trading resumes; a new window can start only after a quarter-end close back above the line.
-10. Missing or stale prices, missing quarter-end history, a holding outside the two managed exposures, or an unreconcilable ledger produce DATA_REQUIRED, never a guessed trade.
+10. Between quarter ends the strategy watches the latest verified daily close for the spike reset; a spike reset review sells down (or buys up) to 60% of the plan with the same one-order-at-a-time sequencing, then the confirmed holdings become the new starting value.
+11. Missing or stale prices, missing quarter-end history, a holding outside the two managed exposures, or an unreconcilable ledger produce DATA_REQUIRED, never a guessed trade.
 
 ## Instrument requirements
 
 - The risk exposure `NASDAQ_100_3X_LONG` must be mapped to an evidenced, exact trading line for the investor's country, wrapper, broker and currency. It is leveraged; the leverage disclosure must be shown.
 - The safe exposure `US_AGGREGATE_BONDS` must be mapped to an evidenced, exact trading line in the same market.
 - No ticker is assumed. Without both exact mappings the strategy is not offered.
-- The price history of the risk exposure (nine quarter-end closes) must come from a licensed, trusted source.
+- The price history of the risk exposure (nine quarter-end closes and the daily closes since the last quarter end) must come from a licensed, trusted source.
 
 ## Owner-decision list
 
@@ -40,13 +42,13 @@ These are decisions of the Wealtharr owner, recorded 2026-10-15, not facts about
 
 - Safe side is a US aggregate bond fund, not cash.
 - 9% growth and the 2-sell skip count for this variant (author-documented for the 9% family).
-- 60/40 start and the 50% new-money lift.
-- The 90% purchase throttle and the spike reset each rest on a single author source (2018), kept as labelled owner choices.
+- 60/40 start, the 50% new-money lift and the 50% withdrawal drop (2026-10-16).
+- The 90% purchase throttle rests on a single author source (2018), kept as a labelled owner choice.
+- Daily-close spike reset (2x the last quarter-end close, reset to 60/40, not during 30 Down): owner convention recorded in `src/domain/strategy/sig-owner-conventions.ts`, not a verified current author rule.
 - 30 Down reference is the risk exposure's own quarter-end closes; "resume normal trading" once a window is spent.
 - Quarter-end = last NYSE trading day of the calendar quarter; 3-trading-day act window; one skipped quarter takes one growth step.
-- The spike reset can only fire when the portfolio is unusually concentrated at the review, so it will rarely apply.
 - Not decided here: licensed price history source, per-market instrument mappings, and enabling the strategy for customers (Admin).
 
 ## Golden tests
 
-`tests/quarterly-target-golden.test.ts` holds hand-computed cases (the workings are written beside each value): the 60/40 start and sweep, an underfunded purchase funded by a bond release, the 90% throttle, a sell, the new-money lift, 30 Down skip and resume, the spike reset, the act window and the variant parameters for key `quarterly-target-nasdaq-3x`.
+`tests/quarterly-target-golden.test.ts` holds hand-computed cases (the workings are written beside each value): the 60/40 start and sweep, an underfunded purchase funded by a bond release, the 90% throttle, a sell, the new-money lift, 30 Down skip and resume, the spike reset, withdrawals, the act window and the variant parameters for key `quarterly-target-nasdaq-3x`.

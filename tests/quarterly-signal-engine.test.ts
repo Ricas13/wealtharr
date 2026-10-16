@@ -81,6 +81,36 @@ describe("engine safety",()=>{
   });
 });
 
+describe("money and rule-version behaviour",()=>{
+  it("sizes orders in the account currency, not the reference currency of the price history",()=>{
+    const sell=engine.calculate(base({baseCurrency:"GBP",exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(8000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(3000)}]}));
+    expect([sell.actionType,sell.currency]).toEqual(["SELL","GBP"]);
+    expect(sell.instruction).toContain("GBP");
+  });
+  it("version 1.0 configs (no withdrawalTargetRatio) leave the line unchanged on withdrawals",()=>{
+    const legacy=cfg();delete legacy.withdrawalTargetRatio;
+    const step=engine.calculate(base({config:legacy,withdrawalsSinceReview:D(1000),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(8000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(3000)}]}));
+    expect(step.nextState.targetValue).toBe("6540");
+  });
+  it("version 1.0 configs (quarter-end spike) never start a review between quarter ends",()=>{
+    const legacy={...cfg(),spikeReset:{enabled:true,gainMultiple:"2",targetRatio:"0.60"}};
+    const quiet=engine.calculate(base({config:legacy,reviewDue:false,now:new Date("2026-10-20T15:00:00Z"),
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"}}));
+    expect(quiet.actionType).toBe("NO_ACTION");
+  });
+  it("carries withdrawals through a missed window",()=>{
+    const hold=engine.calculate(base({now:new Date("2026-10-06T15:00:00Z"),withdrawalsSinceReview:D(300)}));
+    expect(hold.actionType).toBe("HOLD");
+    expect(hold.nextState.sigCarriedWithdrawals).toBe("300");
+  });
+  it("fails closed between quarter ends when the daily history needed for the spike watch is missing",()=>{
+    const missing=engine.calculate(base({reviewDue:false,now:new Date("2026-10-20T15:00:00Z"),trustedHistory:[],
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"}}));
+    expect(missing.actionType).toBe("DATA_REQUIRED");
+  });
+});
+
 describe("sigReviewTradesBySleeve",()=>{
   const at=new Date("2026-09-30T20:00:00Z");
   const row=(over:Record<string,unknown>)=>({id:"a",correctionOfEventId:null,eventType:"BUY",currency:"USD",cashAmount:"-100",

@@ -10,6 +10,7 @@ import { assertLedgerEvent, foldLedger, foldAccountLedger, ledgerRowToEvent } fr
 import { effectiveAllocations, REBALANCE_STUCK_TITLE } from "@/domain/strategy/fixed-allocation";
 import {twoFundsAllocations} from "@/domain/strategy/two-funds-engine";
 import {trinityWeights} from "@/domain/strategy/trinity-engine";
+import {tacticalAllocations} from "@/domain/strategy/tactical-engine";
 import {trinityNyseHolidayWindow} from "@/domain/strategy/trinity-calendar";
 import { openOutcomeNote, outcomeReasonCode, PRACTICAL_BLOCK_MESSAGES, residueHoldProposal, residueLegs, sizedTradeRows, sizeNextTrade, type SizingLeg } from "@/domain/strategy/execution-residue";
 import type { ExplanationRow, ProposedAction } from "@/domain/strategy/types";
@@ -39,6 +40,7 @@ function isoDate(value: unknown) { return value instanceof Date ? value.toISOStr
 type CalculationScenario={
   cashDelta?:Decimal.Value;
   contributionDelta?:Decimal.Value;
+  withdrawalDelta?:Decimal.Value;
   executionConstraints?:Record<string,unknown>;
   forceReview?:boolean;
   versionOverride?:{
@@ -234,6 +236,12 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
     ?[{amount:"0"}]
     :await db.unsafe("SELECT COALESCE(sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type=ANY($3::text[]) AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview,newMoneyTypes]);
   const contributionsSinceReview=new Decimal(String(contributionRows[0]?.amount??0)).plus(new Decimal(scenario?.contributionDelta??0));
+  // Withdrawals lower the quarterly signal family's target line (from version 1.1; earlier versions ignore it).
+  const quarterlySignalEngine=calculationEngineKey==="QUARTERLY_SIGNAL_TARGET";
+  const withdrawalRows=!quarterlySignalEngine||scenario?.resetTimeline
+    ?[{amount:"0"}]
+    :await db.unsafe("SELECT COALESCE(-sum(l.cash_amount),0) AS amount FROM ledger_events l WHERE l.strategy_instance_id=$1 AND l.event_type='WITHDRAWAL' AND l.occurred_at>$2 AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id)",[strategyInstanceId,lastReview]);
+  const withdrawalsSinceReview=new Decimal(String(withdrawalRows[0]?.amount??0)).plus(new Decimal(scenario?.withdrawalDelta??0));
   const engine=getStrategyEngine(calculationEngineKey);
   const fullyEligibleAccountIds=new Set<string>();
   let tacticalSignalMapping:ResolvedPosition[]=[];
@@ -265,20 +273,17 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
           "No fully verified market implementation is available yet.");
     }
   }
-  // Momentum research engines read licensed price history; every other engine ignores it.
+  // Trinity's momentum signal reads licensed price history.
   const momentumUniverse=calculationEngineKey==="TRINITY_HYBRID"&&Array.isArray(config.signalUniverse)
-    ?(config.signalUniverse as unknown[]).map(String)
-    :calculationEngineKey==="MOMENTUM_ROTATION"&&Array.isArray(config.riskAssets)&&typeof config.defensiveAsset==="string"
-      ?[...(config.riskAssets as unknown[]).map(String),String(config.defensiveAsset)]:null;
+    ?(config.signalUniverse as unknown[]).map(String):null;
   const tacticalUniverse=calculationEngineKey==="TACTICAL_ALLOCATION"&&
     Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)
     ?[...new Set([...(config.riskAssets as unknown[]).map(String),...(config.defensiveAssets as unknown[]).map(String)])]:null;
   const tacticalReviewMonth=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)).toISOString().slice(0,7);
-  const quarterlySignal=calculationEngineKey==="QUARTERLY_SIGNAL_TARGET";
   const trustedHistory=tacticalUniverse
     ?await loadTacticalCertifiedHistory(tacticalUniverse,String(instance.currency),tacticalReviewMonth,
       tacticalSignalMapping.map(m=>({exposure:m.economicExposure,tradingLineId:m.tradingLineId})),new Date(),db)
-    :quarterlySignal
+    :quarterlySignalEngine
       ?await loadTrustedHistory([String(config.targetExposure)],String(config.referenceCurrency??"USD"),32,new Date(),db)
     :momentumUniverse
       ?await loadTrustedHistory(momentumUniverse,String(instance.currency),calculationEngineKey==="TRINITY_HYBRID"?14:(Number(config.lookbackMonths)||12),new Date(),db)
@@ -286,7 +291,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // Confirmed fills of the current quarterly review, split by managed sleeve (risk exposure / safe exposure).
   // An unmapped or unmanaged execution fails closed: the engine cannot size a purchase budget around it.
   let sigReviewTrades:ReturnType<typeof sigReviewTradesBySleeve>|undefined;
-  if(quarterlySignal&&dataStatus==="CURRENT"){
+  if(quarterlySignalEngine&&dataStatus==="CURRENT"){
     try{
       const ids=[...new Set(ledgerRows.map(row=>row.instrument_id).filter(Boolean).map(String))];
       const exposureRows=ids.length
@@ -402,7 +407,13 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   let sizingPrice:Decimal|null=null;
   let instructedQuantity:Decimal|null=null;
   let sizingBand:Decimal|null=null;
-  let proposal=engine.calculate({strategyInstanceId,trustedHistory,sigReviewTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
+  // The quarterly signal family sizes its orders from the cash the investor allows it to spend: a cash
+  // buffer from the trade preferences stays outside the strategy (otherwise a purchase of buffered cash
+  // is blocked by order sizing and the review never closes).
+  const engineCash=quarterlySignalEngine
+    ?Decimal.max(effectiveCash.minus(normalizeExecutionConstraints(scenario?.executionConstraints??((instance.execution_constraints??{}) as Record<string,unknown>)).cashBufferAmount),0)
+    :effectiveCash;
+  let proposal=engine.calculate({strategyInstanceId,trustedHistory,sigReviewTrades,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:engineCash,exposures:engineExposures,contributionsSinceReview,withdrawalsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
   if(override&&"proposal" in override)proposal=override.proposal;
   if(override&&"trade" in override){
     const forcedTrade=override.trade;
@@ -578,14 +589,16 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
   // EXECUTION account's cash and holdings. It returns the next order, a residue HOLD (every leg within half a
   // unit of target) or a DATA_REQUIRED that names why nothing can be traded.
   let override:SizingOverride|undefined;
-  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
+  if(["FIXED_ALLOCATION","TWO_FUNDS_MODERATE","TRINITY_HYBRID","TACTICAL_ALLOCATION"].includes(calculationEngineKey)&&dataStatus==="CURRENT"){
     const exact=engine.calculate({strategyInstanceId,trustedHistory,strategyVersionId:calculationVersionId,now:new Date(),baseCurrency:String(instance.currency),cash:effectiveCash,exposures:engineExposures,contributionsSinceReview,state,config,settings,reviewDue,nextReviewAt:dueAt,dataHealth:{status:dataStatus,message:dataMessage}});
     const needsTrade=exact.actionType==="BUY"||exact.actionType==="SELL"||(exact.actionType==="DATA_REQUIRED"&&exact.title===REBALANCE_STUCK_TITLE);
     const allocations:Array<{exposure:string;weight:string|number;leverage?:string|number}>|null=calculationEngineKey==="TWO_FUNDS_MODERATE"
       ?twoFundsAllocations(config,new Date()).map(a=>({...a}))
       :calculationEngineKey==="TRINITY_HYBRID"
         ?exact.actionType==="DATA_REQUIRED"?null:trinityWeights({trustedHistory,now:new Date()})
-        :effectiveAllocations(config,settings);
+        :calculationEngineKey==="TACTICAL_ALLOCATION"
+          ?tacticalAllocations(config,exact)
+          :effectiveAllocations(config,settings);
     if(needsTrade&&allocations){
       const threshold=new Decimal(String(config.rebalanceThreshold??"0.05"));
       const {legs,total}=residueLegs({allocations,exposures:engineExposures,cash:effectiveCash});
@@ -614,7 +627,7 @@ async function buildActionCalculation(db:Pick<Sql,"unsafe">,strategyInstanceId:s
             rationale:sizedTradeRows(outcome.trade,currency,constraints.fractionalShares)
           }};
         }else if(outcome.kind==="HOLD"){
-          override={proposal:residueHoldProposal(exact,outcome,{state,now:new Date(),cash:effectiveCash,currency,fractionalShares:constraints.fractionalShares})};
+          override={proposal:residueHoldProposal(exact,outcome,{state:calculationEngineKey==="TACTICAL_ALLOCATION"?exact.nextState:state,now:new Date(),cash:effectiveCash,currency,fractionalShares:constraints.fractionalShares})};
         }else{
           const note=openOutcomeNote(outcome,currency);
           override={proposal:{
@@ -690,7 +703,8 @@ export async function previewCashScenario(
   const contribution=input.type==="CONTRIBUTION"?amount:new Decimal(0);
   const calculation=await buildActionCalculation(sql,strategyInstanceId,{
     cashDelta:input.type==="CONTRIBUTION"?amount:amount.neg(),
-    contributionDelta:contribution
+    contributionDelta:contribution,
+    withdrawalDelta:input.type==="WITHDRAWAL"?amount:new Decimal(0)
   });
   return {
     scenario:{type:input.type,amount:amount.toString(),currency:String(calculation.instance.currency)},

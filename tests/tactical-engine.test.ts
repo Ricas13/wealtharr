@@ -42,3 +42,22 @@ describe("tactical-engine GEM data to trade lifecycle",()=>{
   expect(tacticalAllocationEngine.calculate(ctx([],100,{dataHealth:{status:"STALE"}})).actionType).toBe("DATA_REQUIRED");
  });
 });
+describe("tactical-engine residue",()=>{
+ it("completes the review when only rounding is left and cash is spent",()=>{
+  // Winner EXUS is 100%: holding 99.99 with 0.004 cash leaves 0.004 under target, below half a cent.
+  const residual=tacticalAllocationEngine.calculate(ctx([{economicExposure:"EXUS",value:D("99.99")}],0.004));
+  expect(residual.actionType).toBe("HOLD");
+  // 0.008 cash: the 0.008 shortfall exceeds half a cent but rounds to a 0.00 order, so the review completes.
+  const sub=tacticalAllocationEngine.calculate(ctx([{economicExposure:"EXUS",value:D("99.99")}],0.008));
+  expect([sub.actionType,sub.completesReview]).toEqual(["HOLD",true]);
+ });
+});
+describe("tactical order-sizing weights",()=>{
+ it("lists the whole versioned universe, with 0 for sleeves the signal left out",async()=>{
+  const {tacticalAllocations}=await import("../src/domain/strategy/tactical-engine");
+  const proposal=tacticalAllocationEngine.calculate(ctx([{economicExposure:"US",value:D(100)}],0));
+  expect(tacticalAllocations(ctx([],0).config,proposal)).toEqual([
+   {exposure:"US",weight:"0"},{exposure:"EXUS",weight:"1"},{exposure:"TBILL",weight:"0"},{exposure:"AGG",weight:"0"}]);
+  expect(tacticalAllocations(ctx([],0).config,{...proposal,actionType:"DATA_REQUIRED"})).toBeNull();
+ });
+});

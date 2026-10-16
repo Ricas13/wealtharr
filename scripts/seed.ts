@@ -32,6 +32,11 @@ async function main(){
     // rows; a code-complete release installs a NEW immutable v2.0 rather than rewriting history.
     // This set identifies an upgrade cohort, not an alternative definitions catalogue.
     const group2ReleaseKeys=new Set(["all-weather","hfea","coffeehouse","core-four","swensen","merriman-ultimate"]);
+    // Quarterly target family: an install that already seeded the 2026-10-15 rules as v1.0 receives the
+    // owner's 2026-10-16 rules (daily-close spike, 6% two skips, withdrawals lower the line) as a NEW
+    // immutable v1.1; existing instances stay pinned to v1.0. A fresh install seeds the current rules as v1.0.
+    const quarterlyReleaseKeys=new Set(["quarterly-target-nasdaq-3x","quarterly-target-midcap-2x","quarterly-target-smallcap"]);
+    const upgradeVersionOf=(key:string)=>group2ReleaseKeys.has(key)?"2.0":quarterlyReleaseKeys.has(key)?"1.1":null;
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
@@ -100,7 +105,8 @@ async function main(){
         [id,engine,lifecycle,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]
       );
 
-      if(group2ProductionRelease){
+      const upgradeVersion=syntheticCiCatalogue?null:upgradeVersionOf(key);
+      if(upgradeVersion){
         // A pre-existing v1.0 DRAFT cannot be mutated into a published version during deploy.
         // Deterministically create v2.0 on today's date, leaving old instances pinned to v1.0.
         // Repeated deployment is a no-op. Conflicting operator-created v2.0 fails closed.
@@ -111,8 +117,8 @@ async function main(){
           // published v1.0 with old rules must stay immutable, not block a new correct v2.0.
           const canonical=await tx.unsafe(
             "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 "+
-            "AND lifecycle_status='PUBLISHED' AND engine_key=$2 AND config=$3::jsonb "+
-            "AND input_schema=$4::jsonb LIMIT 1",
+            "AND lifecycle_status='PUBLISHED' AND engine_key=$2 AND config=$3::text::jsonb "+
+            "AND input_schema=$4::text::jsonb LIMIT 1",
             [id,engine,JSON.stringify(config),JSON.stringify(inputSchema)]
           );
           if(canonical.length)return;
@@ -121,13 +127,13 @@ async function main(){
           );
           if(!historical.length)return;
           const conflicting=await tx.unsafe(
-            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version='2.0' LIMIT 1",[id]
+            "SELECT id FROM strategy_versions WHERE strategy_definition_id=$1 AND version=$2 LIMIT 1",[id,upgradeVersion]
           );
-          if(conflicting.length)throw new Error("GROUP2_EXISTING_VERSION_CONFLICT:"+key);
+          if(conflicting.length)throw new Error("CANONICAL_UPGRADE_VERSION_CONFLICT:"+key);
           await tx.unsafe(
             "INSERT INTO strategy_versions (strategy_definition_id,version,effective_from,engine_key,lifecycle_status,upgrade_policy,input_schema,config,disclosure,published_at) "+
-            "VALUES ($1,'2.0',current_date,$2,'PUBLISHED','OPTIONAL',$5::text::jsonb,$3::text::jsonb,$4,now())",
-            [id,engine,JSON.stringify(config),disclosure,JSON.stringify(inputSchema)]
+            "VALUES ($1,$6,current_date,$2,'PUBLISHED','OPTIONAL',$5::text::jsonb,$3::text::jsonb,$4,now())",
+            [id,engine,JSON.stringify(config),disclosure,JSON.stringify(inputSchema),upgradeVersion]
           );
         });
       }
