@@ -330,7 +330,6 @@ function calculateReview(ctx:EngineContext):ProposedAction{
       openingReserveSnapshot=opening;
       rows.push({label:"Purchase budget left",value:money(budget),kind:"money"});
     }
-    const safeSold=ctx.sigReviewTrades?.safeSellGross??ZERO;
     const stockAction=(side:"BUY"|"SELL",amount:Decimal,title:string):ProposedAction=>({
       actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"add":"reduce"} ${money(amount)} ${currency} of ${p.stock} exposure.`,
       amount,currency,economicExposure:p.stock,leverage:p.leverage,explanation:rows,nextState:openingReserveSnapshot?{...nextStateBase,sigReviewOpeningReserve:openingReserveSnapshot.toString()}:nextStateBase,
@@ -349,7 +348,11 @@ function calculateReview(ctx:EngineContext):ProposedAction{
     const x=gap.gte(TOL)?Decimal.min(gap,budget,bond.plus(cash)):ZERO;
     if(x.gte(TOL)){
       if(cash.gte(x.minus("0.005")))return stockAction("BUY",Decimal.min(x,cash),"Buy "+money(Decimal.min(x,cash))+" of the target exposure");
-      if(safeSold.isZero()&&bond.gt(0)){
+      if(bond.gt(0)){
+        // A confirmed funding sale may execute partially or at a changed price. Do not
+        // treat any earlier safe-sleeve sale as proof that all required funding is available:
+        // continue offering the next sale against ACTUAL remaining bonds until the risk buy
+        // is affordable (or practical order sizing proves the residue untradable).
         const release=Decimal.min(bond,x.minus(cash));
         return safeAction("SELL",release,"Release "+money(release)+" from the safe sleeve",false);
       }
