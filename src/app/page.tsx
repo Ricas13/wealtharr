@@ -2,7 +2,7 @@ import Link from "next/link";
 import type {Metadata} from "next";
 import {headers} from "next/headers";
 import {currencyForVisitorCountry,type LandingCurrency} from "@/domain/visitor-currency";
-import {HeroStrategyPreview} from "@/components/HeroStrategyPreview";
+import {AllocationObservatory} from "@/components/AllocationObservatory";
 import {sql} from "@/lib/db";
 import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
 import {exactPriceString} from "@/domain/currency-money";
@@ -14,6 +14,7 @@ import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-ma
 import {cardDescription,isOfferableForUser,summariseRules} from "@/domain/explore-catalogue";
 import {LandingCurrencyProvider,PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStrategyCard} from "@/components/PublicLandingInteractivity";
 import "./marketing-home.css";
+import "./marketing-observatory.css";
 
 export const dynamic="force-dynamic";
 export const metadata:Metadata={alternates:{canonical:"/"}};
@@ -153,14 +154,15 @@ export default async function HomePage(){
       </details>
     </nav></header>
     <div className="wm-hero-glow">
-      <section className="wm-shell wm-hero">
-        <div className="wm-hero-copy"><span className="wm-kicker wm-kicker-dot">A smarter way to stay on strategy</span>
-          <h1>Follow the strategy.<em>Lose the spreadsheet.</em></h1>
-          <p>Explore established investment approaches, track your allocations, and understand exactly when — and how — to rebalance. One beautifully simple workspace.</p>
+      <section className="wm-shell wm-hero wm-hero-observatory">
+        <div className="wm-hero-copy"><span className="wm-kicker wm-kicker-dot">PRECISION IS A PRACTICE / 001</span>
+          <h1>Make the maths <em>move.</em></h1>
+          <p>Drag the dial. Add cash. Change the target. Watch the calculation respond in real time. One transparent example of what it means to follow your own rules.</p>
           <div className="wm-actions"><Link href="/register" className="wm-button main">Explore your options ↗</Link><a href="#preview" className="wm-button outline">See how it works ↗</a></div>
           <div className="wm-benefits"><span>No brokerage link required</span><span>No trades placed</span><span>Every rule explained</span></div>
+          <div className="wm-hero-index"><b>01 / 03</b> A LIVING FINANCIAL INSTRUMENT — TRY THE DIAL ↗</div>
         </div>
-        <HeroStrategyPreview/>
+        <AllocationObservatory/>
       </section>
     </div>
     <div className="wm-strip"><div className="wm-shell"><span><b>Established methods.</b> Your choice.</span><span><b>Clear review calculations.</b> Not just charts.</span><span><b>Your broker stays yours.</b> No trading access.</span></div></div>
