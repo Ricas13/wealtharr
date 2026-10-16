@@ -1,0 +1,3 @@
+Record type,Account,Instrument name,ISIN,Exchange,Ticker,Quote currency,Transaction date (ISO),Quantity,Confirmed unit price,Fees (account currency),Cash movement (account currency),Notes
+ILLUSTRATIVE BUY,Example ISA,Example equity fund,REPLACE_ISIN,Example venue,EXAMPLE,GBP,2026-01-01,10,50.00,1.00,-501.00,Illustrative sample only - verify actual broker fill
+ILLUSTRATIVE CONTRIBUTION,Example ISA,,,,,GBP,2026-01-02,,,,500.00,Illustrative cash deposit - not an investment return

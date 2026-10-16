@@ -16,5 +16,5 @@ export default function RebalanceCalculatorPage(){return <main><div className="c
  <p><strong>Example:</strong> £10,000 × 60% = £6,000. If your holding is worth £6,500, it is £500 above the chosen target.</p>
  <h2>Is this the same as 9Sig, PAA or momentum?</h2><p>No. This basic calculator assumes a fixed target weight. Value-targeting, percentage bands and momentum signals follow different rules, which must be evaluated separately using their own validated strategy versions.</p>
  <p><Link href="/strategies" className="button">Explore strategy methodologies</Link></p>
- </section><footer className="footer"><Link href="/">Home</Link> · <Link href="/features">Features</Link> · <Link href="/faq">FAQ</Link> · <Link href="/learn/portfolio-rebalancing">How rebalancing works</Link> · <Link href="/research-disclaimer">Research disclaimer</Link></footer>
+ </section><footer className="footer"><Link href="/">Home</Link> · <Link href="/features">Features</Link> · <Link href="/faq">FAQ</Link> · <Link href="/learn/portfolio-rebalancing">How rebalancing works</Link> · <Link href="/learn/portfolio-tracking-spreadsheet">Free CSV template</Link> · <Link href="/research-disclaimer">Research disclaimer</Link></footer>
  </div></main>}
