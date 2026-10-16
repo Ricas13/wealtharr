@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import {siteOrigin,publicIndexingEnabled} from "@/lib/public-seo";
 import { ensureSettings } from "@/lib/settings";
 import { PwaRegister } from "@/components/PwaRegister";
+import {ResearchDisclaimer} from "@/components/ResearchDisclaimer";
 import "./globals.css";
 
 // SEO indexing is an operational release gate. Resolve runtime environment on Oracle Docker.
@@ -29,7 +30,6 @@ export async function generateMetadata(): Promise<Metadata> {
   applicationName:brand,
   title:{default:brand+" | Rules-Based Portfolio Tracker",template:"%s | "+brand},
   description:"Track self-selected investment strategies, portfolio prices, scheduled reviews, and rules-based rebalancing. Transparent calculations and user-confirmed trades.",
-  alternates:{canonical:"/"},
   openGraph:{type:"website",locale:"en_GB",siteName:brand,url:"/",title:brand+" | Rules-Based Portfolio Tracker",
     description:"Track portfolio strategies, scheduled reviews and transparent rebalance calculations."},
   twitter:{card:"summary",title:brand+" | Rules-Based Portfolio Tracker",description:"Keep track of your investment strategies and review dates."},
@@ -63,6 +63,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await ensureSettings();
   return <html lang="en" suppressHydrationWarning>
     <head><script dangerouslySetInnerHTML={{__html:themeScript}}/></head>
-    <body>{children}<PwaRegister/></body>
+    <body>{children}<ResearchDisclaimer/><PwaRegister/></body>
   </html>;
 }
