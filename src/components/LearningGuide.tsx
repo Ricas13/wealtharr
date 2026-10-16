@@ -8,7 +8,9 @@ export const learningGuides=[
  {path:"/learn/uk-isa-portfolio-tracking",title:"Tracking ETFs and ETPs in a UK Stocks and Shares ISA",
   description:"A checklist for verifying investment identifiers, UK listings, dealing currency and recorded contributions."},
  {path:"/learn/leveraged-etp-risks",title:"Why daily-reset leveraged ETP returns can surprise investors",
-  description:"Learn how multi-day compounding, volatility and financing costs affect leveraged exposure."}
+  description:"Learn how multi-day compounding, volatility and financing costs affect leveraged exposure."},
+ {path:"/learn/portfolio-tracking-spreadsheet",title:"Portfolio rebalancing spreadsheet vs automatic tracker",
+  description:"A practical comparison of portfolio records, review calculations and an illustrative CSV you can download."}
 ] as const;
 type Props={title:string;description:string;path:string;children:ReactNode};
 export function LearningGuide({title,description,path,children}:Props){
