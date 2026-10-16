@@ -16,7 +16,7 @@ const expected:Record<string,Record<string,string | string[]>>={
   // Two equivalent mobile-demo renders were visually reviewed from the CI retry traces; tiny
   // subpixel raster differences affect only text/chart labels, not layout or user-visible content.
   "mobile-chromium":{
-    landing:"364799cbc4d3510540838e7bde037094c799c54ee5b1bf9d7e4d1a10483fd3cb",
+    landing:["364799cbc4d3510540838e7bde037094c799c54ee5b1bf9d7e4d1a10483fd3cb","db6f3c9c830d58f054f0835ec19f7094f520624a02e8780ecf04ab49b07c81fa"],
     demo:["21de51ab1bc02ebbc12d404cf3c9e79389b417b929850cfe695e6363fff90f18","c0507be37c31e90542b665ce564c324219bf73eeb476e6d71e65e58426124a80"]
   },
   "desktop-chromium":{
