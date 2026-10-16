@@ -25,5 +25,5 @@ export default async function PricingPage(){
  <p className="help">{row.annual_price_minor==null?"Annual option not currently available.":"Annual option: "+formatMinorCurrency(Number(row.annual_price_minor),String(row.billing_currency))+" per year."} Final checkout verifies the amount against Stripe.</p>
  <Link className="button primary" href="/register">Choose plan</Link></article>):<div className="empty" style={{gridColumn:"1/-1"}}>Current plan prices are unavailable. We won&apos;t invent a price or accept a misleading comparison.</div>}</div></section>
  <section className="section"><h2>What does a subscription provide?</h2><p>Strategy tracking and configuration access depend on your selected plan. Brokerage costs, instrument fees, and any external market-data costs are separate unless explicitly stated at checkout.</p><Link href="/faq" className="button">Pricing questions</Link></section>
- <footer className="footer"><Link href="/">Home</Link> · <Link href="/features">Features</Link> · <Link href="/strategies">Strategies</Link></footer></div></main>;
+ <footer className="footer"><Link href="/">Home</Link> · <Link href="/features">Features</Link> · <Link href="/strategies">Strategies</Link> · <Link href="/learn">Learning guides</Link> · <Link href="/research-disclaimer">Research disclaimer</Link></footer></div></main>;
 }
