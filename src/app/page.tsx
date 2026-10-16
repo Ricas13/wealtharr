@@ -133,8 +133,12 @@ export default async function HomePage(){
   const offered=canAdvertisePaidOffer(process.env)?plans.find(plan=>plan.monthlyMinor!==null&&plan.monthlyMinor>0):undefined;
   const offer=offered?{offers:{"@type":"Offer",price:exactPriceString(offered.monthlyMinor!,offered.currency),priceCurrency:offered.currency}}:{};
   const schema={"@context":"https://schema.org","@graph":[
-    {"@type":"WebSite",name:brand,url:origin},
-    {"@type":"SoftwareApplication",name:brand,applicationCategory:"FinanceApplication",
+    {"@type":"Organization","@id":origin+"#publisher",name:brand,url:origin,
+      description:"Self-directed portfolio calculation and research software."},
+    {"@type":"WebSite","@id":origin+"#website",name:brand,url:origin,
+      publisher:{"@id":origin+"#publisher"},inLanguage:"en-GB"},
+    {"@type":"SoftwareApplication","@id":origin+"#application",name:brand,applicationCategory:"FinanceApplication",
+      publisher:{"@id":origin+"#publisher"},
       operatingSystem:"Web",url:origin,
       description:"Track the allocations and review rules of published investment strategies. Wealtharr does not execute trades.",...offer}
   ]};
