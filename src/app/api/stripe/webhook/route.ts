@@ -5,19 +5,24 @@ import { enforceStrategyEntitlements } from "@/lib/entitlement-service";
 import {applyCurrentStripeSubscription} from "@/lib/stripe-subscription-state";
 
 async function claimWebhookEvent(event: Stripe.Event) {
-  const inserted=await sql.unsafe(
-    "INSERT INTO billing_webhook_events (event_id,event_type,status) VALUES ($1,$2,'PROCESSING') ON CONFLICT (event_id) DO NOTHING RETURNING event_id",
+  // Claim and stale-claim recovery must be ONE atomic statement. A separate SELECT followed
+  // by an unconditional UPDATE lets concurrent Stripe retries both own the same event and
+  // repeat side effects (including cancelling a duplicate paid subscription).
+  const claimed=await sql.unsafe(
+    "INSERT INTO billing_webhook_events (event_id,event_type,status) VALUES ($1,$2,'PROCESSING') "+
+    "ON CONFLICT (event_id) DO UPDATE SET status='PROCESSING',event_type=EXCLUDED.event_type,"+
+    "last_error_code=NULL,created_at=now(),processed_at=NULL "+
+    "WHERE billing_webhook_events.status<>'SUCCESS' AND "+
+    "(billing_webhook_events.status<>'PROCESSING' OR billing_webhook_events.created_at<=now()-interval '5 minutes') "+
+    "RETURNING event_id",
     [event.id,event.type]
   );
-  if(inserted[0])return true;
-  const existing=await sql.unsafe("SELECT status,created_at FROM billing_webhook_events WHERE event_id=$1 LIMIT 1",[event.id]);
-  const status=String(existing[0]?.status??"");
-  if(status==="SUCCESS")return false;
-  if(status==="PROCESSING"&&existing[0]?.created_at&&Date.now()-new Date(existing[0].created_at).getTime()<5*60*1000){
-    throw new Error("WEBHOOK_ALREADY_PROCESSING");
-  }
-  await sql.unsafe("UPDATE billing_webhook_events SET status='PROCESSING',last_error_code=NULL,created_at=now(),processed_at=NULL WHERE event_id=$1",[event.id]);
-  return true;
+  if(claimed[0])return true;
+  const existing=await sql.unsafe("SELECT status FROM billing_webhook_events WHERE event_id=$1 LIMIT 1",[event.id]);
+  if(existing[0]?.status==="SUCCESS")return false;
+  // PostgreSQL rechecks the ON CONFLICT WHERE clause after locking the conflicting row,
+  // so a second claimant cannot steal a just-refreshed PROCESSING lease.
+  throw new Error("WEBHOOK_ALREADY_PROCESSING");
 }
 
 async function markWebhookEvent(eventId:string,status:"SUCCESS"|"FAILED",errorCode?:string){
