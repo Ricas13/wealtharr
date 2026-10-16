@@ -14,9 +14,12 @@ export function sigReviewTradesBySleeve(
   if(!Number.isFinite(reviewStarted.getTime()))throw new Error("SIG_CONFIRMED_LEDGER_INVALID");
   const corrected=new Set(rows.filter(r=>r.correctionOfEventId).map(r=>r.correctionOfEventId));
   const out={stockBuyGross:new Decimal(0),stockSellGross:new Decimal(0),safeBuyGross:new Decimal(0),
-    safeSellGross:new Decimal(0),feeTotal:new Decimal(0)};
+    safeSellGross:new Decimal(0),feeTotal:new Decimal(0),lastSafeSellNet:null as Decimal|null,lastSafeSellFee:null as Decimal|null};
+  let lastSafeSaleAt=Number.NEGATIVE_INFINITY;
   for(const r of rows){
-    if(r.occurredAt<=reviewStarted||corrected.has(r.id)||r.eventType==="CORRECTION")continue;
+    const at=r.occurredAt instanceof Date?r.occurredAt.getTime():NaN;
+    if(!Number.isFinite(at))throw new Error("SIG_CONFIRMED_LEDGER_INVALID");
+    if(at<=reviewStarted.getTime()||corrected.has(r.id)||r.eventType==="CORRECTION")continue;
     if(!["BUY","SELL","FEE"].includes(r.eventType))continue;
     if(r.currency.toUpperCase()!==currency.toUpperCase())throw new Error("SIG_EXECUTION_CURRENCY_MISMATCH");
     const cash=new Decimal(r.cashAmount),fee=new Decimal(r.feeAmount);
@@ -30,7 +33,15 @@ export function sigReviewTradesBySleeve(
       if(stock)out.stockBuyGross=out.stockBuyGross.minus(cash);else out.safeBuyGross=out.safeBuyGross.minus(cash);
     }else{
       if(cash.lte(0))throw new Error("SIG_CONFIRMED_LEDGER_INVALID");
-      if(stock)out.stockSellGross=out.stockSellGross.plus(cash);else out.safeSellGross=out.safeSellGross.plus(cash);
+      if(stock)out.stockSellGross=out.stockSellGross.plus(cash);
+      else {
+        out.safeSellGross=out.safeSellGross.plus(cash);
+        if(at>=lastSafeSaleAt){
+          lastSafeSaleAt=at;
+          out.lastSafeSellNet=cash.minus(fee);
+          out.lastSafeSellFee=fee;
+        }
+      }
     }
   }
   return out;
