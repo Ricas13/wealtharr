@@ -295,23 +295,41 @@ function calculateReview(ctx:EngineContext):ProposedAction{
 
     // Purchase budget: a share of the reserve (safe sleeve + cash) at the start of a signal review.
     let budget=new Decimal(Infinity);
+    let openingReserveSnapshot:Decimal|undefined;
     if(kind==="SIGNAL"){
       const t=ctx.sigReviewTrades;
       if(!t)return fail("Confirmed trades of this review are required before sizing a purchase.");
-      const opening=bond.plus(cash).minus(t.stockSellGross).plus(t.stockBuyGross).plus(t.feeTotal);
-      if(!opening.isFinite()||opening.lt(0))return fail("The review's opening reserve cannot be reconciled with the ledger.");
-      budget=Decimal.max(ZERO,opening.mul(p.budgetRatio).minus(t.stockBuyGross));
+      // The 90% cap belongs to the reserve at the START of the review. Reconstructing it from
+      // today's bond mark-to-market value and executed cash flows lets a bond-price move silently
+      // change the cap between a funding sale and a stock purchase.
+      const recorded=ctx.state.sigReviewOpeningReserve;
+      let opening:Decimal;
+      if(inReview&&recorded!=null){
+        opening=new Decimal(String(recorded));
+      }else if(inReview&&[t.stockBuyGross,t.stockSellGross,t.safeBuyGross,t.safeSellGross]
+        .some(amount=>!amount.isZero())){
+        // Older in-flight reviews have no immutable opening snapshot. Once there have been fills,
+        // the original mark-to-market reserve cannot be recovered from the current quote.
+        return fail("The review started before its opening reserve was recorded. Reconcile the original reserve before trading.","Opening reserve needs reconciliation");
+      }else{
+        // For a new review, any older activity is already in today's confirmed holdings and cash.
+        // The caller has excluded the reserved cash buffer from ctx.cash.
+        opening=bond.plus(cash);
+      }
+      if(!opening.isFinite()||opening.lt(0))return fail("The review's opening reserve is invalid.");
+      budget=Decimal.max(ZERO,opening.mul(p.budgetRatio).minus(inReview?t.stockBuyGross:ZERO));
+      openingReserveSnapshot=opening;
       rows.push({label:"Purchase budget left",value:money(budget),kind:"money"});
     }
     const safeSold=ctx.sigReviewTrades?.safeSellGross??ZERO;
     const stockAction=(side:"BUY"|"SELL",amount:Decimal,title:string):ProposedAction=>({
       actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"add":"reduce"} ${money(amount)} ${currency} of ${p.stock} exposure.`,
-      amount,currency,economicExposure:p.stock,leverage:p.leverage,explanation:rows,nextState:nextStateBase,
+      amount,currency,economicExposure:p.stock,leverage:p.leverage,explanation:rows,nextState:openingReserveSnapshot?{...nextStateBase,sigReviewOpeningReserve:openingReserveSnapshot.toString()}:nextStateBase,
       confidence:"HIGH",dueAt:ctx.now,residueCloseState:closeState
     });
     const safeAction=(side:"BUY"|"SELL",amount:Decimal,title:string,sweep:boolean):ProposedAction=>({
       actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"move":"release"} ${money(amount)} ${currency} ${side==="BUY"?"into":"from"} ${p.safe} exposure.`,
-      amount,currency,economicExposure:p.safe,explanation:rows,nextState:nextStateBase,
+      amount,currency,economicExposure:p.safe,explanation:rows,nextState:openingReserveSnapshot?{...nextStateBase,sigReviewOpeningReserve:openingReserveSnapshot.toString()}:nextStateBase,
       confidence:"HIGH",dueAt:ctx.now,residueCloseState:closeState,optionalSweep:sweep
     });
 
