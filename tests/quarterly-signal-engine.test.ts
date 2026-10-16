@@ -233,6 +233,61 @@ describe("quarterly buy budget is a frozen confirmed opening reserve",()=>{
   });
 });
 
+describe("quarterly funding must cover BOTH broker flat fees",()=>{
+  const reviewState={
+    sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+    reviewTargetValue:"6540",reviewContributionsSnapshot:"0",
+    sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30",
+    sigReviewOpeningReserve:"4000"
+  };
+  const confirmed=(safeSellGross:string,stockBuyGross:string,feeTotal:string)=>({
+    stockBuyGross:D(stockBuyGross),stockSellGross:D(0),
+    safeBuyGross:D(0),safeSellGross:D(safeSellGross),feeTotal:D(feeTotal)
+  });
+  it("funds a 540 risk buy with 544 of bond proceeds for 2+2 of fees",()=>{
+    const opening=engine.calculate(base({executionFlatFee:D(2)}));
+    expect([opening.actionType,opening.economicExposure,opening.amount?.toFixed(2)])
+      .toEqual(["SELL","US_AGGREGATE_BONDS","544.00"]);
+    expect(opening.nextState.sigReviewOpeningReserve).toBe("4000");
+    // Confirmed cash from broker: 544 sale proceeds less 2 SELL fee = 542.
+    const afterSale=engine.calculate(base({
+      executionFlatFee:D(2),state:reviewState,cash:D(542),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3456)}],
+      sigReviewTrades:confirmed("544","0","2")
+    }));
+    expect([afterSale.actionType,afterSale.economicExposure,afterSale.amount?.toFixed(2)])
+      .toEqual(["BUY","NASDAQ_100_3X_LONG","540.00"]);
+    // Broker confirms 540 stock purchase and 2 BUY fee. Cash is exactly zero.
+    const afterPurchase=engine.calculate(base({
+      executionFlatFee:D(2),state:reviewState,cash:D(0),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6540)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3456)}],
+      sigReviewTrades:confirmed("544","540","4")
+    }));
+    expect(afterPurchase.actionType).toBe("HOLD");
+    expect(afterPurchase.nextState.sigConfirmedAnchor).toBe("6540");
+  });
+  it("requests funding for fees even when cash exactly covers the gross buy",()=>{
+    const action=engine.calculate(base({
+      executionFlatFee:D(2),cash:D(540),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(4000)}]
+    }));
+    expect([action.actionType,action.economicExposure,action.amount?.toFixed(2)])
+      .toEqual(["SELL","US_AGGREGATE_BONDS","4.00"]);
+  });
+  it("does not offer a nominal risk buy smaller than its confirmed fee when bonds are exhausted",()=>{
+    const action=engine.calculate(base({
+      executionFlatFee:D(2),state:reviewState,cash:D(1),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(0)}],
+      sigReviewTrades:confirmed("4000","0","3")
+    }));
+    expect(action.actionType).toBe("HOLD");
+  });
+});
+
 describe("sigReviewTradesBySleeve",()=>{
   const at=new Date("2026-09-30T20:00:00Z");
   const row=(over:Record<string,unknown>)=>({id:"a",correctionOfEventId:null,eventType:"BUY",currency:"USD",cashAmount:"-100",
