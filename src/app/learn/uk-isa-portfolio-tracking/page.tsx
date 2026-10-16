@@ -20,5 +20,6 @@ export default function Page(){
     <h2>What about quarterly target portfolios?</h2>
     <p>A model using a particular leveraged US fund’s daily price history may not have an economically identical UK ETP. Differences can include underlying index, leverage reset, funding costs, domicile, liquidity and fees. Strategy calculations should return insufficient-data status when equivalent exposure or historical evidence is not independently verified.</p>
     <p>Wealtharr’s calculations help maintain records under rules you select. They cannot confirm tax eligibility, suitability or a broker’s current product list for you.</p>
+    <p><strong>Official guidance:</strong> <a href="https://www.gov.uk/guidance/stocks-and-shares-investments-for-isa-managers" target="_blank" rel="noopener noreferrer">HM Revenue &amp; Customs — Qualifying investments for Stocks and Shares ISAs</a>. Check the current criteria and confirm availability with your provider.</p>
   </LearningGuide>;
 }
