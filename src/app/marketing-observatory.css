@@ -92,7 +92,8 @@
  .wm-hero-observatory .wm-hero-copy h1{font-size:clamp(53px,12vw,79px);margin:25px 0}
  .wm-hero-observatory .wm-hero-copy>p{font-size:14px;line-height:1.75}
  .wm-hero-observatory .wm-actions{margin:25px 0 22px}
- .wm-hero-observatory .wm-hero-index{margin-top:23px;gap:10px}\n .wm-hero-observatory .wm-hero-index b{white-space:nowrap;flex-shrink:0}
+ .wm-hero-observatory .wm-hero-index{margin-top:23px;gap:10px}
+ .wm-hero-observatory .wm-hero-index b{white-space:nowrap;flex-shrink:0}
  .wm-obs-topline{padding:13px 14px;font-size:8px}
  .wm-obs-status{font-size:8px;letter-spacing:0}
  .wm-obs-axislabel{top:45%}
