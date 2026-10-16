@@ -111,6 +111,26 @@ describe("money and rule-version behaviour",()=>{
   });
 });
 
+describe("NYSE completed-close spike gate",()=>{
+  const withIntradayRow=(now:string)=>base({
+    now:new Date(now),reviewDue:false,
+    state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"},
+    trustedHistory:[{exposure:"NASDAQ_100_3X_LONG",currency:"USD",source:"fixture",
+      points:[...NINE.map(d=>({at:new Date(d+"T00:00:00Z"),adjustedClose:D(100)})),
+        {at:new Date("2026-10-05T00:00:00Z"),adjustedClose:D(200)}]}]
+  });
+  it("cannot reset from the same trading day's row before the NYSE closing bell",()=>{
+    const beforeClose=engine.calculate(withIntradayRow("2026-10-05T15:00:00Z")); // 11:00 New York
+    expect(beforeClose.actionType).toBe("NO_ACTION");
+    expect(beforeClose.nextState.sigSpikeResetReference).toBeUndefined();
+  });
+  it("can reset after the same day's 16:00 New York close",()=>{
+    const afterClose=engine.calculate(withIntradayRow("2026-10-05T21:00:00Z")); // 17:00 New York
+    expect(afterClose.actionType).toBe("HOLD");
+    expect(afterClose.nextState.sigSpikeResetReference).toBe("2026-09-30");
+  });
+});
+
 describe("quarterly buy budget is a frozen confirmed opening reserve",()=>{
   const reviewState={
     sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
