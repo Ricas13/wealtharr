@@ -124,6 +124,17 @@ describe("NYSE completed-close spike gate",()=>{
     expect(beforeClose.actionType).toBe("NO_ACTION");
     expect(beforeClose.nextState.sigSpikeResetReference).toBeUndefined();
   });
+  it("ignores a fabricated weekend daily close even though it is before the current instant",()=>{
+    const context=withIntradayRow("2026-10-05T15:00:00Z");
+    const trusted=context.trustedHistory![0];
+    // 4 October 2026 is Sunday: 200 cannot be an NYSE closing price.
+    const suspicious=engine.calculate({
+      ...context,trustedHistory:[{...trusted,
+        points:[...trusted.points.filter(p=>p.at.toISOString().slice(0,10)!=="2026-10-05"),
+          {at:new Date("2026-10-04T00:00:00Z"),adjustedClose:D(200)}]}]
+    });
+    expect(suspicious.actionType).toBe("NO_ACTION");
+  });
   it("can reset after the same day's 16:00 New York close",()=>{
     const afterClose=engine.calculate(withIntradayRow("2026-10-05T21:00:00Z")); // 17:00 New York
     expect(afterClose.actionType).toBe("HOLD");
