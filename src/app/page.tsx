@@ -206,7 +206,7 @@ export default async function HomePage(){
       <Link href="/register" className="wm-button main">Get started ↗</Link>
     </div></section>
     <footer className="wm-footer"><div className="wm-shell">
-      <strong>{brand.toLowerCase()}.</strong><div><Link href="/features">Features</Link><Link href="/strategies">Strategies</Link><Link href="/pricing">Pricing</Link><Link href="/faq">FAQ</Link><Link href="/learn">Learning guides</Link><Link href="/research-disclaimer">Research disclaimer</Link></div>
+      <strong>{brand.toLowerCase()}.</strong><div><Link href="/features">Features</Link><Link href="/strategies">Strategies</Link><Link href="/pricing">Pricing</Link><Link href="/faq">FAQ</Link><Link href="/learn">Learning guides</Link><Link href="/learn/portfolio-tracking-spreadsheet">Free portfolio spreadsheet</Link><Link href="/research-disclaimer">Research disclaimer</Link></div>
       <p>Research and portfolio tracking, not a brokerage or investment adviser. Capital is at risk; past performance is not a guide to future results. Illustrative charts do not represent actual performance.</p>
     </div></footer>
   </main></LandingCurrencyProvider>;
