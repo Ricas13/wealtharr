@@ -23,5 +23,6 @@ export default function Page(){
     <h2>When should a review happen?</h2>
     <p>Some methods review monthly, quarterly or annually; others use deviations from a chosen allocation. Wealtharr stores the version of the selected rule and calculates its review schedule. Review timing is a parameter of the method, not a universal instruction.</p>
     <p><Link href="/tools/rebalance-calculator">Check your own illustrative target-value difference in the free calculator</Link>. No quote feed or trading account is required.</p>
+    <p><strong>Independent reference:</strong> <a href="https://www.investor.gov/introduction-investing/getting-started/asset-allocation" target="_blank" rel="noopener noreferrer">SEC Investor.gov — Asset Allocation and Diversification</a> explains rebalancing and why allocations drift.</p>
   </LearningGuide>;
 }
