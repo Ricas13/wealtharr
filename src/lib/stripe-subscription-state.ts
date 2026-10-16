@@ -105,11 +105,22 @@ export async function applyCurrentStripeSubscription(stripe:Stripe,incoming:Subs
     if(current&&current!==canonical.id&&!isTerminalLocalStatus(rows[0].status))
       return {userId:null as string|null,duplicate:eventType==="customer.subscription.created"?canonical.id:null};
 
-    // Only permit grants for a mapped Stripe Price, not planId metadata.
+    // Wealtharr's monthly/annual plans have exactly ONE recurring price, charged once.
+    // Never pick items.data[0] and silently grant that plan when Stripe is billing
+    // additional prices or quantities. Those states need operator reconciliation.
+    const items=canonical.items?.data;
+    if(!Array.isArray(items)||items.length!==1)
+      throw new Error("STRIPE_SUBSCRIPTION_ITEM_COUNT_INVALID");
+    const item=items[0];
+    if(item.quantity!=null&&item.quantity!==1)
+      throw new Error("STRIPE_SUBSCRIPTION_QUANTITY_INVALID");
+    if(!item.price?.recurring)throw new Error("STRIPE_RECURRING_PRICE_MISSING");
+    if(!["month","year"].includes(item.price.recurring.interval)||
+       (item.price.recurring.interval_count??1)!==1)
+      throw new Error("STRIPE_SUBSCRIPTION_INTERVAL_UNSUPPORTED");
+    // Only permit grants for the single verified, mapped Stripe Price, not planId metadata.
     const planId=await resolvePlanId(canonical);
     if(!planId)throw new Error("PLAN_NOT_RESOLVED");
-    const item=canonical.items.data[0];
-    if(!item?.price?.recurring)throw new Error("STRIPE_RECURRING_PRICE_MISSING");
     const status=canonical.status==="active"?"ACTIVE":canonical.status==="trialing"?"TRIALING":canonical.status.toUpperCase();
     // Newer Stripe API versions report the billing period per item, older ones on the
     // subscription. Renewals must keep moving the period end whichever the payload uses.
