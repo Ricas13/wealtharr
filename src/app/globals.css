@@ -2172,3 +2172,9 @@ html[data-theme="light"] .nav-badge { color:#fff; }
 .research-disclaimer a{text-decoration:underline;text-underline-offset:3px}
 .research-document{max-width:800px}.research-document h2{margin-top:30px}
 @media(max-width:700px){.research-disclaimer{margin:20px 14px;padding:15px}}
+
+/* The marketing landing uses a deep ink palette; its disclaimer must not switch to a pale stripe. */
+.wealtharr-marketing ~ .research-disclaimer{max-width:none;width:100%;margin:0;border:0;border-top:1px solid #24383a;border-radius:0;
+ background:#080d11;color:#9fb4b5;padding:24px max(20px,calc((100vw - 1100px) / 2));}
+.wealtharr-marketing ~ .research-disclaimer strong{color:#e5f4ea}
+.wealtharr-marketing ~ .research-disclaimer a{color:#b4f5d3}
