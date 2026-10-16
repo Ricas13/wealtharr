@@ -2,6 +2,9 @@ import { afterAll,beforeAll,describe,expect,it,vi } from "vitest";
 import { sql } from "@/lib/db";
 import { isValidIsin } from "@/domain/instrument-import";
 import { VERIFIED_MARKET_MAPPINGS_SQL } from "@/lib/verified-market-mappings";
+/** A copy of an object without the given keys (for "field missing" cases). */
+const without=(o:object,...keys:string[])=>Object.fromEntries(Object.entries(o).filter(([k])=>!keys.includes(k)));
+
 
 const admin=vi.hoisted(()=>({id:""}));
 vi.mock("@/lib/session",()=>({requireAdmin:async()=>admin}));
@@ -217,7 +220,7 @@ describe.skipIf(!process.env.DATABASE_URL)("candidate promotion",()=>{
 
     it("refuses a missing KID hash, a mismatching listing and a missing broker snapshot",async()=>{
       const s=await seed({country:"GB",wrapper:"ISA",broker});
-      const {kidSha256:_h,...noHash}=evidenceFor(s,{brokerSnapshot:snapshot}) as Record<string,unknown>;
+      const noHash=without(evidenceFor(s,{brokerSnapshot:snapshot}) as Record<string,unknown>,"kidSha256");
       expect((await promote(s,{evidence:noHash})).status).toBe(400);
       const wrongLine=await promote(s,{evidence:evidenceFor(s,{brokerSnapshot:snapshot,listingEvidence:{exchange:"LSE",ticker:"NOTTHIS",currency:"GBP"}})});
       expect(wrongLine.status).toBe(400);

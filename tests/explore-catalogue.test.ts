@@ -1,4 +1,4 @@
-import { describe,expect,it } from "vitest";
+import { describe,expect,it,vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   cardDescription,exploreCardState,onlyAvailableExploreCards,preselectedStrategyKey,summariseRules,
@@ -17,7 +17,11 @@ describe("exploreCardState",()=>{
   it("is AVAILABLE only when enabled, published in window, rules verified and a market exists",()=>{
     const result=exploreCardState(released);
     expect(result).toEqual({state:"AVAILABLE",reason:null,startAction:"START"});
-    expect(exploreCardState({...released,engine:"VALUE_TARGET"}).state).toBe("AVAILABLE");
+    expect(exploreCardState({...released,engine:"QUARTERLY_SIGNAL_TARGET"}).state).toBe("AVAILABLE");
+    vi.stubEnv("CI","false");
+    // The legacy 9Sig engine stays readable for old ledgers but is not offered to customers.
+    expect(exploreCardState({...released,engine:"VALUE_TARGET"}).state).toBe("RESEARCH");
+    vi.unstubAllEnvs();
   });
 
   it("never reports a disabled definition as AVAILABLE",()=>{
@@ -191,5 +195,16 @@ describe("Explore wiring",()=>{
     expect(source).toContain("preselectedStrategyKey(query.strategy,strategies.map(");
     expect(source).toContain("initialStrategyKey={initialStrategyKey}");
     expect(read("src/components/CreateStrategyForm.tsx")).toContain("strategies.find((s)=>s.key===initialStrategyKey)");
+  });
+});
+
+describe("summariseRules for the quarterly target family",()=>{
+  it("names the target exposure, the safe exposure that funds it and the 60/40 start",()=>{
+    const summary=summariseRules(getStrategyPlugin("quarterly-target-nasdaq-3x")!);
+    expect(summary.targetExposure).toBe("Nasdaq-100 equities with 3x daily-reset leverage");
+    expect(summary.safeExposure).toBe("US investment-grade aggregate bonds, including Treasuries, mortgage and corporate bonds");
+    expect(summary.startingTargetPercent).toBe("60");
+    expect(summary.reviewFrequency).toBe("quarterly");
+    expect(summary.leveraged).toBe(true);
   });
 });

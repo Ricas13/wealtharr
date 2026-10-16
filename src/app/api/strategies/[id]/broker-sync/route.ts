@@ -60,7 +60,8 @@ export async function POST(request:Request,context:Context){
     checks=reconcileConfirmedOrders(verifiedLinks,selected);
   }
   const matched=checks.filter(x=>x.status==="MATCH").length;
-  const status=checks.length>0&&matched===checks.length?"VERIFIED":"NEEDS_RECONCILIATION";
+  // Nothing linked means nothing to verify: that is not a discrepancy.
+  const status=verifiedLinks.length===0?"NO_LINKED_TRADES":matched===checks.length?"VERIFIED":"NEEDS_RECONCILIATION";
   const summary={linkedTradeCount:verifiedLinks.length,matched,issues:checks.filter(x=>x.status!=="MATCH"),verified:checks.filter(x=>x.status==="MATCH").map(x=>({
     externalTradeId:x.externalTradeId,ledgerEventId:x.ledgerEventId,observedQuantity:x.observedQuantity
   }))};

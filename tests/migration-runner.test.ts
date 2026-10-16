@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import crypto from "node:crypto";
 import {
   migrationChecksum,
@@ -67,9 +67,9 @@ describe("migration runner and schema tooling", () => {
     const scripts = JSON.parse(readFileSync("package.json", "utf8")).scripts as Record<string, string>;
     expect(scripts["db:generate"]).toBeUndefined();
     expect(Object.values(scripts).some((command) => command.includes("drizzle-kit generate"))).toBe(false);
-    const config = readFileSync("drizzle.config.ts", "utf8");
-    expect(config).not.toMatch(/out:\s*["']\.\/db\/migrations/);
-    expect(readFileSync("src/db/schema.ts", "utf8")).toMatch(/PARTIAL, INFORMATIONAL schema/);
+    // The hand-written SQL migrations are the only schema; no ORM schema or generator config exists.
+    expect(existsSync("drizzle.config.ts")).toBe(false);
+    expect(existsSync("src/db/schema.ts")).toBe(false);
   });
 
   it("never reuses a migration number", () => {

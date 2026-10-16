@@ -2,6 +2,8 @@
 import {useEffect,useState,type FormEvent} from "react";
 
 type Check={externalTradeId:string;ledgerEventId:string;status:string;reason:string;observedQuantity:string|null};
+const STATUS_LABEL:Record<string,string>={NOT_SYNCED:"not checked yet",VERIFIED:"every linked trade matches the broker",
+ NEEDS_RECONCILIATION:"some linked trades need attention",NO_LINKED_TRADES:"no linked trades to check yet",ERROR:"the last check failed"};
 type Snapshot={
  connected:boolean;providerEnabled:boolean;environment?:"demo"|"live";
  accountRef?:string;accountCurrency?:string;lastSyncedAt?:string|null;
@@ -52,7 +54,7 @@ export function StrategyTrading212Connection({strategyId}:{strategyId:string}){
   {state?.connected?<div>
    <p className="help">Connected to {state.environment==="demo"?"demo":"live"} account ending in {String(state.accountRef??"").slice(-4)} · {state.accountCurrency}.
      {state.lastSyncedAt?" Last checked "+new Date(state.lastSyncedAt).toLocaleString("en-GB")+".":" Not synchronised yet."}</p>
-   <p className="help">Verification: {state.status??"NOT_SYNCED"}. Linked transactions: {state.reconciliation?.linkedTradeCount??0}. Matched: {state.reconciliation?.matched??0}.</p>
+   <p className="help">Verification: {STATUS_LABEL[state.status??"NOT_SYNCED"]??state.status}. Linked transactions: {state.reconciliation?.linkedTradeCount??0}. Matched: {state.reconciliation?.matched??0}.</p>
    {state.reconciliation?.issues?.map(check=><p key={check.ledgerEventId} className="attention-message">
     Order {check.externalTradeId}: {check.status} — {check.reason}</p>)}
    {state.reconciliation?.verified?.map(check=><p key={check.externalTradeId} className="help">

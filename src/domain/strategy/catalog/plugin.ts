@@ -16,6 +16,7 @@
 export type StrategyProfile = {
   key: string;
   name: string;
+  /** "MOMENTUM_ROTATION" survives only as a label of legacy stored rows and frozen snapshots; it has no engine. */
   engine: "FIXED_ALLOCATION" | "VALUE_TARGET" | "MOMENTUM_ROTATION" | "TACTICAL_ALLOCATION" | "TWO_FUNDS_MODERATE" | "TRINITY_HYBRID" | "QUARTERLY_SIGNAL_TARGET" | "RESEARCH_PENDING";
   launchState: "DRAFT_REQUIRES_VERIFICATION";
   config?: Record<string, unknown>;

@@ -4,7 +4,7 @@ import {nextCalendarMonthDueAt,localDateInZone} from "../schedule";
 import {trinityNyseHolidayWindow} from "./trinity-calendar";
 import {trinityGlobalTrendSignal} from "./trinity-signals";
 import {TRINITY_CONFIG,TRINITY_BILLS,TRINITY_US_SIGNAL,TRINITY_VALUE,TRINITY_MOMENTUM,
-  TRINITY_STATIC,TRINITY_SIGNALS,TRINITY_TRADE_UNIVERSE} from "./trinity-model";
+  TRINITY_STATIC,TRINITY_TRADE_UNIVERSE} from "./trinity-model";
 import type {EngineContext,StrategyEngine,ProposedAction,TrustedHistoricalSeries} from "./types";
 
 const err=(ctx:EngineContext,reason:string):ProposedAction=>({

@@ -3,7 +3,6 @@ import {useEffect,useRef,useState} from "react";
 import {useLandingCurrency} from "@/components/PublicLandingInteractivity";
 import {MarketingHeroChart} from "@/components/MarketingHeroChart";
 
-const PATH="M0 120 L30 104 L55 113 L78 86 L103 96 L126 71 L151 83 L176 57 L204 64 L230 41 L256 48 L284 19 L300 14";
 const START=20140;
 const END=24850;
 const DURATION=3400;

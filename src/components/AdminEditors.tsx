@@ -60,7 +60,7 @@ export function StrategyDefinitionEditor(){
   });}catch{fail("Required inputs must be valid JSON.");}}}>
     <h3>Upsert strategy definition</h3><div className="form-grid">
       <Field label="Key"><input name="key" required/></Field><Field label="Name"><input name="name" required/></Field>
-      <Field label="Family"><input name="family" required/></Field><Field label="Engine"><select name="engine"><option>VALUE_TARGET</option><option>FIXED_ALLOCATION</option></select></Field>
+      <Field label="Family"><input name="family" required/></Field><Field label="Engine"><select name="engine"><option>FIXED_ALLOCATION</option><option>TACTICAL_ALLOCATION</option><option>TWO_FUNDS_MODERATE</option><option>TRINITY_HYBRID</option><option>QUARTERLY_SIGNAL_TARGET</option></select></Field>
       <Field className="field full" label="Description"><input name="description"/></Field>
       <Field label="Regions"><input name="regions" defaultValue="GB,US,EU"/></Field><Field label="Wrappers"><input name="wrappers" defaultValue="ISA,SIPP,TAXABLE"/></Field>
       <Field label="Benchmark key"><input name="benchmark"/></Field><Field label="Required inputs JSON"><input name="inputs" defaultValue="[]"/></Field>
@@ -82,7 +82,7 @@ export function StrategyVersionEditor(){
       <Field label="Version"><input name="version" placeholder="1.1" required/></Field>
       <Field label="Effective from"><input name="effectiveFrom" type="date" required/></Field>
       <Field label="Effective to"><input name="effectiveTo" type="date"/></Field>
-      <Field label="Engine override"><select name="engineKey"><option value="">Use definition default</option><option>VALUE_TARGET</option><option>FIXED_ALLOCATION</option></select></Field>
+      <Field label="Engine override"><select name="engineKey"><option value="">Use definition default</option><option>FIXED_ALLOCATION</option><option>TACTICAL_ALLOCATION</option><option>TWO_FUNDS_MODERATE</option><option>TRINITY_HYBRID</option><option>QUARTERLY_SIGNAL_TARGET</option></select></Field>
       <Field label="Upgrade policy"><select name="upgradePolicy"><option>OPTIONAL</option><option>RECOMMENDED</option><option>REQUIRED</option></select></Field>
       <Field className="field full" label="Strategy-specific onboarding fields JSON"><textarea name="inputSchema" rows={5} defaultValue="[]"/></Field>
       <Field className="field full" label="Config JSON"><textarea name="config" rows={7} defaultValue="{}"/></Field>
@@ -110,7 +110,7 @@ export function StrategyVersionManager(){
     <h3>Manage strategy release</h3><div className="form-grid">
       <Field className="field full" label="Version UUID"><input name="versionId" required/></Field>
       <Field label="Action"><select name="action"><option>UPDATE_DRAFT</option><option>ATTEST</option><option>PUBLISH</option><option>RETIRE</option></select></Field>
-      <Field label="Engine override (draft only)"><select name="engineKey"><option value="">Keep current</option><option>VALUE_TARGET</option><option>FIXED_ALLOCATION</option></select></Field>
+      <Field label="Engine override (draft only)"><select name="engineKey"><option value="">Keep current</option><option>FIXED_ALLOCATION</option><option>TACTICAL_ALLOCATION</option><option>TWO_FUNDS_MODERATE</option><option>TRINITY_HYBRID</option><option>QUARTERLY_SIGNAL_TARGET</option></select></Field>
       <Field label="Effective from (draft only)"><input name="effectiveFrom" type="date"/></Field>
       <Field label="Effective to (draft only)"><input name="effectiveTo" type="date"/></Field>
       <Field label="Upgrade policy (draft only)"><select name="upgradePolicy"><option value="">Keep current</option><option>OPTIONAL</option><option>RECOMMENDED</option><option>REQUIRED</option></select></Field>

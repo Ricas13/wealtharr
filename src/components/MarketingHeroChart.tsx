@@ -16,6 +16,8 @@ function curve(points:{x:number;y:number}[]){
     return d+" C "+mx+" "+prev.y+", "+mx+" "+p.y+", "+p.x+" "+p.y;
   },"");
 }
+const POINTS_PER_PERIOD:Record<Period,number>={"1M":5,"3M":11,"6M":20,"1Y":30,"ALL":36};
+
 export function MarketingHeroChart({revealProgress=1}:{revealProgress?:number}){
   const {currency}=useLandingCurrency();
   const fmt=new Intl.NumberFormat(currency==="GBP"?"en-GB":currency==="EUR"?"de-DE":"en-US",
@@ -23,8 +25,7 @@ export function MarketingHeroChart({revealProgress=1}:{revealProgress?:number}){
   const [period,setPeriod]=useState<Period>("1Y");
   const [hover,setHover]=useState<number|null>(null);
   const [keyboardIndex,setKeyboardIndex]=useState<number|null>(null);
-  const count:Record<Period,number>={"1M":5,"3M":11,"6M":20,"1Y":30,"ALL":36};
-  const data=useMemo(()=>examples.slice(-count[period]),[period]);
+  const data=useMemo(()=>examples.slice(-POINTS_PER_PERIOD[period]),[period]);
   const active=Math.min(hover??keyboardIndex??data.length-1,data.length-1);
   const current=data[active],start=data[0];
   const visibleCurrent=Math.round(start+(current-start)*revealProgress);

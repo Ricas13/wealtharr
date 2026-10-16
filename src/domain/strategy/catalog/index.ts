@@ -14,7 +14,6 @@ import {plugin as coffeehouse} from "./coffeehouse";
 import {plugin as coreFour} from "./core-four";
 import {plugin as swensen} from "./swensen";
 import {plugin as merrimanUltimate} from "./merriman-ultimate";
-import {plugin as incomeSig} from "./income-sig";
 import {plugin as twoFundsForLife} from "./two-funds-for-life";
 import {plugin as bernsteinNoBrainer} from "./bernstein-no-brainer";
 import {plugin as larryPortfolio} from "./larry-portfolio";
@@ -27,8 +26,6 @@ import {plugin as gtaaIvy} from "./gtaa-ivy";
 import {plugin as paa} from "./paa";
 import {plugin as vaa} from "./vaa";
 import {plugin as vaaG12} from "./vaa-g12";
-import {plugin as threeSig} from "./3sig";
-import {plugin as sixSig} from "./6sig";
 import {plugin as quarterlyNasdaq3x} from "./quarterly-target-nasdaq-3x";
 import {plugin as quarterlyMidcap2x} from "./quarterly-target-midcap-2x";
 import {plugin as quarterlySmallcap} from "./quarterly-target-smallcap";
@@ -45,10 +42,9 @@ export const STRATEGY_PLUGINS:readonly StrategyPlugin[]=[
   nineSig,
   hfea,goldenButterfly,permanentPortfolio,allWeather,threeFund,sixtyForty,eightyTwenty,buffett9010,
   coffeehouse,coreFour,swensen,
-  merrimanUltimate,incomeSig,twoFundsForLife,bernsteinNoBrainer,larryPortfolio,pinwheel,trinity,
+  merrimanUltimate,twoFundsForLife,bernsteinNoBrainer,larryPortfolio,pinwheel,trinity,
   trend200d,riskParity,
   dualMomentum,gtaaIvy,paa,vaa,vaaG12,
-  threeSig,sixSig,
   quarterlyNasdaq3x,quarterlyMidcap2x,quarterlySmallcap
 ];
 

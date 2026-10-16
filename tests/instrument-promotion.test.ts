@@ -5,6 +5,9 @@ import {
   classifyPromotion, promoteMappingSchema, rejectMappingSchema, subjectMatchesMapping, type PeerMapping
 } from "../src/domain/instrument-promotion";
 
+/** A copy of an object without the given keys (for "field missing" cases). */
+const without=(o:object,...keys:string[])=>Object.fromEntries(Object.entries(o).filter(([k])=>!keys.includes(k)));
+
 const MAPPING_ID = "11111111-1111-4111-8111-111111111111";
 const LINE_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_LINE_ID = "33333333-3333-4333-8333-333333333333";
@@ -41,7 +44,7 @@ describe("promotion input", () => {
   it("refuses when any checklist item is false or missing", () => {
     for (const key of Object.keys(checklist)) {
       expect(promoteMappingSchema.safeParse({ ...base, checklist: { ...checklist, [key]: false } }).success, key).toBe(false);
-      const { [key]: _omitted, ...rest } = checklist as Record<string, boolean>;
+      const rest = without(checklist, key);
       expect(promoteMappingSchema.safeParse({ ...base, checklist: rest }).success, key + " missing").toBe(false);
     }
     expect(promoteMappingSchema.safeParse({ ...base, checklist: { ...checklist, factsheetChecked: "true" } }).success).toBe(false);

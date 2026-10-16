@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import {readFileSync} from "node:fs";
-import {currencyMinorDigits,majorFromMinor,minorFromMajor,exactPriceString,formatMinorCurrency} from "@/domain/currency-money";
+import {currencyMinorDigits,majorFromMinor,minorFromMajor,minorFromMajorText,exactPriceString,formatMinorCurrency} from "@/domain/currency-money";
 
 describe("currency-accurate pricing across public and admin views",()=>{
  it("interprets GBP USD EUR as cents, JPY as whole units and KWD as thousandths",()=>{
@@ -46,10 +46,21 @@ describe("currency-accurate pricing across public and admin views",()=>{
   const editor=readFileSync("src/components/SimplePlanEditor.tsx","utf8");
   expect(editor).toContain("const priceStep=1/10**currencyMinorDigits(form.currency)");
   expect(editor).toContain("majorFromMinor(form.monthlyPriceMinor,form.currency)");
-  expect(editor).toContain("minorFromMajor(Number(e.target.value||\"0\"),form.currency)");
+  expect(editor).toContain("minorFromMajorText(e.target.value,form.currency)");
+  expect(editor).not.toContain("minorFromMajor(Number(");
   expect(editor).toContain("function changeCurrency(next:string)");
   expect(editor).toContain("it does not perform a foreign-exchange conversion");
   expect(editor).not.toContain("form.monthlyPriceMinor/100");
   expect(editor).not.toContain("form.annualPriceMinor/100");
+ });
+ it("parses typed amounts into minor units without floating point",()=>{
+  // 0.29 * 100 is 28.999999999999996 in floating point; the text parser gives exactly 29.
+  expect(minorFromMajorText("0.29","GBP")).toBe(29);
+  expect(minorFromMajorText("","GBP")).toBe(0);
+  expect(minorFromMajorText("1.299","KWD")).toBe(1299);
+  expect(minorFromMajorText("2000","JPY")).toBe(2000);
+  expect(()=>minorFromMajorText("-1","GBP")).toThrow();
+  expect(()=>minorFromMajorText("abc","GBP")).toThrow();
+  expect(exactPriceString(999,"GBP")).toBe("9.99");
  });
 });
