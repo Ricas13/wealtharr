@@ -135,7 +135,7 @@ export default async function OverviewPage(){
           </Link>
           {primaryAction&&<span>{primaryAction.instance_name} · {primaryAction.confidence==="HIGH"?"High confidence":"Check the supporting data"}</span>}
         </div>
-        <p className="member-trust"><CheckCircle2 size={15}/> Calculated by Wealtharr. <strong>You decide whether to trade.</strong></p>
+        <p className="member-trust"><CheckCircle2 size={15}/> For research purposes only. <strong>You decide whether to trade.</strong></p>
       </div>
       <div className="member-action-visual" aria-hidden="true">
         <div className="member-orbit"><div className="member-orbit-inner"><svg viewBox="0 0 100 70" fill="none" role="presentation"><path d="M7 51 L27 34 L42 41 L63 16 L78 26 L94 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="94" cy="8" r="4" fill="currentColor"/><circle cx="7" cy="51" r="3" fill="currentColor"/><path d="M16 13C28 4 48 6 55 17" stroke="currentColor" strokeDasharray="2 5" opacity=".6"/></svg><span>Rules over reactions</span></div></div>

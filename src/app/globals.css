@@ -2164,3 +2164,17 @@ html[data-theme="light"] .nav-badge { color:#fff; }
 
 /* Optional broker execution time inside the trade form. */
 .trade-execution-when { flex:1 1 220px; }
+
+/* Sitewide, visible and crawlable educational-risk disclosure; no hidden SEO-only text. */
+.research-disclaimer{max-width:1100px;margin:24px auto 30px;padding:18px 22px;border:1px solid var(--border,rgba(128,128,128,.28));border-radius:12px;font-size:.84rem;line-height:1.65;color:var(--muted,#949ca9)}
+.research-disclaimer p{margin:0 0 8px}.research-disclaimer p:last-child{margin-bottom:0}
+.research-disclaimer strong{color:var(--text,inherit)}
+.research-disclaimer a{text-decoration:underline;text-underline-offset:3px}
+.research-document{max-width:800px}.research-document h2{margin-top:30px}
+@media(max-width:700px){.research-disclaimer{margin:20px 14px;padding:15px}}
+
+/* The marketing landing uses a deep ink palette; its disclaimer must not switch to a pale stripe. */
+.wealtharr-marketing ~ .research-disclaimer{max-width:none;width:100%;margin:0;border:0;border-top:1px solid #24383a;border-radius:0;
+ background:#080d11;color:#9fb4b5;padding:24px max(20px,calc((100vw - 1100px) / 2));}
+.wealtharr-marketing ~ .research-disclaimer strong{color:#e5f4ea}
+.wealtharr-marketing ~ .research-disclaimer a{color:#b4f5d3}
