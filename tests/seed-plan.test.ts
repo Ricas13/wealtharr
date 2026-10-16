@@ -52,6 +52,14 @@ describe("the seed script wiring",()=>{
     expect(seed).toContain('syntheticCiCatalogue?"CI_FIXTURE":"PRODUCTION"');
     expect(seed).toContain("if(!syntheticCiCatalogue)continue;");
   });
+  it("compares the canonical upgrade config as JSON text, so a fresh install is not upgraded and a redeploy is idempotent",()=>{
+    // A bare $n::jsonb parameter is sent by the driver as a JSON *string*, which never equals the stored
+    // object: a fresh install then received a duplicate upgrade version and the next deploy failed
+    // with a version conflict. Verified against a real database on 2026-10-16.
+    expect(seed).toContain("AND config=$3::text::jsonb");
+    expect(seed).toContain("AND input_schema=$4::text::jsonb");
+    expect(seed).not.toMatch(/config=\$3::jsonb/);
+  });
   it("never writes an attestation row or enables anything itself",()=>{
     expect(seed).not.toContain("strategy_version_attestations");
     expect(seed).not.toMatch(/UPDATE strategy_definitions SET enabled/);

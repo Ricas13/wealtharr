@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 /** ISO 4217 minor-unit conversions for UI prices, not foreign exchange.
  * All values stored in the database remain integer minor units.
  */
@@ -14,8 +15,18 @@ export function minorFromMajor(major:number,currency:string):number{
  if(!Number.isSafeInteger(amount))throw new Error("Invalid amount");
  return amount;
 }
+/** Parse a typed major-unit amount ("9.99") into integer minor units without floating point. */
+export function minorFromMajorText(text:string,currency:string):number{
+ let major:Decimal;
+ try{major=new Decimal(text.trim()===""?"0":text.trim());}catch{throw new Error("Invalid amount");}
+ if(!major.isFinite()||major.lt(0))throw new Error("Invalid amount");
+ const minor=major.mul(new Decimal(10).pow(currencyMinorDigits(currency))).toDecimalPlaces(0,Decimal.ROUND_HALF_EVEN).toNumber();
+ if(!Number.isSafeInteger(minor))throw new Error("Invalid amount");
+ return minor;
+}
 export function exactPriceString(minor:number,currency:string):string{
- return majorFromMinor(minor,currency).toFixed(currencyMinorDigits(currency));
+ const digits=currencyMinorDigits(currency);
+ return new Decimal(minor).div(new Decimal(10).pow(digits)).toFixed(digits);
 }
 export function formatMinorCurrency(minor:number,currency:string):string{
  try{

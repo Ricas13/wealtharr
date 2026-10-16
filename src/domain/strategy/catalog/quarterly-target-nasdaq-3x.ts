@@ -14,9 +14,9 @@ export const plugin:StrategyPlugin={
     config:{
       ruleVersion:"WEALTHARR_OWNER_2026_V1",variant:"SIG_9",
       targetExposure:"NASDAQ_100_3X_LONG",safeExposure:"US_AGGREGATE_BONDS",targetLeverage:"3",
-      quarterlyGrowth:"0.09",initialTargetRatio:"0.60",contributionTargetRatio:"0.50",buyBudgetRatio:"0.90",
+      quarterlyGrowth:"0.09",initialTargetRatio:"0.60",contributionTargetRatio:"0.50",buyBudgetRatio:"0.90",withdrawalTargetRatio:"0.50",
       protection:{triggerRatio:"0.70",lookbackQuarters:8,skippedSells:2},
-      spikeReset:{enabled:true,gainMultiple:"2",targetRatio:"0.60"},
+      spikeReset:{enabled:true,observation:"DAILY_CLOSE",gainMultiple:"2",targetRatio:"0.60"},
       referenceCurrency:"USD",actWindowTradingDays:3,
       reviewFrequency:"QUARTERLY",reviewSchedule:"CALENDAR_QUARTER_END",
       reviewTimezone:"America/New_York",reviewCutoffLocal:"16:00",businessDayConvention:"PREVIOUS"

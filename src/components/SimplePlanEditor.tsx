@@ -2,7 +2,14 @@
 import {useState,type FormEvent} from "react";
 import {useRouter} from "next/navigation";
 import {ALL_CHANNELS,ALL_FEATURES,type ChannelKey,type FeatureKey} from "@/domain/entitlements";
-import {currencyMinorDigits,majorFromMinor,minorFromMajor} from "@/domain/currency-money";
+import Decimal from "decimal.js";
+import {currencyMinorDigits,exactPriceString,majorFromMinor,minorFromMajorText} from "@/domain/currency-money";
+
+/** "12.5" (%) -> 1250 basis points, without floating point. */
+function basisPointsFromPercentText(text:string){
+  try{return new Decimal(text.trim()===""?"0":text.trim()).mul(100).toDecimalPlaces(0,Decimal.ROUND_HALF_EVEN).toNumber();}
+  catch{return 0;}
+}
 
 type Entitlements={features:string[];notificationChannels:string[]};
 type Config={
@@ -56,8 +63,8 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
   // Keep the face amount when the default currency changes; this is NOT an FX conversion.
   // Round only to the new currency's valid minor-unit precision.
   setForm(old=>({...old,currency:next,
-   monthlyPriceMinor:minorFromMajor(majorFromMinor(old.monthlyPriceMinor,old.currency),next),
-   annualPriceMinor:minorFromMajor(majorFromMinor(old.annualPriceMinor,old.currency),next)
+   monthlyPriceMinor:minorFromMajorText(exactPriceString(old.monthlyPriceMinor,old.currency),next),
+   annualPriceMinor:minorFromMajorText(exactPriceString(old.annualPriceMinor,old.currency),next)
   }));
  }
  function toggle(kind:keyof Entitlements,key:string){
@@ -97,8 +104,8 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    <div className="field"><label htmlFor="admin-plan-name">Display name</label><input id="admin-plan-name" value={form.displayName} required onChange={e=>change("displayName",e.target.value)}/></div>
    <div className="field full"><label htmlFor="admin-plan-description">Homepage card description</label><input id="admin-plan-description" value={form.description} onChange={e=>change("description",e.target.value)}/></div>
    <div className="field full"><label htmlFor="admin-plan-highlights">Homepage card highlights (one per line, up to 5)</label><textarea id="admin-plan-highlights" rows={4} value={highlightsDraft} onChange={e=>setHighlightsDraft(e.target.value)} placeholder="Ideal for simple tracking\nKnow when to rebalance"/><p className="help">Marketing copy only. Included features and notifications shown to customers are always derived from the actual plan entitlements.</p></div>
-   <div className="field"><label htmlFor="admin-plan-monthly">Default monthly ({form.currency})</label><input id="admin-plan-monthly" type="number" min="0" step={priceStep} value={majorFromMinor(form.monthlyPriceMinor,form.currency)} onChange={e=>change("monthlyPriceMinor",minorFromMajor(Number(e.target.value||"0"),form.currency))}/></div>
-   <div className="field"><label htmlFor="admin-plan-annual">Default annual ({form.currency})</label><input id="admin-plan-annual" type="number" min="0" step={priceStep} value={majorFromMinor(form.annualPriceMinor,form.currency)} onChange={e=>change("annualPriceMinor",minorFromMajor(Number(e.target.value||"0"),form.currency))}/></div>
+   <div className="field"><label htmlFor="admin-plan-monthly">Default monthly ({form.currency})</label><input id="admin-plan-monthly" type="number" min="0" step={priceStep} value={majorFromMinor(form.monthlyPriceMinor,form.currency)} onChange={e=>change("monthlyPriceMinor",minorFromMajorText(e.target.value,form.currency))}/></div>
+   <div className="field"><label htmlFor="admin-plan-annual">Default annual ({form.currency})</label><input id="admin-plan-annual" type="number" min="0" step={priceStep} value={majorFromMinor(form.annualPriceMinor,form.currency)} onChange={e=>change("annualPriceMinor",minorFromMajorText(e.target.value,form.currency))}/></div>
    <div className="field"><label htmlFor="admin-plan-currency">Default currency</label><select id="admin-plan-currency" value={form.currency} onChange={e=>changeCurrency(e.target.value)}>{currencyOptions.map(c=><option key={c}>{c}</option>)}</select></div>
    <div className="field"><label htmlFor="admin-plan-currencies">Billing currencies</label><input id="admin-plan-currencies" value={form.supportedBillingCurrencies.join(", ")} onChange={e=>change("supportedBillingCurrencies",e.target.value.toUpperCase().split(",").map(s=>s.trim()).filter(Boolean))}/></div>
    <div className="field"><label htmlFor="admin-plan-limit">Maximum active strategies (blank = unlimited)</label><input id="admin-plan-limit" type="number" min="1" value={form.maxActiveStrategies??""} onChange={e=>change("maxActiveStrategies",e.target.value?Number(e.target.value):null)}/></div>
@@ -117,7 +124,7 @@ export function SimplePlanEditor({initialPlans,strategies}:{initialPlans:Config[
    <label className="toggle-row"><input type="checkbox" checked={form.archived} onChange={e=>change("archived",e.target.checked)}/><span>Archived (unavailable for new subscriptions)</span></label>
   </div>
   <details><summary>Advanced billing defaults</summary><div className="form-grid">
-   <div className="field"><label htmlFor="admin-plan-discount">Annual discount (%)</label><input id="admin-plan-discount" type="number" min="0" max="100" step=".01" value={form.annualDiscountBps/100} onChange={e=>change("annualDiscountBps",Math.round(Number(e.target.value)*100))}/></div>
+   <div className="field"><label htmlFor="admin-plan-discount">Annual discount (%)</label><input id="admin-plan-discount" type="number" min="0" max="100" step=".01" value={form.annualDiscountBps/100} onChange={e=>change("annualDiscountBps",basisPointsFromPercentText(e.target.value))}/></div>
    <div className="field"><label htmlFor="admin-plan-order">Display order</label><input id="admin-plan-order" type="number" value={form.sortOrder} onChange={e=>change("sortOrder",Number(e.target.value))}/></div>
    </div><p className="help">For Stripe, configure each billing-currency Price ID using the pricing editor alongside this form.</p></details>
   <button type="submit" className="button primary" disabled={busy}>{busy?"Saving…":"Save plan"}</button>

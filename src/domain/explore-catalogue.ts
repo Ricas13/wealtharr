@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type {StrategyPlugin} from "./strategy/catalog/plugin";
 import {getExposure} from "./strategy/exposures";
+import {syntheticCatalogueFixtureAllowed} from "./strategy/ci-fixture";
 import {assessStrategyMarket,type MarketAssessment,type VerifiedCandidate} from "./strategy/market-eligibility";
 
 /**
@@ -12,8 +13,8 @@ import {assessStrategyMarket,type MarketAssessment,type VerifiedCandidate} from 
 export type ExploreCardState="AVAILABLE"|"COMING_SOON"|"RESEARCH";
 export type ExploreStartAction="START"|"PLAN_OPTIONS"|"NONE";
 
-/** Engines a customer can be offered today. Mirrors `assertCustomerPublishableEngine`. */
-const CUSTOMER_PUBLISHABLE_ENGINES:ReadonlySet<string>=new Set(["VALUE_TARGET","FIXED_ALLOCATION","QUARTERLY_SIGNAL_TARGET"]);
+/** Engines a customer can be offered today. Mirrors `assertCustomerPublishableEngine` (incl. its CI-only legacy 9Sig exception). */
+const CUSTOMER_PUBLISHABLE_ENGINES:ReadonlySet<string>=new Set(["FIXED_ALLOCATION","QUARTERLY_SIGNAL_TARGET"]);
 
 export type ExploreCardInput={
   /** Engine the catalogue declares for the strategy, or null when nothing is declared. */
@@ -47,7 +48,7 @@ export function exploreCardState(input:ExploreCardInput,plan:ExplorePlanInput={a
   const blocked=(state:ExploreCardState,reason:string):ExploreCardResult=>({state,reason,startAction:"NONE"});
   if(!input.engine||input.engine==="RESEARCH_PENDING"||!input.hasRules)
     return blocked("RESEARCH","Source rules and calculation method are still being researched.");
-  if(!CUSTOMER_PUBLISHABLE_ENGINES.has(input.engine))
+  if(!CUSTOMER_PUBLISHABLE_ENGINES.has(input.engine)&&!(input.engine==="VALUE_TARGET"&&syntheticCatalogueFixtureAllowed()))
     return blocked("RESEARCH","The calculation method is not yet verified for customers.");
   if(!input.definitionEnabled)return blocked("COMING_SOON","Not yet released. Awaiting operator review.");
   if(!input.publishedInWindow)return blocked("COMING_SOON","Awaiting a published, verified version.");
@@ -79,6 +80,9 @@ export type ExploreRulesSummary={
   allocations:ExploreAllocationRow[];
   /** Single target exposure of a value-target strategy, when it has one. */
   targetExposure:string|null;
+  /** Safe exposure that funds a quarterly target strategy, and the starting share of the target exposure (percent). */
+  safeExposure:string|null;
+  startingTargetPercent:string|null;
   reviewFrequency:string|null;
   /** True when any listed exposure carries daily-reset leverage above 1x. */
   leveraged:boolean;
@@ -100,7 +104,7 @@ function exposureLabel(id:string):string|null{
  */
 export function summariseRules(plugin:StrategyPlugin):ExploreRulesSummary{
   const config=(plugin.profile?.config??plugin.codeRelease?.config??null) as Record<string,unknown>|null;
-  const empty:ExploreRulesSummary={allocations:[],targetExposure:null,reviewFrequency:null,leveraged:false};
+  const empty:ExploreRulesSummary={allocations:[],targetExposure:null,safeExposure:null,startingTargetPercent:null,reviewFrequency:null,leveraged:false};
   if(!config)return empty;
   const frequency=typeof config.reviewFrequency==="string"&&Object.hasOwn(FREQUENCY_LABEL,config.reviewFrequency)
     ?FREQUENCY_LABEL[config.reviewFrequency]:null;
@@ -121,7 +125,13 @@ export function summariseRules(plugin:StrategyPlugin):ExploreRulesSummary{
   }
   const target=typeof config.targetExposure==="string"?exposureLabel(config.targetExposure):null;
   if(typeof config.targetExposure==="string"&&(getExposure(config.targetExposure)?.leverage??1)>1)leveraged=true;
-  return {allocations,targetExposure:target,reviewFrequency:frequency,leveraged};
+  const safe=typeof config.safeExposure==="string"?exposureLabel(config.safeExposure):null;
+  let startingTargetPercent:string|null=null;
+  if(safe&&config.initialTargetRatio!=null){
+    try{startingTargetPercent=new Decimal(String(config.initialTargetRatio)).times(100).toDecimalPlaces(2).toFixed();}
+    catch{startingTargetPercent=null;}
+  }
+  return {allocations,targetExposure:target,safeExposure:safe,startingTargetPercent,reviewFrequency:frequency,leveraged};
 }
 
 /** The only values the `strategy` query parameter of the add-strategy page may take. */
@@ -136,7 +146,6 @@ const GENERATED_DESCRIPTION:Record<string,string>={
   FIXED_ALLOCATION:"Holds fixed target weights and rebalances them on a set review schedule.",
   VALUE_TARGET:"Follows a target value path and compares your portfolio with it at each review.",
   QUARTERLY_SIGNAL_TARGET:"Steers a growth-target line quarterly, funded from a bond fund, with a purchase throttle and sell-skip protection after a large fall.",
-  MOMENTUM_ROTATION:"Rotates between assets according to price-trend signals. Not yet available.",
   RESEARCH_PENDING:"The method is still being researched. Not yet available."
 };
 

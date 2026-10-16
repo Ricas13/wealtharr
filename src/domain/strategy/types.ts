@@ -23,6 +23,8 @@ export type EngineContext = {
   cash: Decimal;
   exposures: ExposurePosition[];
   contributionsSinceReview: Decimal;
+  /** Withdrawals since the last completed review (positive amount); read only by engines that use it. */
+  withdrawalsSinceReview?: Decimal;
   state: Record<string, unknown>;
   config: Record<string, unknown>;
   settings: Record<string, unknown>;

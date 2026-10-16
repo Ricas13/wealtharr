@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 import Link from "next/link";
 import { ArrowRight, BarChart3 } from "lucide-react";
 import { requirePageUser } from "@/lib/session";
@@ -98,8 +99,10 @@ export default async function ExplorePage() {
           <p className="help">Target weights of each type of investment{card.summary.reviewFrequency?`, reviewed ${card.summary.reviewFrequency}`:""}:</p>
           <ul>{card.summary.allocations.map((row) => <li key={row.exposure}>{row.percent}% {row.label}</li>)}</ul>
         </>}
-        {card.summary.allocations.length===0&&card.summary.targetExposure&&
+        {card.summary.allocations.length===0&&card.summary.targetExposure&&!card.summary.safeExposure&&
           <p className="help">Follows a target value for: {card.summary.targetExposure}{card.summary.reviewFrequency?`, reviewed ${card.summary.reviewFrequency}`:""}.</p>}
+        {card.summary.allocations.length===0&&card.summary.targetExposure&&card.summary.safeExposure&&
+          <p className="help">Steers {card.summary.targetExposure} along a growing target line{card.summary.reviewFrequency?`, reviewed ${card.summary.reviewFrequency}`:""}, buying from and selling into {card.summary.safeExposure}{card.summary.startingTargetPercent?` (starts ${card.summary.startingTargetPercent}% / ${new Decimal(100).minus(card.summary.startingTargetPercent).toFixed()}%)`:""}. Purchases each quarter are capped, and sells are skipped for a while after a large fall.</p>}
         {card.disclosure&&<p className="help">{card.disclosure}</p>}
         {card.result.state==="AVAILABLE"&&<p className="help">{GENERIC_RISK_NOTE}</p>}
         {card.result.reason&&<p className="help">{card.result.reason}</p>}

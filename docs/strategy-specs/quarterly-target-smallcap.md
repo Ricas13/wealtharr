@@ -9,6 +9,7 @@ A Wealtharr owner-selected variant of the published quarterly-target ("Sig") met
 - Target line: grows **3% per quarter**.
 - Start: 60% risk exposure / 40% safe exposure of the money put into the strategy.
 - New money (contributions, dividends, fund distributions, interest) raises the target line by **50%** of the new amount.
+- Withdrawals lower the target line by **50%** of the amount withdrawn (from version 1.1; version 1.0 left the line unchanged).
 - Purchase throttle: in one review, purchases of the risk exposure use at most **90%** of the safe reserve (safe exposure plus cash) held when the review began.
 - 30 Down protection: if the reference quarter-end close is at or below **70%** of the highest of the previous eight quarter-end closes, up to **4** sell signal(s) are skipped. Buys are never skipped.
 - Spike reset: if the risk exposure gained at least 100% in the quarter and, after the ordinary rebalance, it would be between 60% and 100% of the plan and no 30 Down window is active, the target is reset to 60% of the plan.
@@ -40,7 +41,7 @@ These are decisions of the Wealtharr owner, recorded 2026-10-15, not facts about
 
 - Safe side is a US aggregate bond fund, not cash.
 - 3% growth and the 4-sell skip count for this variant (owner-selected).
-- 60/40 start and the 50% new-money lift.
+- 60/40 start, the 50% new-money lift and the 50% withdrawal drop (2026-10-16).
 - The 90% purchase throttle and the spike reset each rest on a single author source (2018), kept as labelled owner choices.
 - 30 Down reference is the risk exposure's own quarter-end closes; "resume normal trading" once a window is spent.
 - Quarter-end = last NYSE trading day of the calendar quarter; 3-trading-day act window; one skipped quarter takes one growth step.
@@ -49,4 +50,4 @@ These are decisions of the Wealtharr owner, recorded 2026-10-15, not facts about
 
 ## Golden tests
 
-`tests/quarterly-target-golden.test.ts` holds hand-computed cases (the workings are written beside each value): the 60/40 start and sweep, an underfunded purchase funded by a bond release, the 90% throttle, a sell, the new-money lift, 30 Down skip and resume, the spike reset, the act window and the variant parameters for key `quarterly-target-smallcap`.
+`tests/quarterly-target-golden.test.ts` holds hand-computed cases (the workings are written beside each value): the 60/40 start and sweep, an underfunded purchase funded by a bond release, the 90% throttle, a sell, the new-money lift, 30 Down skip and resume, the spike reset, withdrawals, the act window and the variant parameters for key `quarterly-target-smallcap`.

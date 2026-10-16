@@ -5,6 +5,9 @@ import {
 } from "../src/domain/instrument-evidence";
 import { promoteMappingSchema } from "../src/domain/instrument-promotion";
 import { resolveMapping } from "../src/domain/instruments";
+/** A copy of an object without the given keys (for "field missing" cases). */
+const without=(o:object,...keys:string[])=>Object.fromEntries(Object.entries(o).filter(([k])=>!keys.includes(k)));
+
 
 const TODAY = "2026-10-13";
 const HASH = "a".repeat(64);
@@ -41,13 +44,13 @@ describe("instrument evidence schema", () => {
     }
   });
   it("refuses a missing KID hash, and a url or date without the rest of the document", () => {
-    const { kidSha256: _h, ...noHash } = complete;
+    const noHash = without(complete, "kidSha256");
     expect(issuesOf(noHash).join()).toContain("kid: url, retrievedAt and sha256 must all be recorded together");
     expect(issuesOf({ ...complete, kidSha256: "abc" }).join()).toContain("kidSha256");
     expect(issuesOf({ ...complete, kidSha256: "g".repeat(64) }).join()).toContain("kidSha256");
   });
   it("accepts a factsheet instead of a KID", () => {
-    const { kidUrl: _u, kidRetrievedAt: _d, kidSha256: _h, ...rest } = complete;
+    const rest = without(complete, "kidUrl", "kidRetrievedAt", "kidSha256");
     const factsheet = { ...rest, factsheetUrl: "https://issuer.example/fs.pdf", factsheetRetrievedAt: "2026-10-01", factsheetSha256: HASH };
     expect(validateInstrumentEvidence(factsheet, ctx).ok).toBe(true);
     expect(issuesOf(rest).join()).toContain("KID or factsheet");
@@ -71,7 +74,7 @@ describe("instrument evidence schema", () => {
     expect(issuesOf({ ...complete, isaEligibility: { ...complete.isaEligibility, checkedAt: "2027-01-01" } }).join()).toContain("isaEligibility.checkedAt");
   });
   it("refuses a missing ISA basis and an unknown basis", () => {
-    const { isaEligibility: _i, ...rest } = complete;
+    const rest = without(complete, "isaEligibility");
     expect(issuesOf(rest).join()).toContain("isaEligibility");
     expect(issuesOf({ ...complete, isaEligibility: { ...complete.isaEligibility, basis: "TRUST_ME" } }).join()).toContain("isaEligibility.basis");
   });

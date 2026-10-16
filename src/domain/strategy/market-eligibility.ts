@@ -50,11 +50,6 @@ export function requiredPositions(engine: string, config: Record<string, unknown
       return one(a?.exposure, a?.leverage);
     }).filter((p): p is RequiredPosition => Boolean(p));
   }
-  // Research-only momentum strategies cannot be launched without their full, versioned universe.
-  if (engine === "MOMENTUM_ROTATION" && Array.isArray(config.riskAssets)) {
-    const exposures = [...config.riskAssets, config.defensiveAsset];
-    return exposures.map((exposure) => one(exposure)).filter((p): p is RequiredPosition => Boolean(p));
-  }
   if(engine==="TACTICAL_ALLOCATION"&&Array.isArray(config.riskAssets)&&Array.isArray(config.defensiveAssets)) {
     return [...new Set([...config.riskAssets,...config.defensiveAssets])]
       .map(exposure=>one(exposure)).filter((x):x is RequiredPosition=>Boolean(x));
@@ -101,13 +96,6 @@ export function assessStrategyMarket(
 ): MarketAssessment {
   // A missing or malformed risk/defensive leg must never be silently filtered out.
   // Otherwise the remaining mapped legs could incorrectly pass market eligibility.
-  if (engine === "MOMENTUM_ROTATION" &&
-      (!Array.isArray(config.riskAssets) || config.riskAssets.length === 0 ||
-       config.riskAssets.some((asset) => typeof asset !== "string" || !asset.trim()) ||
-       typeof config.defensiveAsset !== "string" || !config.defensiveAsset.trim() ||
-       new Set([...config.riskAssets, config.defensiveAsset]).size !== config.riskAssets.length + 1)) {
-    return { available: false, positions: [], missingExposures: ["Unverified strategy rules"], supportedMarkets: [] };
-  }
   if(engine==="TRINITY_HYBRID"&&(!Array.isArray(config.signalUniverse)||config.signalUniverse.length!==10||
     !Array.isArray(config.staticAllocations)||config.staticAllocations.length!==11||
     typeof config.defensiveAsset!=="string"))return {available:false,positions:[],missingExposures:["Unverified Trinity model"],supportedMarkets:[]};

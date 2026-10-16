@@ -12,7 +12,7 @@ export const plugin:StrategyPlugin={
     config:{
       ruleVersion:"WEALTHARR_OWNER_2026_V1",variant:"SIG_3",
       targetExposure:"US_SMALL_CAP_BLEND",safeExposure:"US_AGGREGATE_BONDS",
-      quarterlyGrowth:"0.03",initialTargetRatio:"0.60",contributionTargetRatio:"0.50",buyBudgetRatio:"0.90",
+      quarterlyGrowth:"0.03",initialTargetRatio:"0.60",contributionTargetRatio:"0.50",buyBudgetRatio:"0.90",withdrawalTargetRatio:"0.50",
       protection:{triggerRatio:"0.70",lookbackQuarters:8,skippedSells:4},
       spikeReset:{enabled:true,gainMultiple:"2",targetRatio:"0.60"},
       referenceCurrency:"USD",actWindowTradingDays:3,

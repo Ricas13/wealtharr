@@ -1,5 +1,6 @@
 import {curatedRelease,getStrategyPlugin} from "./catalog";
 import {isMethodComplete} from "./method-complete";
+import {syntheticCatalogueFixtureAllowed} from "./ci-fixture";
 
 export {CANONICAL_9SIG_CONFIG} from "./catalog/9sig";
 
@@ -18,11 +19,7 @@ function sameRuleConfig(a:unknown,b:unknown){return JSON.stringify(normalised(a)
  * A genuinely new canonical variant must be added through a reviewed code release.
  * Legacy non-catalogue definitions remain inert and cannot be created through the API.
  */
-export function syntheticCatalogueFixtureAllowed(){
-  const u=process.env.DATABASE_URL??"";
-  return process.env.CI==="true"&&process.env.GITHUB_ACTIONS==="true"&&
-    /^postgres(?:ql)?:\/\/[^@]+@127\.0\.0\.1:5432\/strategyos_test$/.test(u);
-}
+export {syntheticCatalogueFixtureAllowed};
 
 /** Production boundary: research/DRAFT reference material is not an executable customer release.
  *  Existing immutable versions remain stored but cannot be newly activated from incomplete code.

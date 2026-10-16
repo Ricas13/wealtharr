@@ -12,6 +12,9 @@ export function brokerSyncDisplayStatus(
  intervalMinutes:number, recordedFingerprint:string|undefined, currentFingerprint:string,
  now:Date=new Date()
 ):string{
+ // A check that found nothing linked is out of date as soon as a trade is linked.
+ if(currentStatus==="NO_LINKED_TRADES")
+  return recordedFingerprint===currentFingerprint?currentStatus:"NEEDS_RECONCILIATION";
  if(currentStatus!=="VERIFIED")return currentStatus;
  // A newly linked, reversed or corrected trade invalidates previously matched evidence.
  if(!recordedFingerprint||recordedFingerprint!==currentFingerprint)return "NEEDS_RECONCILIATION";

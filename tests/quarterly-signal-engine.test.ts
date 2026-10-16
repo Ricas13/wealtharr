@@ -81,6 +81,158 @@ describe("engine safety",()=>{
   });
 });
 
+describe("money and rule-version behaviour",()=>{
+  it("sizes orders in the account currency, not the reference currency of the price history",()=>{
+    const sell=engine.calculate(base({baseCurrency:"GBP",exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(8000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(3000)}]}));
+    expect([sell.actionType,sell.currency]).toEqual(["SELL","GBP"]);
+    expect(sell.instruction).toContain("GBP");
+  });
+  it("version 1.0 configs (no withdrawalTargetRatio) leave the line unchanged on withdrawals",()=>{
+    const legacy=cfg();delete legacy.withdrawalTargetRatio;
+    const step=engine.calculate(base({config:legacy,withdrawalsSinceReview:D(1000),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(8000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(3000)}]}));
+    expect(step.nextState.targetValue).toBe("6540");
+  });
+  it("version 1.0 configs (quarter-end spike) never start a review between quarter ends",()=>{
+    const legacy={...cfg(),spikeReset:{enabled:true,gainMultiple:"2",targetRatio:"0.60"}};
+    const quiet=engine.calculate(base({config:legacy,reviewDue:false,now:new Date("2026-10-20T15:00:00Z"),
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"}}));
+    expect(quiet.actionType).toBe("NO_ACTION");
+  });
+  it("carries withdrawals through a missed window",()=>{
+    const hold=engine.calculate(base({now:new Date("2026-10-06T15:00:00Z"),withdrawalsSinceReview:D(300)}));
+    expect(hold.actionType).toBe("HOLD");
+    expect(hold.nextState.sigCarriedWithdrawals).toBe("300");
+  });
+  it("fails closed between quarter ends when the daily history needed for the spike watch is missing",()=>{
+    const missing=engine.calculate(base({reviewDue:false,now:new Date("2026-10-20T15:00:00Z"),trustedHistory:[],
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"}}));
+    expect(missing.actionType).toBe("DATA_REQUIRED");
+  });
+});
+
+describe("NYSE completed-close spike gate",()=>{
+  const withIntradayRow=(now:string)=>base({
+    now:new Date(now),reviewDue:false,
+    state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-09-30"},
+    trustedHistory:[{exposure:"NASDAQ_100_3X_LONG",currency:"USD",source:"fixture",
+      points:[...NINE.map(d=>({at:new Date(d+"T00:00:00Z"),adjustedClose:D(100)})),
+        {at:new Date("2026-10-05T00:00:00Z"),adjustedClose:D(200)}]}]
+  });
+  it("cannot reset from the same trading day's row before the NYSE closing bell",()=>{
+    const beforeClose=engine.calculate(withIntradayRow("2026-10-05T15:00:00Z")); // 11:00 New York
+    expect(beforeClose.actionType).toBe("NO_ACTION");
+    expect(beforeClose.nextState.sigSpikeResetReference).toBeUndefined();
+  });
+  it("ignores a fabricated weekend daily close even though it is before the current instant",()=>{
+    const context=withIntradayRow("2026-10-05T15:00:00Z");
+    const trusted=context.trustedHistory![0];
+    // 4 October 2026 is Sunday: 200 cannot be an NYSE closing price.
+    const suspicious=engine.calculate({
+      ...context,trustedHistory:[{...trusted,
+        points:[...trusted.points.filter(p=>p.at.toISOString().slice(0,10)!=="2026-10-05"),
+          {at:new Date("2026-10-04T00:00:00Z"),adjustedClose:D(200)}]}]
+    });
+    expect(suspicious.actionType).toBe("NO_ACTION");
+  });
+  it("can reset after the same day's 16:00 New York close",()=>{
+    const afterClose=engine.calculate(withIntradayRow("2026-10-05T21:00:00Z")); // 17:00 New York
+    expect(afterClose.actionType).toBe("HOLD");
+    expect(afterClose.nextState.sigSpikeResetReference).toBe("2026-09-30");
+  });
+});
+
+describe("quarterly buy budget is a frozen confirmed opening reserve",()=>{
+  const reviewState={
+    sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+    reviewTargetValue:"12000",reviewContributionsSnapshot:"0",
+    sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30",
+    sigReviewOpeningReserve:"4000"
+  };
+  const trades={
+    stockBuyGross:D(1000),stockSellGross:D(0),safeBuyGross:D(0),
+    safeSellGross:D(0),feeTotal:D(0)
+  };
+  it("stores the opening reserve in the proposed action and across an executed funding leg",()=>{
+    // The 1 October review starts with 4,000 in bonds and no free cash.
+    // Its 90% maximum is 3,600; the first 540 of funding must not alter that base.
+    const first=engine.calculate(base());
+    expect([first.actionType,first.economicExposure,first.amount?.toString()]).toEqual([
+      "SELL","US_AGGREGATE_BONDS","540"
+    ]);
+    expect(first.nextState.sigReviewOpeningReserve).toBe("4000");
+    const persisted=postActionReviewState(first,{sigConfirmedAnchor:"6000"},new Date("2026-10-01T15:00:00Z"));
+    expect(persisted.sigReviewOpeningReserve).toBe("4000");
+  });
+  it("keeps the remaining 2,600 cap when bond quotes move after a 1,000 confirmed purchase",()=>{
+    // Independent arithmetic: 4,000 * 90% - 1,000 filled = 2,600,
+    // so 500 available cash requires a 2,100 bond sale regardless of bond-market drift.
+    const oldQuote=engine.calculate(base({
+      state:reviewState,cash:D(500),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(3500)}],
+      sigReviewTrades:trades
+    }));
+    const movedQuote=engine.calculate(base({
+      state:reviewState,cash:D(500),
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},{economicExposure:"US_AGGREGATE_BONDS",value:D(4200)}],
+      sigReviewTrades:trades
+    }));
+    for(const action of [oldQuote,movedQuote]){
+      expect([action.actionType,action.economicExposure,action.amount?.toFixed(2)]).toEqual([
+        "SELL","US_AGGREGATE_BONDS","2100.00"
+      ]);
+      expect(action.nextState.sigReviewOpeningReserve).toBe("4000");
+    }
+  });
+  it("requests another funding sale after a partial confirmed bond sale",()=>{
+    // Independent expected cash flow: required risk buy is 540. The first funding
+    // sale requested 540 but only 100 executed; current cash is 100 and 3,900 of
+    // the bond reserve remains. We must sell the remaining 440 BEFORE the risk buy.
+    const state={
+      sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+      reviewTargetValue:"6540",reviewContributionsSnapshot:"0",
+      sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30",sigReviewOpeningReserve:"4000"
+    };
+    const partial=engine.calculate(base({
+      cash:D(100),state,
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3900)}],
+      sigReviewTrades:{stockBuyGross:D(0),stockSellGross:D(0),
+        safeBuyGross:D(0),safeSellGross:D(100),feeTotal:D(0)}
+    }));
+    expect([partial.actionType,partial.economicExposure,partial.amount?.toFixed(2)]).toEqual([
+      "SELL","US_AGGREGATE_BONDS","440.00"
+    ]);
+    const funded=engine.calculate(base({
+      cash:D(540),state,
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3460)}],
+      sigReviewTrades:{stockBuyGross:D(0),stockSellGross:D(0),
+        safeBuyGross:D(0),safeSellGross:D(540),feeTotal:D(0)}
+    }));
+    expect([funded.actionType,funded.economicExposure,funded.amount?.toFixed(2)]).toEqual([
+      "BUY","NASDAQ_100_3X_LONG","540.00"
+    ]);
+    const confirmed=engine.calculate(base({
+      cash:D(0),state,
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6540)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3460)}],
+      sigReviewTrades:{stockBuyGross:D(540),stockSellGross:D(0),
+        safeBuyGross:D(0),safeSellGross:D(540),feeTotal:D(0)}
+    }));
+    expect(confirmed.actionType).toBe("HOLD");
+    expect(confirmed.nextState.sigConfirmedAnchor).toBe("6540");
+  });
+  it("fails closed for old in-flight reviews with confirmed fills but no opening snapshot",()=>{
+    const {sigReviewOpeningReserve:ignored,...legacyState}=reviewState;
+    void ignored;
+    const unsafe=engine.calculate(base({
+      state:legacyState,cash:D(500),sigReviewTrades:trades
+    }));
+    expect([unsafe.actionType,unsafe.title]).toEqual(["DATA_REQUIRED","Opening reserve needs reconciliation"]);
+  });
+});
+
 describe("sigReviewTradesBySleeve",()=>{
   const at=new Date("2026-09-30T20:00:00Z");
   const row=(over:Record<string,unknown>)=>({id:"a",correctionOfEventId:null,eventType:"BUY",currency:"USD",cashAmount:"-100",

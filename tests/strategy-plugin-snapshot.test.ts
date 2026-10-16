@@ -286,21 +286,23 @@ const GROUP2_KEYS=new Set(["hfea","all-weather","coffeehouse","core-four","swens
 const GROUP4_KEYS=new Set(["trend-200d","risk-parity","dual-momentum","gtaa-ivy","paa","vaa","vaa-g12"]);
 // Quarterly target family (engine QUARTERLY_SIGNAL_TARGET) released after the frozen 2026 refactor snapshot.
 const QUARTERLY_KEYS=new Set(["quarterly-target-nasdaq-3x","quarterly-target-midcap-2x","quarterly-target-smallcap"]);
+// Unfinished research stubs removed from the catalogue (binary release policy, 2026-10-16).
+const REMOVED_KEYS=new Set(["income-sig","3sig","6sig"]);
 const RELEASED_KEYS=new Set([...GROUP1_KEYS,...GROUP2_KEYS,...GROUP3_KEYS,...GROUP4_KEYS,...QUARTERLY_KEYS]);
 
 
 describe("strategy plugin registry preserves the pre-refactor catalogue",()=>{
   it("keeps the exact registry order of the old RESEARCH_STRATEGIES array",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)&&!QUARTERLY_KEYS.has(p.key)).map(p=>p.key)).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!GROUP4_KEYS.has(p.key)).map(p=>p.key));
-    expect(RESEARCH_STRATEGIES).toHaveLength(30);
+    expect(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)&&!QUARTERLY_KEYS.has(p.key)).map(p=>p.key)).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!GROUP4_KEYS.has(p.key)&&!REMOVED_KEYS.has(p.key)).map(p=>p.key));
+    expect(RESEARCH_STRATEGIES).toHaveLength(27);
   });
 
   it("every derived profile is deep-equal to the verbatim pre-refactor profile",()=>{
-    expect(RESEARCH_STRATEGIES.filter(p=>!RELEASED_KEYS.has(p.key))).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!RELEASED_KEYS.has(p.key)));
+    expect(RESEARCH_STRATEGIES.filter(p=>!RELEASED_KEYS.has(p.key))).toEqual(PRE_REFACTOR_PROFILES.filter(p=>!RELEASED_KEYS.has(p.key)&&!REMOVED_KEYS.has(p.key)));
   });
 
   it("pins engine and normalised executable config of every strategy at data level",()=>{
-    expect(Object.keys(ENGINE_AND_CONFIG).filter(key=>!GROUP4_KEYS.has(key))).toEqual(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)&&!QUARTERLY_KEYS.has(p.key)).map(p=>p.key));
+    expect(Object.keys(ENGINE_AND_CONFIG).filter(key=>!GROUP4_KEYS.has(key)&&!REMOVED_KEYS.has(key))).toEqual(RESEARCH_STRATEGIES.filter(p=>!GROUP4_KEYS.has(p.key)&&!QUARTERLY_KEYS.has(p.key)).map(p=>p.key));
     for(const profile of RESEARCH_STRATEGIES){
       if(RELEASED_KEYS.has(profile.key))continue;
       const pin=ENGINE_AND_CONFIG[profile.key];

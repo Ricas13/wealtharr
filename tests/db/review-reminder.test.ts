@@ -9,7 +9,6 @@ import { createDeliveriesForNotification, processDeliveryBacklog } from "@/lib/n
 // channels the plan allows, and never sent once the review date has moved.
 const url = process.env.DATABASE_URL;
 const sql = url ? postgres(url, { max: 2, prepare: false }) : null;
-const DAY = 86_400_000;
 
 // A timezone where it is currently at least 08:00, so the quiet-hours rule never makes the test flaky.
 function daytimeZone() {

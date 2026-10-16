@@ -75,13 +75,20 @@ export const tacticalAllocationEngine:StrategyEngine={
    }
    if(buys.length&&ctx.cash.gt("0.005")){
     const p=buys[0],amount=Decimal.min(ctx.cash,p.delta).toDecimalPlaces(2,Decimal.ROUND_DOWN);
-    if(amount.lte(0))return dataRequired(ctx,"Remaining cash is below a safely rounded execution amount.");
+    if(amount.lte(0))return {actionType:"HOLD",title:"Tactical target complete",
+     instruction:"The remaining cash is below the smallest order, so the holdings match the signal targets.",
+     explanation,nextState:reviewState,confidence:"HIGH",dueAt:ctx.now,completesReview:true};
     return {actionType:"BUY",title:"Tactical allocation: buy "+p.exposure,
      instruction:"Buy from available reconciled cash, confirm the execution, then recalculate.",
      amount,economicExposure:p.exposure,currency:ctx.baseCurrency,explanation,nextState:reviewState,
      confidence:"HIGH",dueAt:ctx.now,completesReview:false};
    }
-   if(buys.length)return dataRequired(ctx,"Insufficient reconciled cash to complete target; verify prior sales.");
+   // No leg is overweight by more than half a cent and cash is spent: what is still underweight is only the
+   // rounding, fees and price drift of this review's fills (the deltas sum to the remaining cash). That is a
+   // completed review, not missing data; order sizing (execution-residue.ts) applies the same tolerance.
+   if(buys.length)return {actionType:"HOLD",title:"Tactical target complete",
+     instruction:"Confirmed holdings match the signal targets apart from rounding and fees.",
+     explanation,nextState:reviewState,confidence:"HIGH",dueAt:ctx.now,completesReview:true};
    return {actionType:"HOLD",title:"Tactical target complete",instruction:"Confirmed holdings match the signal targets.",
      explanation,nextState:reviewState,confidence:"HIGH",dueAt:ctx.now,completesReview:true};
   }catch(e){
@@ -89,3 +96,17 @@ export const tacticalAllocationEngine:StrategyEngine={
   }
  }
 };
+
+/**
+ * Target weights of a tactical review for the shared order-sizing convention: every exposure of the
+ * versioned universe, with weight 0 for the sleeves the signal left out (so obsolete holdings are sold).
+ * Null when the engine produced no signal this time.
+ */
+export function tacticalAllocations(config:Record<string,unknown>,exact:ProposedAction){
+  const weights=exact.nextState.tacticalTargetWeights;
+  if(exact.actionType==="DATA_REQUIRED"||!Array.isArray(weights))return null;
+  const byExposure=new Map((weights as Array<{exposure:string;weight:string}>).map(w=>[String(w.exposure),String(w.weight)]));
+  const universe=[...new Set([...(Array.isArray(config.riskAssets)?config.riskAssets:[]),...(Array.isArray(config.defensiveAssets)?config.defensiveAssets:[])].map(String))];
+  return universe.map(exposure=>({exposure,weight:byExposure.get(exposure)??"0"}));
+}
+

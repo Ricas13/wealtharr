@@ -35,3 +35,12 @@ describe("broker evidence freshness",()=>{
   expect(fingerprint).not.toContain("t-1");
  });
 });
+
+describe("no linked trades",()=>{
+  it("stays 'no linked trades' until a trade is linked, then needs a new check",()=>{
+    const empty=confirmedLinkFingerprint([]);
+    expect(brokerSyncDisplayStatus("NO_LINKED_TRADES",new Date(),60,empty,empty)).toBe("NO_LINKED_TRADES");
+    const linked=confirmedLinkFingerprint([{externalTradeId:"1",ledgerEventId:"e",side:"BUY",quantity:"2"}]);
+    expect(brokerSyncDisplayStatus("NO_LINKED_TRADES",new Date(),60,empty,linked)).toBe("NEEDS_RECONCILIATION");
+  });
+});

@@ -1,8 +1,9 @@
 import Decimal from "decimal.js";
 import type {EngineContext,ExplanationRow,ProposedAction,StrategyEngine} from "./types";
 import {assess2026Community9Sig30Down,historical9SigSpikeReset,type Community9SigProtection} from "./9sig-community-rules";
+import {assessWealtharr9SigDailySpike} from "./sig-owner-conventions";
 import {verifiedSigQuarterCloses} from "./sig-quarter-closes";
-import {latestSigReference,referenceHistoryDates} from "./sig-nyse-quarters";
+import {isNyseTradingDay,latestSigReference,newYorkDate,newYorkMinutes,NYSE_CLOSE_MINUTES,referenceHistoryDates,type SigReference} from "./sig-nyse-quarters";
 
 /**
  * Quarterly signal strategy family (Wealtharr owner-selected variants of the published "Sig" method):
@@ -10,7 +11,12 @@ import {latestSigReference,referenceHistoryDates} from "./sig-nyse-quarters";
  * quarterly act window, a purchase throttle, a "30 Down" sell-skip protection and a spike reset.
  *
  * Every number comes from the version's config; each rule is documented, with its source or its
- * "owner decision" label, in docs/strategy-specs/quarterly-target-*.md.
+ * "owner decision" label, in docs/strategy-specs/quarterly-target-*.md. Rules added in a later version
+ * (withdrawals lowering the line, the daily-close spike) are read from config keys that the earlier
+ * immutable versions do not carry, so those versions keep their published behaviour.
+ *
+ * Money amounts are in the strategy account's currency (`ctx.baseCurrency`). The reference currency in
+ * the config is only the currency of the risk exposure's price history used for the signals.
  *
  * One recalculation proposes ONE single-leg trade. A purchase that has to be funded by the safe sleeve is
  * therefore sequenced across recalculations: sell the safe exposure, then buy the risk exposure.
@@ -20,9 +26,10 @@ export const QUARTERLY_SIGNAL_VARIANTS=["SIG_9","SIG_6","SIG_3"] as const;
 
 type Params={
   stock:string;safe:string;growth:Decimal;initialRatio:Decimal;contributionRatio:Decimal;budgetRatio:Decimal;
-  triggerRatio:Decimal;skipCap:number;spikeEnabled:boolean;spikeMultiple:Decimal;spikeRatio:Decimal;
-  currency:string;window:number;leverage?:string;
+  withdrawalRatio:Decimal;triggerRatio:Decimal;skipCap:number;spikeEnabled:boolean;spikeDaily:boolean;
+  spikeMultiple:Decimal;spikeRatio:Decimal;referenceCurrency:string;window:number;leverage?:string;
 };
+type ReviewKind="INITIAL"|"SIGNAL"|"SPIKE";
 const ZERO=new Decimal(0);
 const TOL=new Decimal("0.01");
 const dec=(v:unknown,label:string)=>{
@@ -46,10 +53,13 @@ function parse(c:Record<string,unknown>):Params{
   if(!Number.isInteger(skipCap)||skipCap<1||skipCap>8)throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:skippedSells");
   const s=(c.spikeReset??{}) as Record<string,unknown>;
   if(typeof s.enabled!=="boolean")throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:spikeReset");
+  // Absent in version 1.0 (quarter-end check with the 2018 allocation band).
+  const observation=s.observation??"QUARTER_END";
+  if(observation!=="QUARTER_END"&&observation!=="DAILY_CLOSE")throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:spikeObservation");
   const window=Number(c.actWindowTradingDays);
   if(!Number.isInteger(window)||window<1||window>10)throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:actWindowTradingDays");
-  const currency=String(c.referenceCurrency??"").trim().toUpperCase();
-  if(!/^[A-Z]{3}$/.test(currency))throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:referenceCurrency");
+  const referenceCurrency=String(c.referenceCurrency??"").trim().toUpperCase();
+  if(!/^[A-Z]{3}$/.test(referenceCurrency))throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:referenceCurrency");
   const growth=ratio(c.quarterlyGrowth,"quarterlyGrowth",0,1);
   if(growth.lte(0))throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:quarterlyGrowth");
   return {
@@ -57,11 +67,13 @@ function parse(c:Record<string,unknown>):Params{
     initialRatio:ratio(c.initialTargetRatio,"initialTargetRatio"),
     contributionRatio:ratio(c.contributionTargetRatio,"contributionTargetRatio"),
     budgetRatio:ratio(c.buyBudgetRatio,"buyBudgetRatio"),
+    // Absent in version 1.0: withdrawals then leave the line unchanged.
+    withdrawalRatio:c.withdrawalTargetRatio==null?ZERO:ratio(c.withdrawalTargetRatio,"withdrawalTargetRatio"),
     triggerRatio:ratio(p.triggerRatio,"triggerRatio"),skipCap,
-    spikeEnabled:s.enabled,
+    spikeEnabled:s.enabled,spikeDaily:s.enabled&&observation==="DAILY_CLOSE",
     spikeMultiple:s.enabled?ratio(s.gainMultiple,"gainMultiple",1,100):new Decimal(2),
     spikeRatio:s.enabled?ratio(s.targetRatio,"spikeTargetRatio"):new Decimal("0.60"),
-    currency,window,leverage:String(c.targetLeverage??"").trim()||undefined
+    referenceCurrency,window,leverage:String(c.targetLeverage??"").trim()||undefined
   };
 }
 const money=(d:Decimal)=>d.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
@@ -74,11 +86,54 @@ function readProtection(v:unknown):Community9SigProtection{
     throw new Error("INVALID_QUARTERLY_SIGNAL_STATE");
   return {startQuarter:o.startQuarter as number|null,skippedSellCount:o.skippedSellCount as number};
 }
+/** A 30 Down no-sell window that is still open at the given quarter. */
+function protectionWindowOpen(protection:Community9SigProtection,quarterIndex:number,skipCap:number){
+  return protection.startQuarter!==null&&quarterIndex-protection.startQuarter<8&&protection.skippedSellCount<skipCap;
+}
 function stripReview(state:Record<string,unknown>){
   const out={...state};
   for(const k of Object.keys(out))if(k.startsWith("sigReview"))delete out[k];
   delete out.targetValue;
   return out;
+}
+function savedAmount(state:Record<string,unknown>,key:string){
+  const value=new Decimal(String(state[key]??"0"));
+  if(!value.isFinite()||value.lt(0))throw new Error("INVALID_QUARTERLY_SIGNAL_STATE");
+  return value;
+}
+
+/**
+ * Daily-close spike (version 1.1, owner convention of 2026-10-15): the latest verified daily close of the
+ * risk exposure after the last quarter end is at least `gainMultiple` times that quarter-end close, and no
+ * 30 Down no-sell window is open. Evaluated at most once per quarter.
+ */
+function dailySpikeTriggered(ctx:EngineContext,p:Params,ref:SigReference,protection:Community9SigProtection,
+  stock:Decimal,bond:Decimal):boolean{
+  const series=ctx.trustedHistory?.find(s=>s.exposure===p.stock&&s.currency.toUpperCase()===p.referenceCurrency);
+  if(!series)throw new Error("SIG_DAILY_HISTORY_UNAVAILABLE");
+  const day=(at:Date)=>at.toISOString().slice(0,10);
+  const quarterEnd=series.points.find(point=>day(point.at)===ref.referenceDate);
+  if(!quarterEnd)throw new Error("SIG_DAILY_HISTORY_UNAVAILABLE");
+  const today=newYorkDate(ctx.now);
+  // A daily row bearing today's NYSE session date is NOT a completed daily close before 16:00
+  // New York time. Even an adjusted, licensed row must never trigger a live spike intraday.
+  const lastCompletedDay=newYorkMinutes(ctx.now)>=NYSE_CLOSE_MINUTES?today:
+    new Date(Date.parse(today+"T00:00:00Z")-86_400_000).toISOString().slice(0,10);
+  // A weekend or full NYSE holiday cannot contain an exchange daily close, even if an upstream
+  // source incorrectly stamped an adjusted price with that calendar date.
+  const later=series.points.filter(point=>{
+    const date=day(point.at);
+    return date>ref.referenceDate&&date<=lastCompletedDay&&isNyseTradingDay(date);
+  });
+  if(!later.length)return false;
+  const latest=later.reduce((a,b)=>day(b.at)>day(a.at)?b:a);
+  const assessed=assessWealtharr9SigDailySpike({
+    previousQuarterTqqqClose:quarterEnd.adjustedClose,observationTqqqClose:latest.adjustedClose,
+    observationDate:day(latest.at),previousQuarterLastTradingDay:ref.referenceDate,verifiedDailyClose:true,
+    in30DownProtection:protectionWindowOpen(protection,ref.quarterIndex,p.skipCap),
+    stockValue:stock,bondValue:bond
+  });
+  return assessed.triggered&&latest.adjustedClose.gte(quarterEnd.adjustedClose.mul(p.spikeMultiple));
 }
 
 export const quarterlySignalEngine:StrategyEngine={
@@ -98,15 +153,18 @@ export const quarterlySignalEngine:StrategyEngine={
 
 function calculateReview(ctx:EngineContext):ProposedAction{
     const p=parse(ctx.config);
+    const currency=ctx.baseCurrency;
     const fail=(instruction:string,title="Quarterly review needs attention"):ProposedAction=>({
       actionType:"DATA_REQUIRED",title,instruction,explanation:[],nextState:ctx.state,confidence:"LOW",dueAt:ctx.now
     });
+    const notDue=(instruction:string):ProposedAction=>({actionType:"NO_ACTION",title:"Everything is on track",instruction,
+      explanation:[],nextState:ctx.state,confidence:"HIGH",dueAt:ctx.nextReviewAt});
     if(ctx.dataHealth.status!=="CURRENT")
       return fail(ctx.dataHealth.message??"Current verified market values are required before this review.","Data needs attention");
     const inReview=typeof ctx.state.reviewTargetValue==="string";
-    if(!ctx.reviewDue&&!inReview)
-      return {actionType:"NO_ACTION",title:"Everything is on track",instruction:"No quarterly review is due yet.",
-        explanation:[],nextState:ctx.state,confidence:"HIGH",dueAt:ctx.nextReviewAt};
+    const anchorRaw=ctx.state.sigConfirmedAnchor;
+    // Between reviews only a daily-close spike can start one, and only once a starting point exists.
+    if(!ctx.reviewDue&&!inReview&&!(p.spikeDaily&&anchorRaw!=null))return notDue("No quarterly review is due yet.");
 
     if(ctx.exposures.some(x=>x.economicExposure!==p.stock&&x.economicExposure!==p.safe&&!x.value.isZero()))
       return fail("This strategy holds something outside its two managed exposures. Move it out of this strategy or reconcile the account before we calculate a trade.","A holding needs classification");
@@ -116,80 +174,95 @@ function calculateReview(ctx:EngineContext):ProposedAction{
       return fail("Balances are invalid. Reconcile the strategy before trading.");
     const total=stock.plus(bond).plus(cash);
 
-    let ref;
+    let ref:SigReference;
     try{ref=latestSigReference(ctx.now);}catch{return fail("The quarter-end reference date could not be determined.");}
     let protection:Community9SigProtection;
     try{protection=readProtection(ctx.state.sigProtection);}catch{return fail("The saved 30 Down state is invalid. Reconcile before trading.");}
     const stateRef=typeof ctx.state.sigReviewReference==="string"?ctx.state.sigReviewReference:null;
     const lastReviewed=typeof ctx.state.sigLastReviewedReference==="string"?ctx.state.sigLastReviewedReference:null;
-    const carried=new Decimal(String(ctx.state.sigCarriedNewCash??"0"));
-    if(!carried.isFinite()||carried.lt(0))return fail("The saved carried-cash value is invalid. Reconcile before trading.");
+    let carried:Decimal,carriedWithdrawals:Decimal;
+    try{carried=savedAmount(ctx.state,"sigCarriedNewCash");carriedWithdrawals=savedAmount(ctx.state,"sigCarriedWithdrawals");}
+    catch{return fail("The saved carried-cash value is invalid. Reconcile before trading.");}
     const contrib=ctx.contributionsSinceReview;
     if(!contrib.isFinite()||contrib.lt(0))return fail("The contribution ledger needs reconciliation before trading.");
+    const withdrawals=ctx.withdrawalsSinceReview??ZERO;
+    if(!withdrawals.isFinite()||withdrawals.lt(0))return fail("The withdrawal ledger needs reconciliation before trading.");
 
-    const closed=(anchor:Decimal,prot:Community9SigProtection,refDate:string|null,carry:Decimal,title:string,instruction:string,
-      explanation:ExplanationRow[]):ProposedAction=>({
+    const closed=(anchor:Decimal,prot:Community9SigProtection,refDate:string|null,carry:Decimal,carryWithdrawals:Decimal,
+      title:string,instruction:string,explanation:ExplanationRow[],extra:Record<string,unknown>={}):ProposedAction=>({
       actionType:"HOLD",title,instruction,explanation,confidence:"HIGH",dueAt:ctx.now,
       nextState:{...stripReview(ctx.state),sigConfirmedAnchor:anchor.toString(),sigProtection:prot,
-        ...(refDate?{sigLastReviewedReference:refDate}:{}),sigCarriedNewCash:carry.toString()}
+        ...(refDate?{sigLastReviewedReference:refDate}:{}),sigCarriedNewCash:carry.toString(),
+        sigCarriedWithdrawals:carryWithdrawals.toString(),...extra}
     });
 
-    const anchorRaw=ctx.state.sigConfirmedAnchor;
-    const kind:"INITIAL"|"SIGNAL"=inReview?(ctx.state.sigReviewKind==="INITIAL"?"INITIAL":"SIGNAL")
+    let kind:ReviewKind=inReview
+      ?(ctx.state.sigReviewKind==="INITIAL"||ctx.state.sigReviewKind==="SPIKE"?ctx.state.sigReviewKind:"SIGNAL")
       :(anchorRaw==null?"INITIAL":"SIGNAL");
     let anchor=ZERO;
-    if(kind==="SIGNAL"){
+    if(kind!=="INITIAL"){
       if(typeof anchorRaw!=="string")return fail("The confirmed starting point of this strategy is missing. Reconcile before trading.");
       anchor=new Decimal(anchorRaw);
       if(!anchor.isFinite()||anchor.lt(0))return fail("The confirmed starting point of this strategy is invalid.");
     }
 
-    // Window handling (signal reviews only).
+    // Which review is this? (Signal and spike reviews; the initial review needs no quarter.)
     let reviewRef=ref.referenceDate;
-    if(kind==="SIGNAL"){
+    if(kind!=="INITIAL"){
       if(inReview){
         if(stateRef&&stateRef!==ref.referenceDate)
-          return closed(stock,protection,stateRef,ZERO,"Earlier review closed",
-            "A review from an earlier quarter was never completed, so that quarter is skipped and the strategy starts fresh from its current holdings.",[]);
+          return closed(stock,protection,kind==="SIGNAL"?stateRef:null,carried,carriedWithdrawals,"Earlier review closed",
+            "A review from an earlier quarter was never completed, so it is closed and the strategy starts fresh from its current holdings.",[]);
         reviewRef=stateRef??ref.referenceDate;
       }else{
-        if(lastReviewed&&ref.referenceDate<=lastReviewed)
-          return {actionType:"NO_ACTION",title:"Everything is on track",instruction:"The latest quarterly review is already complete.",
-            explanation:[],nextState:ctx.state,confidence:"HIGH",dueAt:ctx.nextReviewAt};
-        if(ref.tradingDaysSince>p.window)
-          return closed(stock,protection,ref.referenceDate,carried.plus(contrib),"Review window missed",
+        const quarterDue=ctx.reviewDue&&!(lastReviewed&&ref.referenceDate<=lastReviewed);
+        if(!quarterDue){
+          if(!p.spikeDaily||ctx.state.sigSpikeResetReference===ref.referenceDate)
+            return notDue(ctx.reviewDue?"The latest quarterly review is already complete.":"No quarterly review is due yet.");
+          let spike:boolean;
+          try{spike=dailySpikeTriggered(ctx,p,ref,protection,stock,bond);}
+          catch{return fail("Verified daily closes for the risk exposure are required to watch for a spike reset.","Verified history needed");}
+          if(!spike)return notDue("No quarterly review is due yet, and no spike reset applies.");
+          kind="SPIKE";
+        }else if(ref.tradingDaysSince>p.window){
+          return closed(stock,protection,ref.referenceDate,carried.plus(contrib),carriedWithdrawals.plus(withdrawals),"Review window missed",
             `The ${p.window}-trading-day window after the quarter end has passed, so this quarter is skipped with no trade. The next review applies a single growth step.`,
             [{label:"Quarter end",value:ref.referenceDate,kind:"text"}]);
+        }
       }
     }
 
     // Target.
     const snapshot=ctx.state.reviewContributionsSnapshot==null?contrib:new Decimal(String(ctx.state.reviewContributionsSnapshot));
-    if(!snapshot.isFinite()||snapshot.lt(0))return fail("The saved contribution snapshot is invalid.");
+    const withdrawalSnapshot=ctx.state.sigReviewWithdrawalsSnapshot==null?withdrawals:new Decimal(String(ctx.state.sigReviewWithdrawalsSnapshot));
+    if(!snapshot.isFinite()||snapshot.lt(0)||!withdrawalSnapshot.isFinite()||withdrawalSnapshot.lt(0))
+      return fail("The saved contribution snapshot is invalid.");
     let target:Decimal;
     const lift=kind==="INITIAL"?ZERO:p.contributionRatio;
+    const drop=kind==="INITIAL"?ZERO:p.withdrawalRatio;
     if(inReview){
       const frozen=new Decimal(String(ctx.state.reviewTargetValue));
       if(!frozen.isFinite()||frozen.lt(0))return fail("The saved review target is invalid.");
-      target=frozen.plus(contrib.minus(snapshot).mul(lift));
+      target=frozen.plus(contrib.minus(snapshot).mul(lift)).minus(withdrawals.minus(withdrawalSnapshot).mul(drop));
     }else if(kind==="INITIAL"){
       target=total.mul(p.initialRatio);
+    }else if(kind==="SPIKE"){
+      target=total.mul(p.spikeRatio);
     }else{
-      target=anchor.mul(new Decimal(1).plus(p.growth)).plus(contrib.plus(carried).mul(p.contributionRatio));
+      target=anchor.mul(new Decimal(1).plus(p.growth)).plus(contrib.plus(carried).mul(p.contributionRatio))
+        .minus(withdrawals.plus(carriedWithdrawals).mul(p.withdrawalRatio));
     }
     if(target.lt(0))target=ZERO;
 
-    // 30 Down and spike reset (signal reviews only).
+    // 30 Down and the quarter-end spike reset (signal reviews only).
     let decisionProtection=protection;
-    let protectionActive=false;
     let skippedBySignal=false;
-    let spiked=false;
     const rows:ExplanationRow[]=[];
     if(kind==="SIGNAL"){
       let closes:Decimal[];
       try{
-        const series=ctx.trustedHistory?.find(s=>s.exposure===p.stock&&s.currency.toUpperCase()===p.currency);
-        closes=verifiedSigQuarterCloses(series,referenceHistoryDates(ref.quarterIndex),p.currency);
+        const series=ctx.trustedHistory?.find(s=>s.exposure===p.stock&&s.currency.toUpperCase()===p.referenceCurrency);
+        closes=verifiedSigQuarterCloses(series,referenceHistoryDates(ref.quarterIndex),p.referenceCurrency);
       }catch{return fail("Verified quarter-end closes for the risk exposure are required for this review.","Verified history needed");}
       const signalOf=(t:Decimal)=>{const g=t.minus(stock);return g.abs().lt(TOL)?"HOLD" as const:g.gt(0)?"BUY" as const:"SELL" as const;};
       let decision;
@@ -199,49 +272,72 @@ function calculateReview(ctx:EngineContext):ProposedAction{
           triggerRatio:p.triggerRatio,skipCap:p.skipCap});
       }catch{return fail("The 30 Down state cannot be verified. Reconcile before trading.");}
       decisionProtection=decision.protection;
-      protectionActive=decision.protectionActive;
       skippedBySignal=decision.signal==="SELL"&&decision.effectiveSignal==="HOLD";
-      if(!inReview&&p.spikeEnabled&&!protectionActive&&total.gt(0)){
+      if(!inReview&&p.spikeEnabled&&!p.spikeDaily&&!decision.protectionActive&&total.gt(0)){
         const ordinaryStock=Decimal.min(target,total);
         const reset=historical9SigSpikeReset({previousQuarterClose:closes[7],currentQuarterClose:closes[8],
           afterOrdinaryRebalanceStockValue:ordinaryStock,afterOrdinaryRebalanceBondValue:total.minus(ordinaryStock),
           in30DownNoSellPeriod:false});
-        if(reset.eligible&&closes[8].gte(closes[7].mul(p.spikeMultiple))){target=total.mul(p.spikeRatio);spiked=true;}
+        if(reset.eligible&&closes[8].gte(closes[7].mul(p.spikeMultiple))){
+          target=total.mul(p.spikeRatio);
+          rows.push({label:"Spike reset",value:"Target reset",kind:"text"});
+        }
       }
-      if(protectionActive)rows.push({label:"30 Down protection",value:skippedBySignal?"Sell skipped":"Active",kind:"text"});
-      if(spiked)rows.push({label:"Spike reset",value:"Target reset",kind:"text"});
+      if(decision.protectionActive)rows.push({label:"30 Down protection",value:skippedBySignal?"Sell skipped":"Active",kind:"text"});
     }
+    if(kind==="SPIKE")rows.push({label:"Spike reset",value:"Daily close at least double the quarter-end close",kind:"text"});
 
     const gap=target.minus(stock);
     rows.unshift({label:"Target value",value:money(target),kind:"money"},{label:"Current value",value:money(stock),kind:"money"},
       {label:"Gap",value:money(gap),kind:"money"});
-    const nextStateBase={...ctx.state,reviewContributionsSnapshot:contrib.toString(),targetValue:target.toString(),
-      sigReviewKind:kind,sigReviewReference:reviewRef,lastCalculatedAt:ctx.now.toISOString()};
-    const closeState=closed(stock,decisionProtection,kind==="INITIAL"?ref.referenceDate:reviewRef,ZERO,"","",[]).nextState;
-    const done=(title:string,instruction:string)=>closed(stock,decisionProtection,kind==="INITIAL"?ref.referenceDate:reviewRef,ZERO,title,instruction,rows);
+    const nextStateBase={...ctx.state,reviewContributionsSnapshot:contrib.toString(),sigReviewWithdrawalsSnapshot:withdrawals.toString(),
+      targetValue:target.toString(),sigReviewKind:kind,sigReviewReference:reviewRef,lastCalculatedAt:ctx.now.toISOString()};
+    // A spike reset does not complete the quarter's signal review; it is recorded once per quarter.
+    const closeRef=kind==="SPIKE"?null:kind==="INITIAL"?ref.referenceDate:reviewRef;
+    const closeExtra=kind==="SPIKE"?{sigSpikeResetReference:reviewRef}:{};
+    const done=(title:string,instruction:string)=>
+      closed(stock,decisionProtection,closeRef,ZERO,ZERO,title,instruction,rows,closeExtra);
+    const closeState=done("","").nextState;
 
     if(skippedBySignal&&gap.lt(0))
       return done("Sell skipped by 30 Down","The 30 Down protection is active, so the sell signal for this quarter is skipped. No trade is needed.");
 
-    // Purchase budget: a share of the reserve (safe sleeve + cash) at the start of the review.
+    // Purchase budget: a share of the reserve (safe sleeve + cash) at the start of a signal review.
     let budget=new Decimal(Infinity);
+    let openingReserveSnapshot:Decimal|undefined;
     if(kind==="SIGNAL"){
       const t=ctx.sigReviewTrades;
       if(!t)return fail("Confirmed trades of this review are required before sizing a purchase.");
-      const opening=bond.plus(cash).minus(t.stockSellGross).plus(t.stockBuyGross).plus(t.feeTotal);
-      if(!opening.isFinite()||opening.lt(0))return fail("The review's opening reserve cannot be reconciled with the ledger.");
-      budget=Decimal.max(ZERO,opening.mul(p.budgetRatio).minus(t.stockBuyGross));
+      // The 90% cap belongs to the reserve at the START of the review. Reconstructing it from
+      // today's bond mark-to-market value and executed cash flows lets a bond-price move silently
+      // change the cap between a funding sale and a stock purchase.
+      const recorded=ctx.state.sigReviewOpeningReserve;
+      let opening:Decimal;
+      if(inReview&&recorded!=null){
+        opening=new Decimal(String(recorded));
+      }else if(inReview&&[t.stockBuyGross,t.stockSellGross,t.safeBuyGross,t.safeSellGross]
+        .some(amount=>!amount.isZero())){
+        // Older in-flight reviews have no immutable opening snapshot. Once there have been fills,
+        // the original mark-to-market reserve cannot be recovered from the current quote.
+        return fail("The review started before its opening reserve was recorded. Reconcile the original reserve before trading.","Opening reserve needs reconciliation");
+      }else{
+        // For a new review, any older activity is already in today's confirmed holdings and cash.
+        // The caller has excluded the reserved cash buffer from ctx.cash.
+        opening=bond.plus(cash);
+      }
+      if(!opening.isFinite()||opening.lt(0))return fail("The review's opening reserve is invalid.");
+      budget=Decimal.max(ZERO,opening.mul(p.budgetRatio).minus(inReview?t.stockBuyGross:ZERO));
+      openingReserveSnapshot=opening;
       rows.push({label:"Purchase budget left",value:money(budget),kind:"money"});
     }
-    const safeSold=ctx.sigReviewTrades?.safeSellGross??ZERO;
     const stockAction=(side:"BUY"|"SELL",amount:Decimal,title:string):ProposedAction=>({
-      actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"add":"reduce"} ${money(amount)} ${p.currency} of ${p.stock} exposure.`,
-      amount,currency:p.currency,economicExposure:p.stock,leverage:p.leverage,explanation:rows,nextState:nextStateBase,
+      actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"add":"reduce"} ${money(amount)} ${currency} of ${p.stock} exposure.`,
+      amount,currency,economicExposure:p.stock,leverage:p.leverage,explanation:rows,nextState:openingReserveSnapshot?{...nextStateBase,sigReviewOpeningReserve:openingReserveSnapshot.toString()}:nextStateBase,
       confidence:"HIGH",dueAt:ctx.now,residueCloseState:closeState
     });
     const safeAction=(side:"BUY"|"SELL",amount:Decimal,title:string,sweep:boolean):ProposedAction=>({
-      actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"move":"release"} ${money(amount)} ${p.currency} ${side==="BUY"?"into":"from"} ${p.safe} exposure.`,
-      amount,currency:p.currency,economicExposure:p.safe,explanation:rows,nextState:nextStateBase,
+      actionType:side,title,instruction:`Under the strategy rules, ${side==="BUY"?"move":"release"} ${money(amount)} ${currency} ${side==="BUY"?"into":"from"} ${p.safe} exposure.`,
+      amount,currency,economicExposure:p.safe,explanation:rows,nextState:openingReserveSnapshot?{...nextStateBase,sigReviewOpeningReserve:openingReserveSnapshot.toString()}:nextStateBase,
       confidence:"HIGH",dueAt:ctx.now,residueCloseState:closeState,optionalSweep:sweep
     });
 
@@ -252,7 +348,11 @@ function calculateReview(ctx:EngineContext):ProposedAction{
     const x=gap.gte(TOL)?Decimal.min(gap,budget,bond.plus(cash)):ZERO;
     if(x.gte(TOL)){
       if(cash.gte(x.minus("0.005")))return stockAction("BUY",Decimal.min(x,cash),"Buy "+money(Decimal.min(x,cash))+" of the target exposure");
-      if(safeSold.isZero()&&bond.gt(0)){
+      if(bond.gt(0)){
+        // A confirmed funding sale may execute partially or at a changed price. Do not
+        // treat any earlier safe-sleeve sale as proof that all required funding is available:
+        // continue offering the next sale against ACTUAL remaining bonds until the risk buy
+        // is affordable (or practical order sizing proves the residue untradable).
         const release=Decimal.min(bond,x.minus(cash));
         return safeAction("SELL",release,"Release "+money(release)+" from the safe sleeve",false);
       }

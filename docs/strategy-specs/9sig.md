@@ -8,7 +8,7 @@ Reviewer: PENDING; independent approval: NO.
 > **Source-version conflict confirmed (2026-10-14):** In an October 6, 2019 author comment on https://jasonkelly.com/3sig/, Jason Kelly states that the next line is based on the previous quarter's **desired price**, rather than the eventual fill price, while other author examples discuss a partially funded post-order stock balance affecting later lines. These rules can diverge following capped/unfilled buys. This is a *material unresolved historical-versus-current variant distinction*. Do not release a live 9Sig engine until the current Kelly Letter guide unambiguously determines its target anchor and fill-date treatment.
 
 ## Engine
-VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). See `docs/9SIG_IMPLEMENTATION_GAP.md` for how the code differs from this card.
+VALUE_TARGET (catalogue key `9sig`, `src/domain/strategy/catalog/9sig.ts`). The engine this card was compared against is superseded by `QUARTERLY_SIGNAL_TARGET` (see the note at the end of this card).
 
 ## Who / what
 - **Author:** Jason Kelly. The base method is the "3% Signal", from his book *The 3% Signal* (publication year not verified here), now usually called 3Sig. 6Sig and 9Sig are leveraged variants that he runs in his paid newsletter, The Kelly Letter. Kelly says the variants work within the same signal framework [S2, S3].
