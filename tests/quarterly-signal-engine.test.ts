@@ -184,6 +184,45 @@ describe("quarterly buy budget is a frozen confirmed opening reserve",()=>{
       expect(action.nextState.sigReviewOpeningReserve).toBe("4000");
     }
   });
+  it("requests another funding sale after a partial confirmed bond sale",()=>{
+    // Independent expected cash flow: required risk buy is 540. The first funding
+    // sale requested 540 but only 100 executed; current cash is 100 and 3,900 of
+    // the bond reserve remains. We must sell the remaining 440 BEFORE the risk buy.
+    const state={
+      sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+      reviewTargetValue:"6540",reviewContributionsSnapshot:"0",
+      sigReviewKind:"SIGNAL",sigReviewReference:"2026-09-30",sigReviewOpeningReserve:"4000"
+    };
+    const partial=engine.calculate(base({
+      cash:D(100),state,
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3900)}],
+      sigReviewTrades:{stockBuyGross:D(0),stockSellGross:D(0),
+        safeBuyGross:D(0),safeSellGross:D(100),feeTotal:D(0)}
+    }));
+    expect([partial.actionType,partial.economicExposure,partial.amount?.toFixed(2)]).toEqual([
+      "SELL","US_AGGREGATE_BONDS","440.00"
+    ]);
+    const funded=engine.calculate(base({
+      cash:D(540),state,
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6000)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3460)}],
+      sigReviewTrades:{stockBuyGross:D(0),stockSellGross:D(0),
+        safeBuyGross:D(0),safeSellGross:D(540),feeTotal:D(0)}
+    }));
+    expect([funded.actionType,funded.economicExposure,funded.amount?.toFixed(2)]).toEqual([
+      "BUY","NASDAQ_100_3X_LONG","540.00"
+    ]);
+    const confirmed=engine.calculate(base({
+      cash:D(0),state,
+      exposures:[{economicExposure:"NASDAQ_100_3X_LONG",value:D(6540)},
+        {economicExposure:"US_AGGREGATE_BONDS",value:D(3460)}],
+      sigReviewTrades:{stockBuyGross:D(540),stockSellGross:D(0),
+        safeBuyGross:D(0),safeSellGross:D(540),feeTotal:D(0)}
+    }));
+    expect(confirmed.actionType).toBe("HOLD");
+    expect(confirmed.nextState.sigConfirmedAnchor).toBe("6540");
+  });
   it("fails closed for old in-flight reviews with confirmed fills but no opening snapshot",()=>{
     const {sigReviewOpeningReserve:ignored,...legacyState}=reviewState;
     void ignored;
