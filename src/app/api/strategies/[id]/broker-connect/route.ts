@@ -7,6 +7,8 @@ import {sql} from "@/lib/db";
 import {authFailure} from "@/lib/api-auth";
 import {encryptSecret} from "@/lib/crypto";
 import {trading212ReadAccountIdentity} from "@/domain/brokerage/trading212-readonly";
+import {confirmedLinkFingerprint,brokerSyncDisplayStatus} from "@/domain/brokerage/sync-integrity";
+import type {ConfirmedLink} from "@/domain/brokerage/strategy-reconciliation";
 
 type Context={params:Promise<{id:string}>};
 const input=z.object({
@@ -43,12 +45,30 @@ export async function GET(_request:Request,context:Context){
    "SELECT environment,external_account_ref,account_currency,consented_read_only_at,last_synced_at,last_sync_status,last_sync_summary FROM strategy_broker_connections WHERE user_id=$1 AND strategy_instance_id=$2 AND provider='TRADING212'",
    [scope.user.id,scope.id]);
   const record=rows[0];
-  return Response.json(record?{
+  if(!record)return Response.json({connected:false,providerEnabled:await providerEnabled()});
+  const [flag,linked]=await Promise.all([
+    sql.unsafe("SELECT enabled,config FROM feature_flags WHERE key='broker_trading212_readonly'"),
+    sql.unsafe(
+     "SELECT b.external_trade_id,b.ledger_event_id,l.event_type,l.quantity FROM broker_trade_links b "+
+     "JOIN ledger_events l ON l.id=b.ledger_event_id "+
+     "WHERE b.user_id=$1 AND b.strategy_instance_id=$2 AND b.provider='TRADING212' AND b.external_account_ref=$3 "+
+     "ORDER BY b.external_trade_id",[scope.user.id,scope.id,record.external_account_ref])
+  ]);
+  const configured=flag[0]?.config as Record<string,unknown>|undefined;
+  const interval=Math.max(5,Math.min(1440,Number(configured?.syncIntervalMinutes??60)||60));
+  const original=record.last_sync_summary&&typeof record.last_sync_summary==="object"?record.last_sync_summary as Record<string,unknown>:{};
+  const links:ConfirmedLink[]=linked.map(row=>({
+    externalTradeId:String(row.external_trade_id),ledgerEventId:String(row.ledger_event_id),
+    side:String(row.event_type)==="SELL"?"SELL":"BUY",quantity:String(row.quantity)
+  }));
+  const status=brokerSyncDisplayStatus(String(record.last_sync_status),record.last_synced_at,interval,
+    typeof original.linkFingerprint==="string"?original.linkFingerprint:undefined,confirmedLinkFingerprint(links));
+  return Response.json({
     connected:true,environment:record.environment,accountRef:record.external_account_ref,
     accountCurrency:record.account_currency,consentedAt:record.consented_read_only_at,
-    lastSyncedAt:record.last_synced_at,status:record.last_sync_status,
-    reconciliation:record.last_sync_summary,providerEnabled:await providerEnabled()
-  }:{connected:false,providerEnabled:await providerEnabled()});
+    lastSyncedAt:record.last_synced_at,status,syncIntervalMinutes:interval,
+    reconciliation:record.last_sync_summary,providerEnabled:flag[0]?.enabled===true
+  });
  }catch(e){return failure(e);}
 }
 export async function PUT(request:Request,context:Context){

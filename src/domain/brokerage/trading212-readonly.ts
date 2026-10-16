@@ -63,6 +63,7 @@ export async function trading212ReadPage<T>(args:{
 export async function trading212ReadHistory<T>(args:{
   mode:Trading212Mode;resource:"orders"|"transactions";
   credentials:{key:string;secret:string};fetcher?:typeof fetch;maxPages?:number;
+  beforePage?:(pageNumber:number)=>Promise<void>;
 }):Promise<T[]>{
   const maxPages=Math.min(Math.max(args.maxPages??10,1),100);
   const result:T[]=[];
@@ -70,6 +71,9 @@ export async function trading212ReadHistory<T>(args:{
   let next:string|null=PATHS[args.resource]+"?limit=50";
   for(let page=0;page<maxPages&&next;page++){
     if(visited.has(next))throw new Error("BROKER_CURSOR_LOOP");
+    // Provider quotas are per BROKERAGE ACCOUNT, not per API key or Wealtharr strategy.
+    // Server-owned callers can enforce shared, persistent account-level quotas here.
+    await args.beforePage?.(page+1);
     visited.add(next);
     const response:BrokerPage<T>=await trading212ReadPage<T>({...args,nextPagePath:next});
     result.push(...response.items);

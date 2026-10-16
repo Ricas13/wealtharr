@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {requireUser} from "@/lib/session";
 import {invalidPathId} from "@/lib/route-params";
 import {assertSameOrigin,consumeRateLimit} from "@/lib/security";
@@ -7,6 +8,7 @@ import {authFailure} from "@/lib/api-auth";
 import {decryptSecret} from "@/lib/crypto";
 import {trading212ReadAccountIdentity,trading212ReadHistory,type Trading212Mode} from "@/domain/brokerage/trading212-readonly";
 import {reconcileConfirmedOrders,type ConfirmedLink,type BrokerOrder} from "@/domain/brokerage/strategy-reconciliation";
+import {confirmedLinkFingerprint} from "@/domain/brokerage/sync-integrity";
 
 type Context={params:Promise<{id:string}>};
 export async function POST(request:Request,context:Context){
@@ -20,7 +22,9 @@ export async function POST(request:Request,context:Context){
   const controls=await sql.unsafe("SELECT enabled,config FROM feature_flags WHERE key='broker_trading212_readonly'");
   if(controls[0]?.enabled!==true)return Response.json({error:"Trading 212 integration is disabled by Master Admin."},{status:409});
   const settings=(controls[0].config??{}) as Record<string,unknown>;
-  const pages=Math.min(20,Math.max(1,Number(settings.maxHistoryPages??10)||10));
+  // Trading 212 history requests are limited to six per minute per brokerage account.
+  // Never burst beyond the provider quota; history beyond the bounded page set fails closed.
+  const pages=Math.min(6,Math.max(1,Number(settings.maxHistoryPages??6)||6));
   const connections=await sql.unsafe(
    "SELECT id,environment,external_account_ref,account_currency,api_key_encrypted,api_secret_encrypted,updated_at FROM strategy_broker_connections "+
    "WHERE user_id=$1 AND strategy_instance_id=$2 AND provider='TRADING212'",
@@ -45,10 +49,15 @@ export async function POST(request:Request,context:Context){
   if(verifiedLinks.length){
     const credentials={key:decryptSecret(String(connection.api_key_encrypted)),secret:decryptSecret(String(connection.api_secret_encrypted))};
     const mode=String(connection.environment) as Trading212Mode;
+    const quotaScope=createHash("sha256").update(mode+":"+String(connection.external_account_ref)).digest("hex");
+    await consumeRateLimit("t212-account-summary:"+quotaScope,1,5);
     const identity=await trading212ReadAccountIdentity({mode,credentials});
     if(identity.id!==String(connection.external_account_ref)||identity.currency!==String(connection.account_currency))
       return Response.json({error:"Broker account identity changed. Reconnect and reauthorise."},{status:409});
-    const unfiltered=await trading212ReadHistory<BrokerOrder>({mode,resource:"orders",credentials,maxPages:pages});
+    const unfiltered=await trading212ReadHistory<BrokerOrder>({
+      mode,resource:"orders",credentials,maxPages:pages,
+      beforePage:async()=>{await consumeRateLimit("t212-account-orders:"+quotaScope,6,60);}
+    });
     if(unfiltered.some(order=>typeof order.id==="number"&&!Number.isSafeInteger(order.id)))
       throw new Error("BROKER_ORDER_ID_PRECISION_UNSAFE");
     // Retain in application memory only the fields necessary for explicitly linked IDs.
@@ -62,7 +71,8 @@ export async function POST(request:Request,context:Context){
   const matched=checks.filter(x=>x.status==="MATCH").length;
   // Nothing linked means nothing to verify: that is not a discrepancy.
   const status=verifiedLinks.length===0?"NO_LINKED_TRADES":matched===checks.length?"VERIFIED":"NEEDS_RECONCILIATION";
-  const summary={linkedTradeCount:verifiedLinks.length,matched,issues:checks.filter(x=>x.status!=="MATCH"),verified:checks.filter(x=>x.status==="MATCH").map(x=>({
+  const summary={linkedTradeCount:verifiedLinks.length,matched,
+    linkFingerprint:confirmedLinkFingerprint(verifiedLinks),issues:checks.filter(x=>x.status!=="MATCH"),verified:checks.filter(x=>x.status==="MATCH").map(x=>({
     externalTradeId:x.externalTradeId,ledgerEventId:x.ledgerEventId,observedQuantity:x.observedQuantity
   }))};
   const updated=await sql.unsafe(

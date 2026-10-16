@@ -3,11 +3,12 @@ import {useEffect,useState,type FormEvent} from "react";
 
 type Check={externalTradeId:string;ledgerEventId:string;status:string;reason:string;observedQuantity:string|null};
 const STATUS_LABEL:Record<string,string>={NOT_SYNCED:"not checked yet",VERIFIED:"every linked trade matches the broker",
- NEEDS_RECONCILIATION:"some linked trades need attention",NO_LINKED_TRADES:"no linked trades to check yet",ERROR:"the last check failed"};
+ NEEDS_RECONCILIATION:"some linked trades need attention",NO_LINKED_TRADES:"no linked trades to check yet",
+ STALE:"older than the freshness window",ERROR:"the last check failed"};
 type Snapshot={
  connected:boolean;providerEnabled:boolean;environment?:"demo"|"live";
  accountRef?:string;accountCurrency?:string;lastSyncedAt?:string|null;
- status?:string;reconciliation?:{linkedTradeCount?:number;matched?:number;issues?:Check[];verified?:Array<{externalTradeId:string;observedQuantity:string|null}>};
+ status?:string;syncIntervalMinutes?:number;reconciliation?:{linkedTradeCount?:number;matched?:number;issues?:Check[];verified?:Array<{externalTradeId:string;observedQuantity:string|null}>};
 };
 export function StrategyTrading212Connection({strategyId}:{strategyId:string}){
  const [state,setState]=useState<Snapshot|null>(null);
@@ -54,7 +55,10 @@ export function StrategyTrading212Connection({strategyId}:{strategyId:string}){
   {state?.connected?<div>
    <p className="help">Connected to {state.environment==="demo"?"demo":"live"} account ending in {String(state.accountRef??"").slice(-4)} · {state.accountCurrency}.
      {state.lastSyncedAt?" Last checked "+new Date(state.lastSyncedAt).toLocaleString("en-GB")+".":" Not synchronised yet."}</p>
-   <p className="help">Verification: {STATUS_LABEL[state.status??"NOT_SYNCED"]??state.status}. Linked transactions: {state.reconciliation?.linkedTradeCount??0}. Matched: {state.reconciliation?.matched??0}.</p>
+   <p className="help">Order-ID / side / quantity checks: {STATUS_LABEL[state.status??"NOT_SYNCED"]??state.status}. Linked transactions: {state.reconciliation?.linkedTradeCount??0}. Matched: {state.reconciliation?.matched??0}.</p>
+   {state.status==="STALE"&&<p className="attention-message" role="status">Broker evidence is older than the configured {state.syncIntervalMinutes??60}-minute freshness window. Previously matched records are retained but no longer count as fresh verification.</p>}
+   {state.status==="NEEDS_RECONCILIATION"&&<p className="attention-message" role="status">New, edited or missing linked trades require another complete provider check. Existing Wealtharr ledger entries remain unchanged.</p>}
+   <p className="help">A matched order confirms its identity, direction and settled quantity only. It does not independently verify broker cost basis, dividends, FX, fees, live positions or shared account cash.</p>
    {state.reconciliation?.issues?.map(check=><p key={check.ledgerEventId} className="attention-message">
     Order {check.externalTradeId}: {check.status} — {check.reason}</p>)}
    {state.reconciliation?.verified?.map(check=><p key={check.externalTradeId} className="help">
@@ -64,6 +68,7 @@ export function StrategyTrading212Connection({strategyId}:{strategyId:string}){
      onClick={()=>run("POST")}>{busy?"Checking…":"Verify linked orders"}</button>
     <button className="button" type="button" disabled={busy}
      onClick={()=>run("DELETE")}>Disconnect and delete stored broker credentials</button>
+    <a className="button" href={"/api/strategies/"+strategyId+"/broker-export"}>Export my linked trade evidence (JSON)</a>
    </div>
   </div>:<form onSubmit={(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault();void run("PUT",{environment:mode,key,secret,readOnlyConsent:consent});
