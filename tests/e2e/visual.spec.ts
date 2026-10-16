@@ -8,7 +8,11 @@ import { expect, test } from "@playwright/test";
 // settled). Digests are those produced by CI's renderer (Playwright Chromium 153, ubuntu-latest) and
 // are reviewed against CI screenshots (the mobile demo has two visually equivalent raster variants).
 // A different browser build may produce new hashes: review the attached screenshot before updating.
-// PR #138 visual review: full-page CI screenshots from run 38965204026 were inspected.\n// Desktop landing 1280×5469: large cream/green editorial hero, radial chart, intact navbar and sliders.\n// Mobile landing 390×7678: no clipping; readable hero, controls and ring.\n// Desktop retries differ only at x1243–1245,y21–55 (2px header anti-aliasing).\nconst expected:Record<string,Record<string,string | string[]>>={
+// PR #138 visual review: inspected full-page CI screenshots from run 38965204026.
+// Desktop 1280x5469: editorial hero, radial SVG, controls and intact navbar.
+// Mobile 390x7678: readable controls and artwork, no horizontal clipping.
+// Two desktop retries differ only at x1243-1245, y21-55 (header antialiasing).
+const expected:Record<string,Record<string,string | string[]>>={
   // Two equivalent mobile-demo renders were visually reviewed from the CI retry traces; tiny
   // subpixel raster differences affect only text/chart labels, not layout or user-visible content.
   "mobile-chromium":{
