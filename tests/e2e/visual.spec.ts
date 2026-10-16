@@ -8,15 +8,15 @@ import { expect, test } from "@playwright/test";
 // settled). Digests are those produced by CI's renderer (Playwright Chromium 153, ubuntu-latest) and
 // are reviewed against CI screenshots (the mobile demo has two visually equivalent raster variants).
 // A different browser build may produce new hashes: review the attached screenshot before updating.
-const expected:Record<string,Record<string,string | string[]>>={
+// PR #138 visual review: full-page CI screenshots from run 38965204026 were inspected.\n// Desktop landing 1280×5469: large cream/green editorial hero, radial chart, intact navbar and sliders.\n// Mobile landing 390×7678: no clipping; readable hero, controls and ring.\n// Desktop retries differ only at x1243–1245,y21–55 (2px header anti-aliasing).\nconst expected:Record<string,Record<string,string | string[]>>={
   // Two equivalent mobile-demo renders were visually reviewed from the CI retry traces; tiny
   // subpixel raster differences affect only text/chart labels, not layout or user-visible content.
   "mobile-chromium":{
-    landing:"ad93b987cc91420c9bc3860e436e756b892bd550f3fec66e7f2cfa5befcbbf0f",
+    landing:"364799cbc4d3510540838e7bde037094c799c54ee5b1bf9d7e4d1a10483fd3cb",
     demo:["21de51ab1bc02ebbc12d404cf3c9e79389b417b929850cfe695e6363fff90f18","c0507be37c31e90542b665ce564c324219bf73eeb476e6d71e65e58426124a80"]
   },
   "desktop-chromium":{
-    landing:"eda61dfd8e7e368a81c21ca8922100fd442caefc1aefc0883110d8222ea9f352",
+    landing:["cae5b3900577b5fa65664bf63226fd6f1498b1c475ff32c883b5869fa6efc80a","f4059e3ba60c67eee77bd8979c545a3c6bb88be74735267cf4a1e7b25d76c1c2"],
     // 2026-10-09: the second settled raster was inspected from the GitHub trace PNG
     // (1280x1442). Header, value cards, next-action panel, chart, legends and
     // footer cards are intact; differences are rendering-only, not missing UI.
