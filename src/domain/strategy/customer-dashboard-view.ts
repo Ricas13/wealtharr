@@ -26,8 +26,7 @@ export type StrategyDashboardView={
 export function strategyDashboardView(input:StrategyDashboardInput):StrategyDashboardView{
   if(input.status==="CLOSED")return {status:"CLOSED",label:"Closed",headline:"Strategy closed",description:"Your recorded history is available to review.",tone:"muted",priority:5};
   if(input.status==="PAUSED")return {status:"PAUSED",label:"Paused",headline:"Strategy paused",description:"Resume to calculate new actions.",tone:"muted",priority:4};
-  if(input.actionStale||input.actionType==="DATA_REQUIRED"||
-    (!input.actionType&&input.healthStatus!=="HEALTHY"))
+  if(input.actionStale||input.actionType==="DATA_REQUIRED"||input.healthStatus!=="HEALTHY")
     return {status:"DATA_NEEDED",label:"Data needed",headline:"Check your strategy data",description:"Review holdings, prices and reconciliation before relying on a new signal.",tone:"attention",priority:0};
   if(input.actionType==="HOLD")
     return {status:"AWAITING_CONFIRMATION",label:"Awaiting confirmation",headline:"Confirm this review",description:"Check the calculations before marking this review complete.",tone:"attention",priority:1};
