@@ -39,3 +39,9 @@ A smaller audience reduces rollout scope but does not relax financial integrity,
 - Live Stripe test-mode/live-mode evidence and production-host acceptance have not been supplied or demonstrated in this change.
 
 This contract records the owner's rollout intention and constraints; it neither enables charging nor attests that Wealtharr is ready.
+
+## Complimentary trial access while live billing is being set up
+
+The admin customer detail page provides a **Beta access** control. An administrator may grant an existing invited customer Investor or Pro capabilities for 7–180 days, or revoke them. These complimentary entitlements do **not** modify the customer's Stripe subscription, create a paid invoice, or imply that a charge succeeded. The customer account Settings page explicitly identifies the complimentary plan and expiration. Expired/revoked grants fall back to real billing/free entitlements and the scheduled worker pauses over-limit strategies without deleting historical positions or ledgers.
+
+This allows a small cohort to test the working product for weeks or months even if the billing account, licensed feeds, legal review or production payment verification is still pending. It is **not** a workaround to take unverified real payments, and does not make unsupported instruments or unverified actions safe.
