@@ -184,7 +184,7 @@ describe.skipIf(!url)("App Store / Google Play subscriptions",()=>{
     process.env.STRIPE_SECRET_KEY="sk_test_store_guard";
     await send({type:"INITIAL_PURCHASE",event_timestamp_ms:Date.now()+130_000,original_transaction_id:"txn_guard_"+run});
     const {POST:checkout}=await import("@/app/api/billing/checkout/route");
-    const attempt=await checkout(new Request(ORIGIN+"/api/billing/checkout",{method:"POST",headers:{origin:ORIGIN,"content-type":"application/json"},body:JSON.stringify({planSlug:"investor",cadence:"monthly"})}));
+    const attempt=await checkout(new Request(ORIGIN+"/api/billing/checkout",{method:"POST",headers:{origin:ORIGIN,"content-type":"application/json"},body:JSON.stringify({planSlug:"investor",cadence:"monthly",recurringBillingAcknowledged:true})}));
     // Either the paid-launch gate or the store guard stops it; it must never reach Stripe.
     expect([403,409,503]).toContain(attempt.status);
     const {POST:portal}=await import("@/app/api/billing/portal/route");
