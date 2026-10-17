@@ -37,13 +37,13 @@ export async function loadPublicComparison():Promise<PublicHistoryResult>{
         "WHERE d.enabled=true AND v.lifecycle_status='PUBLISHED' "+
         "AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
         "AND m.source='PUBLIC_VERIFIED_TOTAL_RETURN' "+
-        "AND m.date>=current_date-interval '6 years' AND m.date<=current_date "+
+        "AND m.date>=current_date-interval '11 years' AND m.date<=current_date "+
         "ORDER BY d.key,m.date LIMIT 100001"
       ) as Promise<HistoricalRow[]>,
       sql.unsafe(
         "SELECT bp.date::text,bp.value::text,bp.source,b.economic_exposure,bp.metadata "+
         "FROM benchmark_performance bp JOIN benchmarks b ON b.id=bp.benchmark_id "+
-        "WHERE b.key='SPY' AND bp.date>=current_date-interval '6 years' "+
+        "WHERE b.key='SPY' AND bp.date>=current_date-interval '11 years' "+
         "AND bp.date<=current_date ORDER BY bp.date LIMIT 5001"
       ) as Promise<SpyRow[]>
     ]);
