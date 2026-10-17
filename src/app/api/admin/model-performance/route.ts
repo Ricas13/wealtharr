@@ -4,6 +4,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { sql } from "@/lib/db";
 import { authFailure } from "@/lib/api-auth";
 import { benchmarkMetadata } from "@/domain/benchmark-evidence";
+import {modelComparisonMetadata,PUBLIC_MODEL_SOURCE} from "@/domain/public-strategy-comparison";
 
 const rowSchema=z.object({
   date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -33,6 +34,16 @@ const schema=z.object({
   strategyVersionId:z.string().uuid(),
   points:z.array(rowSchema).min(1).max(5000),
   source:z.string().max(80).default("ADMIN"),
+  // No automatic public promotion: the administrator explicitly attests that
+  // the historical model is licensed, cash-flow-neutral and fully calculated.
+  publicComparison:z.object({
+    provider:z.string().min(3).max(120),
+    currency:z.literal("USD"),
+    commercialLicenceConfirmed:z.literal(true),
+    methodologyReviewed:z.literal(true),
+    cashFlowNeutral:z.literal(true),
+    dividendsAndFeesIncluded:z.literal(true)
+  }).optional(),
   benchmarks:z.array(benchmarkSeriesSchema).max(8).optional().default([])
 });
 
@@ -42,12 +53,17 @@ export async function PUT(request:Request){
     const admin=await requireAdmin();
     const input=schema.parse(await request.json());
 
+    const publicMetadata=input.publicComparison?modelComparisonMetadata({
+      ...input.publicComparison,points:input.points
+    }):{};
+    if(input.publicComparison&&Object.keys(publicMetadata).length===0)
+      return Response.json({error:"A publishable model must have strictly ascending dates, positive values, validated total-return methodology and licensed provenance."},{status:400});
     await sql.begin(async(tx)=>{
       for(const point of input.points){
         await tx.unsafe(
-          "INSERT INTO canonical_model_performance (strategy_version_id,date,value,benchmark_value,source,metadata) VALUES ($1,$2,$3,$4,$5,'{}'::jsonb)" +
-          " ON CONFLICT (strategy_version_id,date) DO UPDATE SET value=EXCLUDED.value,benchmark_value=EXCLUDED.benchmark_value,source=EXCLUDED.source",
-          [input.strategyVersionId,point.date,point.value,point.benchmarkValue??null,input.source]
+          "INSERT INTO canonical_model_performance (strategy_version_id,date,value,benchmark_value,source,metadata) VALUES ($1,$2,$3,$4,$5,$6::jsonb)" +
+          " ON CONFLICT (strategy_version_id,date) DO UPDATE SET value=EXCLUDED.value,benchmark_value=EXCLUDED.benchmark_value,source=EXCLUDED.source,metadata=EXCLUDED.metadata",
+          [input.strategyVersionId,point.date,point.value,point.benchmarkValue??null,input.publicComparison?PUBLIC_MODEL_SOURCE:input.source,JSON.stringify(publicMetadata)]
         );
       }
 
@@ -75,7 +91,7 @@ export async function PUT(request:Request){
 
       await tx.unsafe(
         "INSERT INTO audit_events (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'model-performance.upsert','strategy_version',$2,$3::jsonb)",
-        [admin.id,input.strategyVersionId,JSON.stringify({points:input.points.length,benchmarkSeries:input.benchmarks.map((series)=>({key:series.key,points:series.points.length}))})]
+        [admin.id,input.strategyVersionId,JSON.stringify({points:input.points.length,publicComparisonAttested:Boolean(input.publicComparison),benchmarkSeries:input.benchmarks.map((series)=>({key:series.key,points:series.points.length}))})]
       );
     });
     return Response.json({ok:true});
