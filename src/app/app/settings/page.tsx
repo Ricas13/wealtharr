@@ -10,7 +10,10 @@ import { headers } from "next/headers";
 
 export default async function SettingsPage(){
   const user=await requirePageUser();
-  const [mfaEnabled,entitlements]=await Promise.all([isMfaEnabled(user.id),loadEntitlements(user.id)]);
+  const [mfaEnabled,entitlements,betaRows]=await Promise.all([
+    isMfaEnabled(user.id),loadEntitlements(user.id),
+    sql.unsafe("SELECT p.display_name,g.expires_at FROM private_beta_grants g JOIN plans p ON p.id=g.plan_id WHERE g.user_id=$1 AND g.revoked_at IS NULL AND g.expires_at>now() LIMIT 1",[user.id])
+  ]);
   const passwordRows=await sql.unsafe("SELECT password_hash IS NOT NULL AS has_password FROM users WHERE id=$1",[user.id]);
   const hasPassword=Boolean(passwordRows[0]?.has_password);
   const userAgent=(await headers()).get("user-agent");
@@ -47,6 +50,7 @@ export default async function SettingsPage(){
   const telegram=await sql.unsafe("SELECT enabled FROM notification_endpoints WHERE user_id=$1 AND channel='TELEGRAM' LIMIT 1",[user.id]);
   const telegramConnected=Boolean(telegram[0]?.enabled);
   const paidSubscription=Boolean(plan?.stripe_subscription_id)&&!["FREE","CANCELED"].includes(currentStatus);
+  const beta=(!paidSubscription&&!storeBilled&&["FREE","CANCELED","INCOMPLETE_EXPIRED"].includes(currentStatus))?betaRows[0]:null;
   // Admins are entitlement super-users: no upgrade prompts, unless they also hold a real paid subscription they may need to manage.
   const adminAllIncluded=user.role==="ADMIN"&&!paidSubscription&&!storeBilled;
 
@@ -54,12 +58,13 @@ export default async function SettingsPage(){
     <div className="page-title"><div><div className="eyebrow">Settings</div><h1>Keep it simple.</h1><p>Your plan, notifications, privacy and account data live here.</p></div></div>
     <div className="detail-grid settings-grid">
       <section id="plan" className="glass form-card settings-plan-card">
-        <div className="settings-card-heading"><div><div className="eyebrow">Plan</div><h3>{adminAllIncluded?"Admin":plan?.display_name??"Free"}</h3></div><span className="pill good">{adminAllIncluded?"ALL FEATURES":currentStatus.replaceAll("_"," ")}</span></div>
+        <div className="settings-card-heading"><div><div className="eyebrow">Plan</div><h3>{adminAllIncluded?"Admin":beta?"Beta · "+String(beta.display_name):plan?.display_name??"Free"}</h3></div><span className="pill good">{adminAllIncluded?"ALL FEATURES":beta?"BETA ACCESS":currentStatus.replaceAll("_"," ")}</span></div>
         {adminAllIncluded&&<p className="help">Admin - all features included. Your account has unlimited strategies, every plan feature and every notification channel, so there is nothing to upgrade.</p>}
+        {beta&&<p className="help">Complimentary private beta access until {new Date(beta.expires_at).toLocaleDateString("en-GB")}. No card is charged, and there is no automatic renewal. Your actual billing subscription remains unchanged.</p>}
         {plan?.current_period_end&&paidSubscription&&<p className="help">Current billing period runs to {new Date(plan.current_period_end).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.</p>}
         {!adminAllIncluded&&storeBilled&&<p className="help">Your subscription is billed through the {storeName(billedBy)}. Change or cancel it there{platform?<> (<a href={manageSubscriptionUrl(platform)} target="_blank" rel="noreferrer">manage subscription</a>)</>:null}.</p>}
-        {!adminAllIncluded&&!storeBilled&&!canPurchase&&platform&&storeKey&&storeProducts.length>0&&!paidSubscription?<StorePurchase apiKey={storeKey} userId={user.id} products={storeProducts} currentPlanSlug={currentPlanSlug} manageUrl={manageSubscriptionUrl(platform)}/>:null}
-        {!adminAllIncluded&&!storeBilled&&canPurchase?<BillingButtons prices={prices} defaultCurrency={user.baseCurrency} currentPlanSlug={currentPlanSlug} paidSubscription={paidSubscription} activeStrategyCount={activeStrategyCount} currentMaxActiveStrategies={plan?.max_active_strategies==null?null:Number(plan.max_active_strategies)}/>:null}
+        {!adminAllIncluded&&!storeBilled&&!canPurchase&&platform&&storeKey&&storeProducts.length>0&&!paidSubscription&&!beta?<StorePurchase apiKey={storeKey} userId={user.id} products={storeProducts} currentPlanSlug={currentPlanSlug} manageUrl={manageSubscriptionUrl(platform)}/>:null}
+        {!adminAllIncluded&&!storeBilled&&canPurchase&&!beta?<BillingButtons prices={prices} defaultCurrency={user.baseCurrency} currentPlanSlug={currentPlanSlug} paidSubscription={paidSubscription} activeStrategyCount={activeStrategyCount} currentMaxActiveStrategies={plan?.max_active_strategies==null?null:Number(plan.max_active_strategies)}/>:null}
         {!adminAllIncluded&&!storeBilled&&!canPurchase&&!(platform&&storeKey&&storeProducts.length>0&&!paidSubscription)&&<p className="help">{paidSubscription?"Your subscription is billed through the website. Sign in there to change or cancel it.":"Plans are managed on the website. Sign in there to subscribe, change or cancel."}</p>}
       </section>
       <section className="glass form-card">

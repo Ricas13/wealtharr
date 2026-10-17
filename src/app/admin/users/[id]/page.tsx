@@ -6,6 +6,7 @@ import {requireAdminPage} from "@/lib/session";
 import {UserStrategyAccessEditor} from "@/components/UserStrategyAccessEditor";
 import {AdminStripeSubscriptionVerify} from "@/components/AdminStripeSubscriptionVerify";
 import {AdminStripeInvoiceHistory} from "@/components/AdminStripeInvoiceHistory";
+import {AdminBetaAccess} from "@/components/AdminBetaAccess";
 import {subscriptionWatchReason} from "@/domain/admin-subscription-watch";
 
 export const dynamic="force-dynamic";
@@ -48,6 +49,11 @@ export default async function AdminCustomerDetail({params}:{params:Promise<{id:s
  ]);
  const user=users[0];
  if(!user)notFound();
+ const betaRows=await sql.unsafe(
+  "SELECT p.slug,p.display_name,g.expires_at,g.revoked_at FROM private_beta_grants g " +
+  "JOIN plans p ON p.id=g.plan_id WHERE g.user_id=$1 LIMIT 1",[id]
+ );
+ const beta=betaRows[0];
  const sub=subscriptions[0];
  const status=String(sub?.status??"Unassigned");
  const reason=sub?subscriptionWatchReason({
@@ -91,6 +97,10 @@ export default async function AdminCustomerDetail({params}:{params:Promise<{id:s
    <p className="admin-data-caveat">This page does not collect payments, issue refunds, override billing status or expose Stripe IDs.</p>
   </section>
 
+  <AdminBetaAccess userId={String(user.id)} current={beta?{
+    plan:String(beta.display_name),expiresAt:new Date(beta.expires_at).toISOString(),
+    active:!beta.revoked_at&&new Date(beta.expires_at)>new Date()
+  }:null}/>
   {String(sub?.source??"") === "STRIPE" && <><AdminStripeSubscriptionVerify userId={String(user.id)}/><AdminStripeInvoiceHistory userId={String(user.id)}/></>}
 
   <div style={{marginTop:20}}><UserStrategyAccessEditor key={String(user.id)}

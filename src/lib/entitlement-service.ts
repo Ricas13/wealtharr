@@ -22,6 +22,19 @@ export async function loadEntitlementsWith(db: EntitlementDb, userId: string, op
     "LIMIT 1"+(options.lockSubscription ? " FOR UPDATE OF s" : ""),
     [userId]
   );
+  // A time-limited complimentary beta grant changes only feature entitlements:
+  // it never creates/updates a Stripe subscription or asserts a successful payment.
+  // An actual paid subscription always takes precedence.
+  if (!rows[0] || String(rows[0].slug)==="free") {
+    const grants = await db.unsafe(
+      "SELECT p.slug,p.max_active_strategies,p.entitlements,p.available_strategy_keys " +
+      "FROM private_beta_grants g JOIN plans p ON p.id=g.plan_id " +
+      "WHERE g.user_id=$1 AND g.revoked_at IS NULL AND g.expires_at>now() " +
+      "AND p.archived=false AND p.slug<>'free' LIMIT 1",
+      [userId]
+    );
+    if (grants[0]) rows=grants;
+  }
   if (!rows[0]) rows = await db.unsafe("SELECT slug,max_active_strategies,entitlements,available_strategy_keys FROM plans WHERE slug='free' LIMIT 1");
   if (!rows[0]) throw new Error("FREE_PLAN_MISSING");
   return buildEntitlementSnapshot({
