@@ -73,11 +73,11 @@ jobs:
         run: |
           # This drills a real snapshot-to-scratch restore in CI. A production
           # off-site restore is still required before enabling live charging.
-          PGHOST=127.0.0.1 PGPORT=5432 PGUSER=strategyos PGPASSWORD=strategyos \\
-          PGDATABASE=strategyos_test \\
-          DRILL_DUMP_FILE=/tmp/wealtharr-readonly-backup.pgcustom \\
-          DRILL_SCRATCH_DB=wealtharr_ci_restore \\
-          DRILL_REPORT=/tmp/wealtharr-ci-restore.json \\
+          PGHOST=127.0.0.1 PGPORT=5432 PGUSER=strategyos PGPASSWORD=strategyos \
+          PGDATABASE=strategyos_test \
+          DRILL_DUMP_FILE=/tmp/wealtharr-readonly-backup.pgcustom \
+          DRILL_SCRATCH_DB=wealtharr_ci_restore \
+          DRILL_REPORT=/tmp/wealtharr-ci-restore.json \
           sh scripts/restore-drill.sh
           python3 - <<'PY'
           import json
