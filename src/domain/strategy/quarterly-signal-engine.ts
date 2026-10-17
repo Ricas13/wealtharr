@@ -24,6 +24,7 @@ import {isNyseTradingDay,latestSigReference,newYorkDate,newYorkMinutes,NYSE_CLOS
  */
 export const QUARTERLY_SIGNAL_RULE_VERSION="WEALTHARR_OWNER_2026_V1";
 export const QUARTERLY_SIGNAL_SHEET105_RULE_VERSION="WEALTHARR_OWNER_2026_V2_SHEET105";
+export const QUARTERLY_SIGNAL_SHEET107_RULE_VERSION="WEALTHARR_OWNER_2026_V3_SHEET107";
 export const QUARTERLY_SIGNAL_VARIANTS=["SIG_9","SIG_6","SIG_3"] as const;
 
 type Params={
@@ -46,9 +47,9 @@ const ratio=(v:unknown,label:string,min=0,max=1)=>{
   return d;
 };
 function parse(c:Record<string,unknown>):Params{
-  if(c.ruleVersion!==QUARTERLY_SIGNAL_RULE_VERSION&&c.ruleVersion!==QUARTERLY_SIGNAL_SHEET105_RULE_VERSION)
+  if(c.ruleVersion!==QUARTERLY_SIGNAL_RULE_VERSION&&c.ruleVersion!==QUARTERLY_SIGNAL_SHEET105_RULE_VERSION&&c.ruleVersion!==QUARTERLY_SIGNAL_SHEET107_RULE_VERSION)
     throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:ruleVersion");
-  if(c.ruleVersion===QUARTERLY_SIGNAL_SHEET105_RULE_VERSION&&c.variant!=="SIG_9")
+  if([QUARTERLY_SIGNAL_SHEET105_RULE_VERSION,QUARTERLY_SIGNAL_SHEET107_RULE_VERSION].includes(String(c.ruleVersion))&&c.variant!=="SIG_9")
     throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:sheet105Variant");
   if(!(QUARTERLY_SIGNAL_VARIANTS as readonly unknown[]).includes(c.variant))throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:variant");
   const stock=String(c.targetExposure??"").trim(),safe=String(c.safeExposure??"").trim();
@@ -80,7 +81,7 @@ function parse(c:Record<string,unknown>):Params{
     spikeMultiple:s.enabled?ratio(s.gainMultiple,"gainMultiple",1,100):new Decimal(2),
     spikeRatio:s.enabled?ratio(s.targetRatio,"spikeTargetRatio"):new Decimal("0.60"),
     referenceCurrency,window,leverage:String(c.targetLeverage??"").trim()||undefined,
-    sheet105:c.ruleVersion===QUARTERLY_SIGNAL_SHEET105_RULE_VERSION
+    sheet105:c.ruleVersion===QUARTERLY_SIGNAL_SHEET105_RULE_VERSION||c.ruleVersion===QUARTERLY_SIGNAL_SHEET107_RULE_VERSION
   };
 }
 const money=(d:Decimal)=>d.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
