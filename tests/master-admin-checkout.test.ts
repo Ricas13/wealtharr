@@ -23,6 +23,10 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   expect(source).toContain('success_url: appOrigin + "/app/settings?billing=success"');
   expect(source).toContain('cancel_url: appOrigin + "/app/settings?billing=cancelled"');
  });
+ it("refuses payments when a local billing owner record is missing",()=>{
+  expect(source).toContain('if (!local)');
+  expect(source).toContain("Billing account needs repair before checkout.");
+ });
  it("fails closed when Stripe subscription history is paginated",()=>{
   expect(source).toContain("existing.has_more");
   expect(source).toContain('status: "all", limit: 100');
