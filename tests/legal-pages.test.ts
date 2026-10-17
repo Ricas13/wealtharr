@@ -9,7 +9,7 @@ describe("customer legal and merchant disclosures",()=>{
   const privacy=readFileSync("src/app/privacy/page.tsx","utf8");
   expect(terms).toContain("Automatic renewal and cancellation");
   expect(terms).toContain("Manage billing");
-  expect(terms).toContain("not yet provided");
+  expect(terms).toContain("Not yet provided");
   expect(privacy).toContain("Privacy notice");
   expect(privacy).toContain("Data protection information");
   expect(privacy).toContain("operator review");
