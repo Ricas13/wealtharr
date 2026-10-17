@@ -33,6 +33,23 @@ async function check(label, path, accept, extra) {
       signal: AbortSignal.timeout(12000)
     });
     let passed = accept(response.status);
+    // Protected routes may redirect to sign-in, but a redirect outside the
+    // configured application origin cannot prove the access boundary works.
+    if (passed && [301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) {
+        passed = false;
+      } else {
+        try {
+          const destination = new URL(location, base);
+          passed = destination.origin === base.origin &&
+            destination.protocol === base.protocol &&
+            !destination.username && !destination.password;
+        } catch {
+          passed = false;
+        }
+      }
+    }
     if (passed && extra) passed = await extra(response);
     results.push({ label, passed, status: response.status });
   } catch {

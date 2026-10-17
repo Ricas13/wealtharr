@@ -69,6 +69,25 @@ jobs:
             pg_dump -h 127.0.0.1 -U wealtharr_backup -d strategyos_test \
             --format=custom --no-owner --no-acl > /tmp/wealtharr-readonly-backup.pgcustom
           test -s /tmp/wealtharr-readonly-backup.pgcustom
+      - name: Restore backup into isolated PostgreSQL and validate recovered state
+        run: |
+          # This drills a real snapshot-to-scratch restore in CI. A production
+          # off-site restore is still required before enabling live charging.
+          PGHOST=127.0.0.1 PGPORT=5432 PGUSER=strategyos PGPASSWORD=strategyos \
+          PGDATABASE=strategyos_test \
+          DRILL_DUMP_FILE=/tmp/wealtharr-readonly-backup.pgcustom \
+          DRILL_SCRATCH_DB=wealtharr_ci_restore \
+          DRILL_REPORT=/tmp/wealtharr-ci-restore.json \
+          sh scripts/restore-drill.sh
+          python3 - <<'PY'
+          import json
+          with open('/tmp/wealtharr-ci-restore.json') as report:
+              result = json.load(report)
+          assert result['result'] == 'PASS'
+          assert result['tablesChecked']['plans'] > 0
+          assert result['tablesChecked']['strategyVersions'] > 0
+          assert result['scratchDatabase'] == 'wealtharr_ci_restore'
+          PY
       - name: Validate Oracle Compose and offsite backup image
         run: |
           printf 'POSTGRES_PASSWORD=ci-db-pass\nAPP_DB_PASSWORD=ci-app-database-password-long-enough\nBACKUP_DB_PASSWORD=ci-backup-database-password-long-enough\nWEALTHARR_STAGING_ALLOWLIST=203.0.113.7/32\nDATABASE_URL=postgresql://wealtharr_app:ci-app-database-password-long-enough@db:5432/strategyos\n' > .env.production

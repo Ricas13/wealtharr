@@ -7,6 +7,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { hasLiveStripeSubscription, isTerminalLocalStatus } from "@/domain/subscription-status";
 import { authFailure } from "@/lib/api-auth";
 import { paidCheckoutBlockers } from "@/domain/commercial-launch";
+import { newAccountIsInvited } from "@/domain/beta-invites";
 import { purchasesAllowedFor } from "@/domain/native-app";
 import { isSinglePeriodPrice } from "@/domain/billing-price";
 
@@ -26,6 +27,11 @@ export async function POST(request: Request) {
       return Response.json({ error: "Manage your plan on the website." }, { status: 403 });
     }
     const input = schema.parse(await request.json());
+    // During private beta, pre-existing free accounts that were not invited
+    // also cannot reach live checkout, even though they may still sign in.
+    if (!newAccountIsInvited(user.email,process.env)) {
+      return Response.json({error:"Paid beta subscriptions are invitation-only."},{status:403});
+    }
     // Paid onboarding is off until the operator has completed external
     // commercial, infrastructure, regulatory and live-provider sign-offs.
     if(process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true"){
@@ -42,6 +48,18 @@ export async function POST(request: Request) {
 
     if (!process.env.STRIPE_SECRET_KEY || !process.env.NEXT_PUBLIC_APP_URL) {
       return Response.json({ error: "Billing is not configured." }, { status: 503 });
+    }
+    let appOrigin: string;
+    try {
+      const configured = new URL(process.env.NEXT_PUBLIC_APP_URL);
+      // A configured base path, query or credentials must never end up
+      // in a Stripe-hosted success/cancel URL.
+      if (configured.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("INVALID_APP_ORIGIN");
+      if (configured.pathname !== "/" || configured.search || configured.hash ||
+          configured.username || configured.password) throw new Error("INVALID_APP_ORIGIN");
+      appOrigin = configured.origin;
+    } catch {
+      return Response.json({ error: "Billing return URLs are not configured correctly." }, { status: 503 });
     }
 
     const currency = (input.currency ?? user.baseCurrency).toUpperCase();
@@ -73,7 +91,12 @@ export async function POST(request: Request) {
       [user.id]
     );
     const local = subRows[0];
-    if (local && String(local.source ?? "STRIPE") !== "STRIPE" && !isTerminalLocalStatus(local.status)) {
+    // No canonical local subscription means Stripe cannot safely attribute a
+    // future signed webhook to this user. Do not take a payment first.
+    if (!local) {
+      return Response.json({ error: "Billing account needs repair before checkout." }, { status: 503 });
+    }
+    if (String(local.source ?? "STRIPE") !== "STRIPE" && !isTerminalLocalStatus(local.status)) {
       return Response.json({ error: "Your subscription is billed through the " + (local.source === "APPLE" ? "App Store" : "Google Play") + ". Manage or change it there." }, { status: 409 });
     }
     if (local?.stripe_subscription_id && !isTerminalLocalStatus(local.status)) {
@@ -101,7 +124,12 @@ export async function POST(request: Request) {
     // Local state can lag behind Stripe if a webhook was missed, so confirm with Stripe
     // that this customer is not still billed before taking a second payment.
     if (local?.stripe_customer_id) {
-      const existing = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+      const existing = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 });
+      // The full account history might be paginated. Never treat the first
+      // page alone as proof that a customer has no pending/live subscription.
+      if (existing.has_more) {
+        return Response.json({ error: "Billing history needs review before you can start another subscription." }, { status: 409 });
+      }
       if (hasLiveStripeSubscription(existing.data.map((subscription) => subscription.status))) {
         return Response.json({ error: "You already have a Stripe subscription. Use Manage billing to change the plan or billing cycle." }, { status: 409 });
       }
@@ -114,8 +142,8 @@ export async function POST(request: Request) {
         customer: customerId,
         client_reference_id: user.id,
         line_items: [{ price: String(price.stripe_price_id), quantity: 1 }],
-        success_url: process.env.NEXT_PUBLIC_APP_URL + "/app/settings?billing=success",
-        cancel_url: process.env.NEXT_PUBLIC_APP_URL + "/app/settings?billing=cancelled",
+        success_url: appOrigin + "/app/settings?billing=success",
+        cancel_url: appOrigin + "/app/settings?billing=cancelled",
         subscription_data: { metadata: { userId: user.id, planId: String(price.id) } },
         metadata: { userId: user.id, planId: String(price.id), cadence: input.cadence, currency }
       },

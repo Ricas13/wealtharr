@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "@/lib/db";
+import { newAccountIsInvited } from "@/domain/beta-invites";
 
 export type OAuthIdentity = {
   provider: string;
@@ -10,7 +11,7 @@ export type OAuthIdentity = {
 
 export type OAuthResolution =
   | { ok: true; user: { id: string; email: string; role: string; sessionVersion: number }; created: boolean; newlyLinked?: boolean }
-  | { ok: false; reason: "EMAIL_NOT_VERIFIED" | "ACCOUNT_UNAVAILABLE" | "USE_PASSWORD_SIGN_IN" | "INVALID_IDENTITY" };
+  | { ok: false; reason: "EMAIL_NOT_VERIFIED" | "ACCOUNT_UNAVAILABLE" | "USE_PASSWORD_SIGN_IN" | "INVALID_IDENTITY" | "INVITE_REQUIRED" };
 
 type UserRow = Record<string, any>;
 
@@ -74,6 +75,8 @@ export async function resolveOAuthSignIn(identity: OAuthIdentity): Promise<OAuth
       const fresh = await tx.unsafe("SELECT id,email,role,session_version FROM users WHERE id=$1", [row.id]);
       return { ok: true, user: asUser(fresh[0] as UserRow), created: false, newlyLinked: true };
     }
+
+    if (!newAccountIsInvited(email,process.env)) return {ok:false,reason:"INVITE_REQUIRED"};
 
     const free = await tx.unsafe("SELECT id FROM plans WHERE slug='free' LIMIT 1");
     if (!free[0]) throw new Error("FREE_PLAN_MISSING");

@@ -34,6 +34,28 @@ describe.skipIf(!url)("sign in with a provider",()=>{
     expect(subs.map((r)=>r.slug)).toEqual(["free"]);
   });
 
+  it("blocks uninvited OAuth onboarding but permits existing accounts to sign in",async()=>{
+    const invited=email("invite");
+    const denied=email("denied");
+    const previousMode=process.env.WEALTHARR_PRIVATE_BETA_INVITE_ONLY;
+    const previousList=process.env.WEALTHARR_BETA_INVITE_EMAILS;
+    try{
+      process.env.WEALTHARR_PRIVATE_BETA_INVITE_ONLY="true";
+      process.env.WEALTHARR_BETA_INVITE_EMAILS=invited;
+      expect(await resolveOAuthSignIn(identity(denied))).toEqual({ok:false,reason:"INVITE_REQUIRED"});
+      expect(await user(denied)).toBeUndefined();
+      const enrolled=await resolveOAuthSignIn(identity(invited));
+      expect(enrolled).toMatchObject({ok:true,created:true});
+      process.env.WEALTHARR_BETA_INVITE_EMAILS="";
+      expect(await resolveOAuthSignIn(identity(invited))).toMatchObject({ok:true,created:false});
+    }finally{
+      if(previousMode===undefined)delete process.env.WEALTHARR_PRIVATE_BETA_INVITE_ONLY;
+      else process.env.WEALTHARR_PRIVATE_BETA_INVITE_ONLY=previousMode;
+      if(previousList===undefined)delete process.env.WEALTHARR_BETA_INVITE_EMAILS;
+      else process.env.WEALTHARR_BETA_INVITE_EMAILS=previousList;
+    }
+  });
+
   it("recognises a returning identity by its provider id even if the email changed",async()=>{
     const e=email("return");
     const id=identity(e);

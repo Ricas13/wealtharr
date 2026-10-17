@@ -18,6 +18,8 @@ describe("subscription status helpers",()=>{
     expect(hasLiveStripeSubscription(["canceled","incomplete_expired"])).toBe(false);
     expect(hasLiveStripeSubscription(["canceled","past_due"])).toBe(true);
     expect(hasLiveStripeSubscription(["trialing"])).toBe(true);
+    expect(hasLiveStripeSubscription(["incomplete"])).toBe(true);
+    expect(hasLiveStripeSubscription(["paused"])).toBe(true);
     expect(hasLiveStripeSubscription([])).toBe(false);
   });
 });

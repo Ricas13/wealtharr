@@ -8,21 +8,18 @@ export type SubscriptionIdentity=Pick<Stripe.Subscription,"id"|"customer"|"metad
 async function resolvePlanId(subscription: Stripe.Subscription) {
   const priceId=subscription.items.data[0]?.price.id;
   if(priceId){
-    const byPrice=await sql.unsafe(
+    // Check modern price mappings AND legacy plan prices in one resolution.
+    // A legacy mapping to plan B must not be silently ignored when the same
+    // Stripe Price ID is also mapped to plan A in the newer schema.
+    const matches=await sql.unsafe(
       "SELECT DISTINCT p.id FROM plans p WHERE p.id IN ("+
       "SELECT m.plan_id FROM stripe_price_mappings m WHERE m.stripe_price_id=$1 "+
-      "UNION SELECT pp.plan_id FROM plan_prices pp WHERE pp.stripe_price_id=$1) LIMIT 2",
+      "UNION SELECT pp.plan_id FROM plan_prices pp WHERE pp.stripe_price_id=$1) "+
+      "OR p.stripe_monthly_price_id=$1 OR p.stripe_annual_price_id=$1 LIMIT 2",
       [priceId]
     );
-    if(byPrice.length>1)throw new Error("AMBIGUOUS_STRIPE_PRICE");
-    if(byPrice[0])return String(byPrice[0].id);
-
-    const legacy=await sql.unsafe(
-      "SELECT id FROM plans WHERE stripe_monthly_price_id=$1 OR stripe_annual_price_id=$1 LIMIT 2",
-      [priceId]
-    );
-    if(legacy.length>1)throw new Error("AMBIGUOUS_STRIPE_PRICE");
-    if(legacy[0])return String(legacy[0].id);
+    if(matches.length>1)throw new Error("AMBIGUOUS_STRIPE_PRICE");
+    if(matches[0])return String(matches[0].id);
   }
   // Never promote a subscription from mutable metadata when its Stripe Price
   // is not mapped to a published local product.
@@ -127,6 +124,7 @@ export async function applyCurrentStripeSubscription(stripe:Stripe,incoming:Subs
     const periodEnd=item.current_period_end??(canonical as unknown as {current_period_end?:number}).current_period_end??null;
     await tx.unsafe(
       "UPDATE subscriptions SET plan_id=$1,status=$2,cadence=$3,stripe_subscription_id=$4,"+
+      "source='STRIPE',store_product_id=NULL,store_original_transaction_id=NULL,store_event_at=NULL,"+
       "current_period_end=$5,cancel_at_period_end=$6,updated_at=now() WHERE user_id=$7",
       [planId,status,item.price.recurring.interval==="year"?"ANNUAL":"MONTHLY",
         canonical.id,periodEnd?new Date(periodEnd*1000):null,

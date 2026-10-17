@@ -1,4 +1,5 @@
 import { requestIp } from "@/domain/client-ip";
+import { newAccountIsInvited } from "@/domain/beta-invites";
 import { ensureSettings } from "@/lib/settings";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
     await consumeRateLimit("register:" + ip, 8, 3600);
     const parsed = schema.parse(await request.json());
     await requireTurnstile({action:"register",token:parsed.turnstileToken,env:process.env});
+    if (!newAccountIsInvited(parsed.email,process.env)) {
+      return Response.json({error:"Registration is currently by invitation."},{status:403});
+    }
     // Stored lowercase: the database enforces uniqueness on lower(email).
     const input = { ...parsed, email: parsed.email.trim().toLowerCase() };
     const passwordHash = await bcrypt.hash(input.password, 12);

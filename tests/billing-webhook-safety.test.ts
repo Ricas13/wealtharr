@@ -30,6 +30,15 @@ describe("Stripe webhook financial safety",()=>{
     expect(block).toContain("AMBIGUOUS_STRIPE_PRICE");
   });
 
+  it("rejects cross-schema price collisions instead of silently choosing a plan",()=>{
+    const resolveStart=source.indexOf("async function resolvePlanId");
+    const resolveEnd=source.indexOf("async function retrieveCurrentSubscription",resolveStart);
+    const block=source.slice(resolveStart,resolveEnd);
+    expect(block).toContain("OR p.stripe_monthly_price_id=$1 OR p.stripe_annual_price_id=$1 LIMIT 2");
+    expect(block).toContain('if(matches.length>1)throw new Error("AMBIGUOUS_STRIPE_PRICE")');
+    expect(block).not.toContain("const legacy=await");
+  });
+
   it("acts on Stripe's current subscription state, not the possibly stale event payload",()=>{
     expect(source).toContain("stripe.subscriptions.retrieve(subscriptionId)");
     expect(source).toContain("retrieveCurrentSubscription(stripe,incoming.id)");

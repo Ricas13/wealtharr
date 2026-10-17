@@ -247,6 +247,22 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(await row()).toMatchObject({slug:before.slug,status:before.status});
   });
 
+  it("rejects conflicting legacy and current Stripe price mappings without changing entitlements",async()=>{
+    const previous=(await sql!.unsafe("SELECT stripe_monthly_price_id FROM plans WHERE slug='pro'"))[0].stripe_monthly_price_id;
+    const before=await row();
+    await sql!.unsafe("UPDATE plans SET stripe_monthly_price_id=$1 WHERE slug='pro'",[PRICES.investorMonthly]);
+    try{
+      const result=await deliver("customer.subscription.updated",subscription("sub_lc_b_"+run,userId,{price:PRICES.investorMonthly}));
+      expect(result).toMatchObject({status:500,errorCode:"AMBIGUOUS_STRIPE_PRICE"});
+      expect(await row()).toMatchObject({
+        slug:before.slug,status:before.status,
+        cadence:before.cadence,stripe_subscription_id:before.stripe_subscription_id
+      });
+    }finally{
+      await sql!.unsafe("UPDATE plans SET stripe_monthly_price_id=$1 WHERE slug='pro'",[previous]);
+    }
+  });
+
   it("never assigns an entitlement from one item of an ambiguous or unsupported Stripe subscription",async()=>{
     const subB="sub_lc_b_"+run;
     const before=await row();
@@ -309,6 +325,26 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     const after=(await sql!.unsafe("SELECT s.source,s.status,s.stripe_subscription_id,p.slug FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1",[userId]))[0];
     expect(after).toMatchObject({source:"APPLE",status:"ACTIVE",slug:"pro",stripe_subscription_id:null});
     await sql!.unsafe("UPDATE subscriptions SET source='STRIPE',store_original_transaction_id=NULL WHERE user_id=$1",[userId]);
+  });
+
+  it("clears a canceled App Store subscription when a new Stripe subscription starts",async()=>{
+    const newId="sub_lc_store_to_web_"+run;
+    await sql!.unsafe(
+      "UPDATE subscriptions SET source='APPLE',status='CANCELED',stripe_subscription_id=NULL,"+
+      "store_product_id='old-product',store_original_transaction_id=$2,store_event_at=now() WHERE user_id=$1",
+      [userId,"old-store-"+run]
+    );
+    const result=await deliver("customer.subscription.created",subscription(newId,userId,{price:PRICES.proAnnual,interval:"year"}));
+    expect(result).toMatchObject({status:200});
+    const after=(await sql!.unsafe(
+      "SELECT s.source,s.status,s.stripe_subscription_id,s.store_product_id,"+
+      "s.store_original_transaction_id,s.store_event_at,p.slug FROM subscriptions s "+
+      "JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1",[userId]))[0];
+    expect(after).toMatchObject({
+      source:"STRIPE",status:"ACTIVE",slug:"pro",stripe_subscription_id:newId,
+      store_product_id:null,store_original_transaction_id:null,store_event_at:null
+    });
+    expect(stripeState.cancelled).not.toContain(newId);
   });
 
   async function prepareRecovery(){
