@@ -34,9 +34,12 @@ async function main(){
     const group2ReleaseKeys=new Set(["all-weather","hfea","coffeehouse","core-four","swensen","merriman-ultimate"]);
     // Quarterly target family: an install that already seeded the 2026-10-15 rules as v1.0 receives the
     // owner's 2026-10-16 rules (daily-close spike, 6% two skips, withdrawals lower the line) as a NEW
-    // immutable v1.1; existing instances stay pinned to v1.0. A fresh install seeds the current rules as v1.0.
+    // immutable v1.1; existing instances stay pinned to v1.0. Nasdaq sheet v1.05 resets are a further v1.2. A fresh install seeds the current rules as v1.0.
     const quarterlyReleaseKeys=new Set(["quarterly-target-nasdaq-3x","quarterly-target-midcap-2x","quarterly-target-smallcap"]);
-    const upgradeVersionOf=(key:string)=>group2ReleaseKeys.has(key)?"2.0":quarterlyReleaseKeys.has(key)?"1.1":null;
+    // Sheet v1.05 is a NEW release. Never overwrite the older Nasdaq 1.0 / 1.1
+    // immutable versions, whose stored ruleVersion still selects the v1 engine.
+    const upgradeVersionOf=(key:string)=>group2ReleaseKeys.has(key)?"2.0":
+      key==="quarterly-target-nasdaq-3x"?"1.2":quarterlyReleaseKeys.has(key)?"1.1":null;
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
