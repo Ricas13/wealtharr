@@ -107,6 +107,38 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     await sql.end();
   });
 
+
+  it("ignores unrelated customers safely when the same Stripe account serves another product",async()=>{
+    const other=subscription("sub_fin_fusion_"+run,userId,{customer:"cus_fin_fusion_"+run,metadataUserId:"other-product"});
+    const before=await row();
+    const result=await deliver("customer.subscription.created",other);
+    expect(result.status).toBe(200);
+    expect(await row()).toMatchObject({
+      slug:before.slug,status:before.status,stripe_subscription_id:before.stripe_subscription_id
+    });
+    expect(stripeState.cancelled).not.toContain("sub_fin_fusion_"+run);
+  });
+
+  it("recovers a renewed subscription from invoice.paid using Stripe current state",async()=>{
+    const id="sub_lc_invoice_"+run;
+    const periodEnd=now()+100*DAY;
+    const current=subscription(id,userId,{status:"active",periodEnd});
+    stripeState.subscriptions.set(id,current);
+    const {POST}=await import("@/app/api/stripe/webhook/route");
+    const payload=JSON.stringify({
+      id:"evt_lc_"+run+"_invoice_paid",object:"event",type:"invoice.paid",created:now(),
+      data:{object:{id:"in_lc_"+run,customer:"cus_lc_"+run,
+       parent:{subscription_details:{subscription:id}}}}
+    });
+    const header=Stripe.webhooks.generateTestHeaderString({payload,secret:WEBHOOK_SECRET});
+    const response=await POST(new Request("http://localhost/api/stripe/webhook",{
+      method:"POST",headers:{"stripe-signature":header},body:payload
+    }));
+    expect(response.status).toBe(200);
+    expect(await row()).toMatchObject({slug:"investor",status:"ACTIVE",stripe_subscription_id:id});
+    expect(Math.floor(new Date((await row()).current_period_end).getTime()/1000)).toBe(periodEnd);
+  });
+
   it("activates a paid plan when the first subscription is created",async()=>{
     const periodEnd=now()+30*DAY;
     const result=await deliver("customer.subscription.created",subscription(subA,userId,{periodEnd}));
