@@ -62,7 +62,7 @@ export async function POST(request:Request){
      const desired:typeof originalEvents=originalEvents.includes("*")?originalEvents:
        [...new Set([...originalEvents,...SUBSCRIPTION_EVENTS])] as typeof originalEvents;
      const changed=desired.length!==originalEvents.length;
-     if(changed)await stripe.webhookEndpoints.update(endpoint.id,{enabled_events:desired as Parameters<typeof stripe.webhookEndpoints.update>[1]["enabled_events"]});
+     if(changed)await stripe.webhookEndpoints.update(endpoint.id,{enabled_events:desired as NonNullable<Parameters<typeof stripe.webhookEndpoints.update>[1]>["enabled_events"]});
      await sql.unsafe(
        "INSERT INTO audit_events(actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'integration.stripe-webhook-verified','stripe_endpoint',$2,$3::jsonb)",
        [admin.id,endpoint.id,JSON.stringify({eventsUpdated:changed,requiredEventCount:SUBSCRIPTION_EVENTS.length})]
