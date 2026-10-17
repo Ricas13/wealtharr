@@ -2,37 +2,28 @@ import {describe,expect,it} from "vitest";
 import {readFileSync} from "node:fs";
 
 const home=readFileSync("src/app/page.tsx","utf8");
-const hero=readFileSync("src/components/AllocationObservatory.tsx","utf8");
-const interaction=readFileSync("src/components/PublicLandingInteractivity.tsx","utf8");
-const css=readFileSync("src/app/marketing-home.css","utf8");
-const observatoryCss=readFileSync("src/app/marketing-observatory.css","utf8");
+const client=readFileSync("src/components/PublicStrategyComparison.tsx","utf8");
+const styles=readFileSync("src/app/marketing-simple.css","utf8");
 
-describe("marketing page animated strategy story",()=>{
- it("always fills the strategy carousel with clearly educational examples when nothing is released",()=>{
-  expect(home).toContain("EDUCATIONAL_EXAMPLES:PublicStrategyCard[]");
-  expect(home).toContain("const carouselCards=[...strategies,");
-  expect(home).toContain("Educational strategy example");
-  expect(home).toContain("only released methods with eligible instruments can be started");
-  expect(interaction).toContain("cards.map((c,i)=>render(c,i,true))");
-  expect(interaction).toContain("requestAnimationFrame(tick)");
-  expect(interaction).toContain("onMouseEnter={()=>held.current=true}");
+describe("minimal marketing narrative",()=>{
+ it("has only headline, interactive returns and plan cards",()=>{
+  expect(home).toContain("<PublicStrategyComparison");
+  expect(home).toContain("<PublicPricingCards");
+  expect(home).not.toContain("HeroStrategyPreview");
+  expect(home).not.toContain("AllocationObservatory");
+  expect(home).not.toContain("PublicStrategyRail");
  });
- it("replaces the fictional line reveal with truthful and accessible allocation geometry",()=>{
-  expect(home).toContain("<AllocationObservatory/>");
-  expect(home).not.toContain("<HeroStrategyPreview/>");
-  expect(hero).toContain("calculateInstrument(contribution,equity)");
-  expect(hero).toContain("strokeDasharray");
-  expect(hero).toContain("onPointerDown=");
-  expect(hero).toContain('type="range"');
-  expect(hero).toContain("Illustrative");
-  expect(hero).toContain("No market prices, returns, trades or actual strategy schedules");
-  expect(observatoryCss).toContain("prefers-reduced-motion:reduce");
-  expect(observatoryCss).toContain(".wm-hero.wm-hero-observatory");
+ it("uses real user-selected strategy comparisons instead of fictional animated performance",()=>{
+  expect(client).toContain("useState<string[]>");
+  expect(client).toContain("alignedWindow(");
+  expect(client).toContain("chartRows(");
+  expect(client).toContain("spy.length===0");
+  expect(styles).toContain(".wm-simple .wm-compare-no-chart");
  });
- it("removes the redundant reassurance banner and compresses the strategy display",()=>{
-  expect(home).not.toContain("Elegant where it matters");
-  expect(home.indexOf('id="strategies"')).toBeLessThan(home.indexOf('id="how"'));
-  expect(css).toContain(".wm-strategy-section{padding-top:68px");
-  expect(css).not.toContain(".wm-trust-grid{");
+ it("keeps the hero readable without extra steps or forced scroll animation",()=>{
+  expect(styles).toContain(".wm-simple .wm-simple-hero");
+  expect(styles).toContain("@media(max-width:720px)");
+  expect(home).not.toContain("id=\"how\"");
+  expect(home).not.toContain("id=\"preview\"");
  });
 });
