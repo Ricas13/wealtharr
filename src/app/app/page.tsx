@@ -7,7 +7,7 @@ import { sql } from "@/lib/db";
 import {isStoredActionCurrent,STALE_ACTION_DISPLAY} from "@/lib/action-service";
 import { plainEnglishActionReason } from "@/domain/action-copy";
 import { loadWorkspaceAnalytics, benchmarkComparison } from "@/lib/workspace-analytics";
-import { growthIndex } from "@/domain/portfolio-analytics";
+import { growthIndex,summarizeObservedPerformance } from "@/domain/portfolio-analytics";
 import { PerformanceChart } from "@/components/PerformanceChart";
 import { money as formatMoney, pct } from "@/lib/format";
 import {strategyDashboardView,strategyDashboardContext} from "@/domain/strategy/customer-dashboard-view";
@@ -94,6 +94,9 @@ export default async function OverviewPage(){
   const nextReview=reviewRows.filter((row:any)=>row.due_at).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
   const healthyCount=activeStrategies.filter((strategy:any)=>strategy.health_status==="HEALTHY").length;
   const analytics=await loadWorkspaceAnalytics(user.id);
+  const returnsById=new Map(analytics.strategies.map(entry=>[
+    entry.id,summarizeObservedPerformance(entry.valuations,entry.flows)
+  ] as const));
   const combined=analytics.aggregate;
   const combinedSummary=analytics.summary;
   const indexedCombined=combined?growthIndex(combined.valuations,combined.flows):[];
@@ -204,6 +207,12 @@ export default async function OverviewPage(){
             <h3>{strategy.name}</h3>
             <p className="adaptive-strategy-type">{strategy.strategy_name} · {context.label}</p>
             <div className="adaptive-strategy-value"><span>Last recorded value</span><strong>{latest?money(Number(latest.value),String(strategy.currency)):"Not yet valued"}</strong></div>
+            <div className="adaptive-strategy-return">
+              <span>Flow-adjusted return (estimate)</span>
+              <strong>{returnsById.get(String(strategy.id))?.flowAdjustedReturnPct!=null
+                ?formatPct(returnsById.get(String(strategy.id))?.flowAdjustedReturnPct)
+                :"Not enough history"}</strong>
+            </div>
             <div className="adaptive-strategy-next"><strong>{view.headline}</strong><span>{view.description}</span></div>
             <p className="adaptive-strategy-rule">{context.detail}</p>
             <div className="strategy-meta"><span className="pill">v{strategy.version}</span><span className="pill">{strategy.wrapper}</span></div>
