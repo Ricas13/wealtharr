@@ -13,8 +13,8 @@ export function PublicHeroPerformance({entries,spy,asOf}:Props){
     <div className="wm-hero-evidence-head"><strong>Strategy performance</strong><span>Historical model vs SPY</span></div>
     {featured&&pair&&chart.length>=2?<div className="wm-hero-evidence-data">
       <div className="wm-hero-evidence-stats">
-        <div><small><i className="wm-hero-color-model"/>{featured.name}</small><strong>{signed(pair.model.percent)}</strong></div>
-        <div><small><i className="wm-hero-color-spy"/>SPY buy &amp; hold</small><strong>{signed(pair.spy.percent)}</strong></div>
+        <div><small><i className="wm-hero-color-model"/>{featured.name}</small><strong className={pair.model.percent<0?"is-negative":""}>{signed(pair.model.percent)}</strong></div>
+        <div><small><i className="wm-hero-color-spy"/>SPY buy &amp; hold</small><strong className={pair.spy.percent<0?"is-negative":""}>{signed(pair.spy.percent)}</strong></div>
       </div>
       <div className="wm-hero-evidence-chart" role="group" aria-label="Recorded historical model versus SPY comparison">
         <ResponsiveContainer width="100%" height="100%">
