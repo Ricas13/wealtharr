@@ -61,14 +61,17 @@ export function isApprovedSpyPoint(exposure:string,metadata:unknown):boolean{
 }
 export function validatedObservations(rows:readonly DatedValue[]):DatedValue[]{
   let previous="";
-  return rows.flatMap(row=>{
+  const result:DatedValue[]=[];
+  for(const row of rows){
     if(!validDate(row.date)||row.date<=previous)return [];
     previous=row.date;
     try{
       const n=new Decimal(row.value);
-      return n.isFinite()&&n.gt(0)?[{date:row.date,value:n.toString()}]:[];
+      if(!n.isFinite()||n.lte(0))return [];
+      result.push({date:row.date,value:n.toString()});
     }catch{return [];}
-  });
+  }
+  return result;
 }
 function utcDays(a:string,b:string){return Math.round((Date.parse(b+"T00:00:00Z")-Date.parse(a+"T00:00:00Z"))/86400000);}
 export function periodStart(end:string,period:PublicPeriod){
