@@ -73,8 +73,8 @@ export function PublicStrategyComparison({entries,spy,asOf,spySource}:Props){
   const chartData=useMemo(()=>{
     if(rawChart.length<=400)return rawChart;
     const stride=Math.ceil(rawChart.length/400);
-    return rawChart.filter((_,i)=>i===0||i===rawChart.length-1||i%stride===0);
-  },[rawChart]);
+    return rawChart.filter((row,i)=>i===0||i===rawChart.length-1||i%stride===0||active.some(entry=>typeof row[entry.key]==="number"));
+  },[rawChart,active]);
   const changePeriod=(next:PublicPeriod)=>setPeriod(next);
   const toggle=(key:string)=>setSelected(old=>old.includes(key)?old.filter(x=>x!==key):[...old,key]);
   const benchmark=spyWindows.get(period);
@@ -106,7 +106,7 @@ export function PublicStrategyComparison({entries,spy,asOf,spySource}:Props){
       </div>
     </div>
 
-    <div className="wm-compare-scroll" role="region" aria-label="Scrollable strategy performance table" tabIndex={0}>
+    <div id="wm-compare-table-rows" className="wm-compare-scroll" role="region" aria-label="Scrollable strategy performance table" tabIndex={0}>
       <table className="wm-compare-table">
         <thead><tr><th scope="col">Show</th><th scope="col">Strategy</th><th scope="col">Type</th>
           {PERIODS.map(p=><th scope="col" className={"number"+(p===period?" wm-compare-focused":"")} key={p}>{p==="ALL"?"All":p}</th>)}
@@ -148,7 +148,7 @@ export function PublicStrategyComparison({entries,spy,asOf,spySource}:Props){
       <span>{selected.length} selected · {visibleEntries.length} of {matchingEntries.length} strategies displayed</span>
       {!search.trim()&&!onlyReady&&matchingEntries.length>PREVIEW_COUNT&&
         <button type="button" className="wm-compare-more" onClick={()=>setExpanded(open=>!open)}
-          aria-expanded={expanded} aria-controls="wm-compare-chart-section">
+          aria-expanded={expanded} aria-controls="wm-compare-table-rows">
           {expanded?"Show fewer strategies":"Show more strategies ("+hiddenCount+" more)"} <span aria-hidden="true">{expanded?"↑":"↓"}</span>
         </button>}
     </div>
