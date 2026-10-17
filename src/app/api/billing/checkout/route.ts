@@ -7,6 +7,7 @@ import { assertSameOrigin } from "@/lib/security";
 import { hasLiveStripeSubscription, isTerminalLocalStatus } from "@/domain/subscription-status";
 import { authFailure } from "@/lib/api-auth";
 import { paidCheckoutBlockers } from "@/domain/commercial-launch";
+import { newAccountIsInvited } from "@/domain/beta-invites";
 import { purchasesAllowedFor } from "@/domain/native-app";
 import { isSinglePeriodPrice } from "@/domain/billing-price";
 
@@ -26,6 +27,11 @@ export async function POST(request: Request) {
       return Response.json({ error: "Manage your plan on the website." }, { status: 403 });
     }
     const input = schema.parse(await request.json());
+    // During private beta, pre-existing free accounts that were not invited
+    // also cannot reach live checkout, even though they may still sign in.
+    if (!newAccountIsInvited(user.email,process.env)) {
+      return Response.json({error:"Paid beta subscriptions are invitation-only."},{status:403});
+    }
     // Paid onboarding is off until the operator has completed external
     // commercial, infrastructure, regulatory and live-provider sign-offs.
     if(process.env.WEALTHARR_PAID_LAUNCH_ENABLED!=="true"){
