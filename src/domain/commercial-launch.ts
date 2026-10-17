@@ -7,7 +7,12 @@ export function marketDataProviderWarnings(env:Environment):string[]{
  return env.MARKET_DATA_PROVIDER==="yahoo"?[YAHOO_LAUNCH_WARNING]:[];
 }
 export type LaunchCheck={key:string;passed:boolean;reason:string};
-const validHttps=(s:string|undefined)=>{try{return !!s&&new URL(s).protocol==="https:";}catch{return false;}};
+const validHttps=(s:string|undefined)=>{try{
+ if(!s)return false;
+ const url=new URL(s);
+ return url.protocol==="https:" && !!url.hostname && !url.username && !url.password &&
+  !url.hash && !["localhost","127.0.0.1","[::1]"].includes(url.hostname.toLowerCase());
+ }catch{return false;}};
 const enough=(s:string|undefined,length:number)=>!!s&&s.length>=length&&!/^(replace|changeme|example|ci-only|test-)/i.test(s);
 const validKey=(s:string|undefined)=>{if(!s||!/^[A-Za-z0-9+/]{43}=$/.test(s))return false;
   return Buffer.from(s,"base64").length===32;};
