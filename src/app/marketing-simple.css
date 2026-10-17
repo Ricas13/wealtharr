@@ -314,6 +314,7 @@
   font-weight:750;letter-spacing:-1px;font-variant-numeric:tabular-nums;
 }
 .wm-simple .wm-hero-evidence-stats>div:nth-child(2)>strong{color:#647d9e}
+.wm-simple .wm-hero-evidence-stats strong.is-negative{color:#ac3150}
 .wm-simple .wm-hero-evidence-chart{height:185px;margin:13px 14px 0}
 .wm-simple .wm-hero-evidence-note{
   margin:2px 20px 13px;color:#5c718a;font-size:10px;
