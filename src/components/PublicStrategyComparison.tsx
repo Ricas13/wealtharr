@@ -127,7 +127,7 @@ export function PublicStrategyComparison({entries,spy,asOf,spySource}:Props){
                 onChange={()=>toggle(entry.key)} aria-label={(activeSelected?"Hide ":"Show ")+entry.name+" on chart"}/></td>
               <th scope="row">{entry.name}</th><td>{entry.family}</td>
               <td className={"number "+(window&&window.model.percent<0?"wm-negative":"")}>{window?pct(window.model.percent):<span className="wm-compare-unavailable">Not verified</span>}</td>
-              <td className="number">{comparison===null?"—":pct(comparison)+" pp"}</td>
+              <td className="number">{comparison===null?"—":(comparison>=0?"+":"")+comparison.toFixed(1)+" pp"}</td>
               <td>{window?labelDate(window.model.end):<span className="wm-compare-unavailable">{entry.reason}</span>}</td>
             </tr>;
           })}
