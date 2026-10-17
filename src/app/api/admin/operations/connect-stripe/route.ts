@@ -47,8 +47,28 @@ export async function POST(request:Request){
    const existing=await stripe.webhookEndpoints.list({limit:100});
    if(existing.has_more)
      return Response.json({error:"Too many existing Stripe endpoints to safely determine uniqueness. Review in Stripe before proceeding."},{status:409,headers:privateHeaders});
-   if(existing.data.some(endpoint=>endpoint.url===target.href))
-     return Response.json({error:"A Stripe webhook already exists at this address. Enter its signing secret in Master Admin or rotate it in Stripe; an existing secret cannot be read back."},{status:409,headers:privateHeaders});
+   const matching=existing.data.filter(endpoint=>endpoint.url===target.href);
+   if(matching.length>1)
+     return Response.json({error:"Multiple Stripe webhooks target Wealtharr. Resolve the duplicates in Stripe before continuing."},{status:409,headers:privateHeaders});
+   if(matching[0]){
+     // Stripe does not return the existing signing secret after creation.
+     // Never rotate it, overwrite it, or claim the endpoint works when we
+     // cannot verify a locally stored signing secret exists.
+     if(!process.env.STRIPE_WEBHOOK_SECRET?.startsWith("whsec_"))
+       return Response.json({error:"The existing Stripe webhook needs its signing secret saved in Master Admin. Stripe cannot reveal the old secret."},{status:409,headers:privateHeaders});
+     const endpoint=matching[0];
+     const originalEvents=endpoint.enabled_events;
+     // Keep any operator-defined event types; '*' already covers everything.
+     const desired=originalEvents.includes("*")?originalEvents:
+       [...new Set([...originalEvents,...SUBSCRIPTION_EVENTS])];
+     const changed=desired.length!==originalEvents.length;
+     if(changed)await stripe.webhookEndpoints.update(endpoint.id,{enabled_events:desired});
+     await sql.unsafe(
+       "INSERT INTO audit_events(actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'integration.stripe-webhook-verified','stripe_endpoint',$2,$3::jsonb)",
+       [admin.id,endpoint.id,JSON.stringify({eventsUpdated:changed,requiredEventCount:SUBSCRIPTION_EVENTS.length})]
+     ).catch(()=>{});
+     return Response.json({ok:true,endpointId:endpoint.id,updated:changed,existing:true},{headers:privateHeaders});
+   }
    const endpoint=await stripe.webhookEndpoints.create({
      url:target.href,
      enabled_events:[...SUBSCRIPTION_EVENTS]

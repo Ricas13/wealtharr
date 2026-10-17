@@ -13,7 +13,9 @@ export function IntegrationTests(){
   try{
    const r=await fetch("/api/admin/operations/connect-stripe",{method:"POST"});
    const response=await r.json().catch(()=>({}));
-   setSetupMessage(r.ok?"Stripe webhook registered and its signing secret saved securely.":response.error??"Stripe setup failed.");
+   setSetupMessage(r.ok?(response.existing
+    ?(response.updated?"Existing Wealtharr Stripe webhook updated with missing billing events.":"Wealtharr Stripe webhook already has the required events.")
+    :"Stripe webhook registered and its signing secret saved securely."):response.error??"Stripe setup failed.");
   }catch{setSetupMessage("Could not reach the Stripe configuration service.");}
   finally{setSetupBusy(false);}
  }
