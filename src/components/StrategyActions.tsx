@@ -123,11 +123,16 @@ export function ExecuteAction({ action, currency }: { action: { id: string; acti
   </form>;
 }
 
-export function ContributionForm({ id, accounts=[] }: { id: string; accounts?:AccountOption[] }) {
+export function ContributionForm({ id, accounts=[], sigBaseline }: { id: string; accounts?:AccountOption[]; sigBaseline?:string }) {
   const router = useRouter();
   const status = useMessage();
   const [busy,setBusy]=useState(false);
   const requestKey=useRef<string|null>(null);
+  const [contributionAmount,setContributionAmount]=useState(sigBaseline==="0"?"":sigBaseline??"");
+  const baseline=Number(sigBaseline??"0");
+  const proposed=Number(contributionAmount);
+  const sigImpact=sigBaseline!==undefined&&contributionAmount.trim()!==""&&Number.isFinite(proposed)&&proposed>=0&&Number.isFinite(baseline)
+    ?(proposed-baseline)*0.5:null;
   return <form className="form-grid" onSubmit={async (e) => {
     e.preventDefault();setBusy(true);status.clear();
     const form=e.currentTarget;
@@ -149,6 +154,7 @@ export function ContributionForm({ id, accounts=[] }: { id: string; accounts?:Ac
       else status.success("Contribution recorded as cash.");
       requestKey.current=null;
       form.reset();
+      setContributionAmount(sigBaseline==="0"?"":sigBaseline??"");
       router.refresh();
     }catch{
       status.error("Connection interrupted. Try again — the same request will be reused safely.");
@@ -156,7 +162,14 @@ export function ContributionForm({ id, accounts=[] }: { id: string; accounts?:Ac
       setBusy(false);
     }
   }}>
-    <AccountSelect accounts={accounts}/><Field label="Contribution"><input name="amount" type="number" min="0.01" step="0.01" required /></Field>
+    <AccountSelect accounts={accounts}/><Field label={sigBaseline!==undefined?"Change contribution for this quarter":"Contribution"}>
+      <input name="amount" type="number" min="0.01" step="0.01" value={contributionAmount} onChange={e=>{setContributionAmount(e.target.value);requestKey.current=null;}} required />
+    </Field>
+    {sigBaseline!==undefined&&<p className="help field full" aria-live="polite">
+      Regular planned contribution: {sigBaseline}. {sigImpact===null?"Enter an amount to see its target-line effect.":
+      "Compared with the plan, this changes the next SIG target by "+(sigImpact>=0?"+":"")+sigImpact.toFixed(2)+" (half the contribution difference)."}
+      {" "}This is a preview until you actually record the deposit. The standing contribution reminder is not changed.
+    </p>}
     <Field label="Date & time"><input name="when" type="datetime-local" /></Field>
     <div className="field full"><button className="button" disabled={busy}>{busy?"Recording…":"Record contribution"}</button><MessageView message={status.message}/></div>
   </form>;

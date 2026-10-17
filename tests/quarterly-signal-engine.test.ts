@@ -1,6 +1,7 @@
 import {describe,expect,it} from "vitest";
 import Decimal from "decimal.js";
 import {getStrategyPlugin} from "../src/domain/strategy/catalog";
+import {assertCuratedRules} from "../src/domain/strategy/curated-release";
 import {getStrategyEngine,assertCustomerPublishableEngine} from "../src/domain/strategy/registry";
 import {postActionReviewState} from "../src/domain/strategy/review-completion";
 import {sigReviewTradesBySleeve} from "../src/domain/strategy/sig-confirmed-ledger";
@@ -20,6 +21,21 @@ const base=(over:Partial<EngineContext>={}):EngineContext=>({
   sigReviewTrades:{stockBuyGross:D(0),stockSellGross:D(0),safeBuyGross:D(0),safeSellGross:D(0),feeTotal:D(0)},
   ...over
 } as EngineContext);
+
+describe("Nasdaq v1.07 immutable rule transition",()=>{
+  it("accepts the new V3 and only the exact archived V1/V2 canonical configurations",()=>{
+    const current=cfg();
+    expect(current.ruleVersion).toBe("WEALTHARR_OWNER_2026_V3_SHEET107");
+    for(const ruleVersion of ["WEALTHARR_OWNER_2026_V1","WEALTHARR_OWNER_2026_V2_SHEET105","WEALTHARR_OWNER_2026_V3_SHEET107"]){
+      const frozen={...current,ruleVersion};
+      expect(()=>assertCuratedRules("quarterly-target-nasdaq-3x","QUARTERLY_SIGNAL_TARGET",frozen,[])).not.toThrow();
+      expect(()=>engine.validateConfig(frozen)).not.toThrow();
+    }
+    expect(()=>assertCuratedRules("quarterly-target-nasdaq-3x","QUARTERLY_SIGNAL_TARGET",
+      {...current,quarterlyGrowth:"0.12"},[])).toThrow("CURATED_STRATEGY_RULES_IMMUTABLE");
+    expect(()=>engine.validateConfig({...current,variant:"SIG_6"})).toThrow("INVALID_QUARTERLY_SIGNAL_CONFIG");
+  });
+});
 
 describe("engine safety",()=>{
   it("is a customer-publishable engine and rejects bad configuration",()=>{

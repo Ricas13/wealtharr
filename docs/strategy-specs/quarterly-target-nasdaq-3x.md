@@ -83,3 +83,44 @@ Cached test values: **DEMO 2010+** AU8 = 119537.526, AU42 = 1713421.8, AU59 = 68
 ### Safe rollout
 
 V1 keeps all previous calculations; V2 uses **WEALTHARR_OWNER_2026_V2_SHEET105**. The insert-only seed creates 1.2 on a previously disabled Nasdaq strategy; no existing customer instance switches version automatically. Administrator approval, verified exact instruments and trusted price history are still required for live use.
+
+## Community workbook v1.07 — October 2026 owner overlay
+
+Source: `Copy of signal strategy simulation sheet v1.07.xlsx` (uploaded by the owner).
+The workbook has **two** sheets: `9-Sig strategy` and `DEMO 2010++`. 
+The previous spreadsheet's price-target and V/W reset semantics are retained under V3;
+V1 and V2 remain immutable for existing investors.
+
+### One-off contribution changes
+
+- The sheet's `AH` column is labelled "Change the current month's payment".
+- Its `BV` contribution column drives the signal: `AV = previous signal × (1 + 0.09) + BV / 2`, except a reset uses the actual portfolio split. 
+- In Wealtharr the user can change this quarter's deposited amount on the existing **Record contribution** field.
+  This replaces the prefilled recurring reminder *for this particular deposit only*, never the standing plan.
+- An on-screen delta previews the change from the regular planned quarterly amount, and its half-weight impact on the target.
+- **Only recorded contributions and other eligible income ledger events actually count**. A forecast input must never mint portfolio cash or change the real strategy signal.
+  Retain original audit and idempotency rules for the confirmed contribution ledger.
+
+### VIX risk overlay (optional, NOT the author's original signal)
+
+The workbook uses an unofficial GoogleFinance `INDEXCBOE:VIX` formula (in the uploaded XLSX this becomes an `__xludf.DUMMYFUNCTION` fallback). 
+It paints `F15` red at VIX **>= 30**, whereas the supplied explanatory release notes say **> 30**.
+Wealtharr follows the explicit written intervals:
+
+- **Calm:** VIX below 15
+- **Normal:** VIX 15 through 30, inclusive
+- **Fear:** VIX above 30
+
+The Fear signal offers **four optional, mutually exclusive simulations**: do nothing and continue quarterly signals; settle early toward the SIG line if currently above it; consider a 60/40 early reset; or preview selling half of each uniquely identifiable risk-exposure share holding. There are no required trades, no automatic cash movement and no silent adjustment of the next quarter's target.
+
+A half-sale uses the quantity from the append-only confirmed broker ledger, not half of a guessed portfolio value. Split entries and correction deltas are counted; ambiguous instrument/trading-line mappings refuse share sizing. Fractional broker support, quote, fill quantity and fee are never assumed. Confirm a real broker sale in the existing trade form before Wealtharr updates holdings.
+
+For the market-status card, live VIX can be obtained only from the authenticated HTTP provider with a **rights-cleared daily VIX closing feed**, configured with `MARKET_DATA_PROVIDER=http` and `MARKET_DATA_VIX_SYMBOL` (provider's explicit VIX index symbol). Neither an intraday last price nor an unofficial scraped Yahoo quote is accepted as a completed close. An unverified manually entered VIX value is visibly labelled **scenario only**.
+
+Reference historical example: 6 May 2010 VIX close **32.80**, as published in FRED VIXCLS data (https://fred.stlouisfed.org/data/VIXCLS), also described in the SEC/CFTC flash-crash report. It is a scenario example, **not evidence that this overlay improves returns**. A live signal is not backfilled or inferred from hypothetical action choices.
+
+### Version and test coverage
+
+- New V3 rule marker `WEALTHARR_OWNER_2026_V3_SHEET107` and insert-only production version **1.3**, with earlier pinned V1 and V2 configurations still accepted.
+- `tests/sig-sheet-107.test.ts`: threshold boundaries, documented 32.80 example, no discretionary action without a completed close, exact and fractional half-quantity cases, and adjustable contributions.
+- This is **not** a full recalculated historical workbook comparison; its GoogleFinance imports, editable action flags, cash prices and underlying returns are not independently verified.

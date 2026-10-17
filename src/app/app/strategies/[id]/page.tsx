@@ -20,6 +20,8 @@ import { HistoricalQuoteLookup } from "@/components/HistoricalQuoteLookup";
 import { BrokerTradeForm } from "@/components/BrokerTradeForm";
 import {StrategyTrading212Connection} from "@/components/StrategyTrading212Connection";
 import {StrategyBrokerEvidence} from "@/components/StrategyBrokerEvidence";
+import {SigVixGuard} from "@/components/SigVixGuard";
+import type {HeldRiskLine} from "@/domain/strategy/sig-sheet-107";
 import { ManualPriceForm } from "@/components/ManualPriceForm";
 import { actionRecoveryGuidance, plainEnglishActionReason } from "@/domain/action-copy";
 import { AddLinkedAccountForm, CashEventForm, ContributionForm, ContributionPlanForm, ExecuteAction, ExecutionConstraintsForm, OpeningSnapshotForm, RecalculateButton, ReconcileForm, ReverseLedgerEventButton, StrategyLifecycleControls, StrategySwitchControl, StrategyVersionUpgrade, WhatIfPreview } from "@/components/StrategyActions";
@@ -288,6 +290,36 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         String(cashRows[0].cash),String(s.currency),eligible.positions);
     }
   }
+  const isSig107=String(s.engine)==="QUARTERLY_SIGNAL_TARGET"&&
+    (s.config as Record<string,unknown>)?.ruleVersion==="WEALTHARR_OWNER_2026_V3_SHEET107";
+  // Only actual ledger quantities count. Corrections and splits have signed
+  // quantity deltas; never infer shares from a notional account value.
+  const riskLines:HeldRiskLine[]=[];
+  let riskHoldingsComplete=true;
+  if(isSig107){
+    const riskExposure=String((s.config as Record<string,unknown>).targetExposure);
+    const held=await sql.unsafe(
+      "SELECT COALESCE(l.account_id,si.account_id) AS account_id,l.instrument_id,"+
+      "SUM(l.quantity) AS held_qty FROM ledger_events l "+
+      "JOIN strategy_instances si ON si.id=l.strategy_instance_id "+
+      "JOIN instruments i ON i.id=l.instrument_id "+
+      "WHERE l.strategy_instance_id=$1 AND i.economic_exposure=$2 "+
+      "GROUP BY COALESCE(l.account_id,si.account_id),l.instrument_id HAVING SUM(l.quantity)>0",
+      [id,riskExposure]
+    );
+    for(const row of held){
+      const lines=await sql.unsafe(
+        "SELECT DISTINCT tl.ticker,tl.exchange FROM trading_lines tl "+
+        "JOIN accounts a ON a.id=$2 "+
+        "WHERE tl.instrument_id=$1 AND upper(tl.currency)=upper(a.currency) "+
+        "AND tl.effective_from<=current_date AND (tl.effective_to IS NULL OR tl.effective_to>=current_date) LIMIT 2",
+        [String(row.instrument_id),String(row.account_id)]
+      );
+      if(lines.length!==1){riskHoldingsComplete=false;continue;}
+      riskLines.push({instrumentId:String(row.instrument_id),accountId:String(row.account_id),
+        ticker:String(lines[0].ticker),exchange:String(lines[0].exchange),quantity:String(row.held_qty)});
+    }
+  }
   const canSeeTechnicalConfig=user.role==="ADMIN"||!Boolean(s.proprietary);
 
   return <>
@@ -365,6 +397,8 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
       {recovery&&<a className="button compact" href={recovery.href}>{recovery.label}<ArrowRight size={14}/></a>}
     </div>}
 
+    {isSig107&&<SigVixGuard id={id} riskLines={riskHoldingsComplete?riskLines:[]}
+      riskHoldingsComplete={riskHoldingsComplete}/>}
     {hasVersionUpdate&&<div id="strategy-update"><StrategyVersionUpgrade id={id} currentVersion={String(s.version)} targetVersionId={String(s.latest_version_id)} targetVersion={String(s.latest_version)} releaseNotes={s.latest_release_notes?String(s.latest_release_notes):null} upgradePolicy={String(s.latest_upgrade_policy??"OPTIONAL")} inputSchema={Array.isArray(s.latest_input_schema)?s.latest_input_schema:[]} currentSettings={(s.settings??{}) as Record<string,unknown>} currentConfig={(s.config??{}) as Record<string,unknown>} targetConfig={(s.latest_config??{}) as Record<string,unknown>}/></div>}
 
     <section className="glass workspace-analytics" aria-label="Strategy performance comparison">
@@ -403,7 +437,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         <summary><span><WalletCards size={18}/>Update portfolio</span><ChevronRight size={16}/></summary>
         <div className="quick-drawer-content">
           <div className="detail-grid">
-            <section><h3>Add money</h3><p className="help">Record a contribution. Cash stays cash until a purchase is confirmed.</p><ContributionForm id={id} accounts={accountOptions}/></section>
+            <section><h3>Add money</h3><p className="help">Record a contribution. Cash stays cash until a purchase is confirmed.</p><ContributionForm id={id} accounts={accountOptions} sigBaseline={isSig107?(String((s.contribution_plan as Record<string,unknown>|null)?.frequency)==="QUARTERLY"&&Boolean((s.contribution_plan as Record<string,unknown>|null)?.enabled)?String((s.contribution_plan as Record<string,unknown>).amount):"0"):undefined}/></section>
             <section><h3>Other cash movement</h3><p className="help">Withdrawals, dividends, interest, fees and tax belong here.</p><CashEventForm id={id} accounts={accountOptions}/></section>
           </div>
           <section className="drawer-section contribution-plan-settings"><h3>Regular contribution</h3><p className="help">Optional reminder only. Planned money never appears in your portfolio until you record the real deposit.</p><ContributionPlanForm id={id} plan={(s.contribution_plan??{}) as Record<string,unknown>}/></section>
