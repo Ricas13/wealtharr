@@ -3,7 +3,7 @@
  * even if the operator later removes their address from the invite list.
  * Never infer an invitation from the email's domain.
  */
-type BetaEnvironment=Pick<NodeJS.ProcessEnv,"WEALTHARR_PRIVATE_BETA_INVITE_ONLY"|"WEALTHARR_BETA_INVITE_EMAILS">;
+type BetaEnvironment={WEALTHARR_PRIVATE_BETA_INVITE_ONLY?:string;WEALTHARR_BETA_INVITE_EMAILS?:string};
 
 export function newAccountIsInvited(email:string,env:BetaEnvironment):boolean{
   if(env.WEALTHARR_PRIVATE_BETA_INVITE_ONLY!=="true")return true;
