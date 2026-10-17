@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import type {EngineContext,ExplanationRow,ProposedAction,StrategyEngine} from "./types";
 import {assess2026Community9Sig30Down,historical9SigSpikeReset,type Community9SigProtection} from "./9sig-community-rules";
 import {assessWealtharr9SigDailySpike} from "./sig-owner-conventions";
+import {assessSheet105Reset} from "./sig-sheet-105";
 import {verifiedSigQuarterCloses} from "./sig-quarter-closes";
 import {isNyseTradingDay,latestSigReference,newYorkDate,newYorkMinutes,NYSE_CLOSE_MINUTES,referenceHistoryDates,type SigReference} from "./sig-nyse-quarters";
 
@@ -22,12 +23,14 @@ import {isNyseTradingDay,latestSigReference,newYorkDate,newYorkMinutes,NYSE_CLOS
  * therefore sequenced across recalculations: sell the safe exposure, then buy the risk exposure.
  */
 export const QUARTERLY_SIGNAL_RULE_VERSION="WEALTHARR_OWNER_2026_V1";
+export const QUARTERLY_SIGNAL_SHEET105_RULE_VERSION="WEALTHARR_OWNER_2026_V2_SHEET105";
 export const QUARTERLY_SIGNAL_VARIANTS=["SIG_9","SIG_6","SIG_3"] as const;
 
 type Params={
   stock:string;safe:string;growth:Decimal;initialRatio:Decimal;contributionRatio:Decimal;budgetRatio:Decimal;
   withdrawalRatio:Decimal;triggerRatio:Decimal;skipCap:number;spikeEnabled:boolean;spikeDaily:boolean;
   spikeMultiple:Decimal;spikeRatio:Decimal;referenceCurrency:string;window:number;leverage?:string;
+  sheet105:boolean;
 };
 type ReviewKind="INITIAL"|"SIGNAL"|"SPIKE";
 const ZERO=new Decimal(0);
@@ -43,7 +46,10 @@ const ratio=(v:unknown,label:string,min=0,max=1)=>{
   return d;
 };
 function parse(c:Record<string,unknown>):Params{
-  if(c.ruleVersion!==QUARTERLY_SIGNAL_RULE_VERSION)throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:ruleVersion");
+  if(c.ruleVersion!==QUARTERLY_SIGNAL_RULE_VERSION&&c.ruleVersion!==QUARTERLY_SIGNAL_SHEET105_RULE_VERSION)
+    throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:ruleVersion");
+  if(c.ruleVersion===QUARTERLY_SIGNAL_SHEET105_RULE_VERSION&&c.variant!=="SIG_9")
+    throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:sheet105Variant");
   if(!(QUARTERLY_SIGNAL_VARIANTS as readonly unknown[]).includes(c.variant))throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:variant");
   const stock=String(c.targetExposure??"").trim(),safe=String(c.safeExposure??"").trim();
   if(!stock||!safe||stock===safe)throw new Error("INVALID_QUARTERLY_SIGNAL_CONFIG:exposures");
@@ -73,7 +79,8 @@ function parse(c:Record<string,unknown>):Params{
     spikeEnabled:s.enabled,spikeDaily:s.enabled&&observation==="DAILY_CLOSE",
     spikeMultiple:s.enabled?ratio(s.gainMultiple,"gainMultiple",1,100):new Decimal(2),
     spikeRatio:s.enabled?ratio(s.targetRatio,"spikeTargetRatio"):new Decimal("0.60"),
-    referenceCurrency,window,leverage:String(c.targetLeverage??"").trim()||undefined
+    referenceCurrency,window,leverage:String(c.targetLeverage??"").trim()||undefined,
+    sheet105:c.ruleVersion===QUARTERLY_SIGNAL_SHEET105_RULE_VERSION
   };
 }
 const money=(d:Decimal)=>d.toDecimalPlaces(2,Decimal.ROUND_HALF_EVEN).toFixed(2);
@@ -130,7 +137,8 @@ function dailySpikeTriggered(ctx:EngineContext,p:Params,ref:SigReference,protect
   const assessed=assessWealtharr9SigDailySpike({
     previousQuarterTqqqClose:quarterEnd.adjustedClose,observationTqqqClose:latest.adjustedClose,
     observationDate:day(latest.at),previousQuarterLastTradingDay:ref.referenceDate,verifiedDailyClose:true,
-    in30DownProtection:protectionWindowOpen(protection,ref.quarterIndex,p.skipCap),
+    in30DownProtection:protectionWindowOpen(protection,ref.quarterIndex,p.skipCap)||
+      (p.sheet105&&protection.startQuarter!==null),
     stockValue:stock,bondValue:bond
   });
   return assessed.triggered&&latest.adjustedClose.gte(quarterEnd.adjustedClose.mul(p.spikeMultiple));
@@ -180,6 +188,8 @@ function calculateReview(ctx:EngineContext):ProposedAction{
     try{protection=readProtection(ctx.state.sigProtection);}catch{return fail("The saved 30 Down state is invalid. Reconcile before trading.");}
     const stateRef=typeof ctx.state.sigReviewReference==="string"?ctx.state.sigReviewReference:null;
     const lastReviewed=typeof ctx.state.sigLastReviewedReference==="string"?ctx.state.sigLastReviewedReference:null;
+    // Only v2 stores worksheet-derived protection state; v1 snapshots remain untouched.
+    let sheetStateUpdate:Record<string,unknown>={};
     let carried:Decimal,carriedWithdrawals:Decimal;
     try{carried=savedAmount(ctx.state,"sigCarriedNewCash");carriedWithdrawals=savedAmount(ctx.state,"sigCarriedWithdrawals");}
     catch{return fail("The saved carried-cash value is invalid. Reconcile before trading.");}
@@ -193,7 +203,7 @@ function calculateReview(ctx:EngineContext):ProposedAction{
       actionType:"HOLD",title,instruction,explanation,confidence:"HIGH",dueAt:ctx.now,
       nextState:{...stripReview(ctx.state),sigConfirmedAnchor:anchor.toString(),sigProtection:prot,
         ...(refDate?{sigLastReviewedReference:refDate}:{}),sigCarriedNewCash:carry.toString(),
-        sigCarriedWithdrawals:carryWithdrawals.toString(),...extra}
+        sigCarriedWithdrawals:carryWithdrawals.toString(),...sheetStateUpdate,...extra}
     });
 
     let kind:ReviewKind=inReview
@@ -273,6 +283,39 @@ function calculateReview(ctx:EngineContext):ProposedAction{
       }catch{return fail("The 30 Down state cannot be verified. Reconcile before trading.");}
       decisionProtection=decision.protection;
       skippedBySignal=decision.signal==="SELL"&&decision.effectiveSignal==="HOLD";
+      if(p.sheet105&&!inReview){
+        // Workbook V/W flags were manually selected. Convert those branches into
+        // deterministic decisions based on verified closes and persisted state.
+        let sheetDecision;
+        try{
+          const lastQuarter=ctx.state.sigSheet105LastObservedQuarter;
+          const lastReset=ctx.state.sigSheet105LastResetProtectionStartQuarter;
+          sheetDecision=assessSheet105Reset({
+            quarterIndex:ref.quarterIndex,
+            previousObservedQuarter:lastQuarter==null?null:Number(lastQuarter),
+            previousConsecutiveDownQuarters:Number(ctx.state.sigSheet105ConsecutiveDownQuarters??0),
+            currentRiskClose:closes[8],precedingEightRiskCloses:closes.slice(0,8),
+            triggerRatio:p.triggerRatio,protection:decision.protection,sellSkipCap:p.skipCap,
+            signal:signalOf(target),
+            lastResetProtectionStartQuarter:lastReset==null?null:Number(lastReset)
+          });
+        }catch{return fail("The spreadsheet protection counters cannot be verified. Reconcile before trading.");}
+        sheetStateUpdate={
+          sigSheet105LastObservedQuarter:ref.quarterIndex,
+          sigSheet105ConsecutiveDownQuarters:sheetDecision.consecutiveDownQuarters
+        };
+        if(sheetDecision.resetReason&&total.gt(0)){
+          // The sheet uses 60% of actual account value rather than the growth
+          // line. Mark the protection episode spent until a recovery close.
+          target=total.mul(p.initialRatio);
+          skippedBySignal=false;
+          decisionProtection={startQuarter:decision.protection.startQuarter,skippedSellCount:p.skipCap};
+          sheetStateUpdate.sigSheet105LastResetProtectionStartQuarter=decision.protection.startQuarter;
+          sheetStateUpdate.sigSheet105ConsecutiveDownQuarters=0;
+          rows.push({label:"Spreadsheet v1.05 protection reset",
+            value:sheetDecision.resetReason==="THIRD_SELL"?"Third qualifying sell":"Eight consecutive down quarters",kind:"text"});
+        }
+      }
       if(!inReview&&p.spikeEnabled&&!p.spikeDaily&&!decision.protectionActive&&total.gt(0)){
         const ordinaryStock=Decimal.min(target,total);
         const reset=historical9SigSpikeReset({previousQuarterClose:closes[7],currentQuarterClose:closes[8],
@@ -291,7 +334,8 @@ function calculateReview(ctx:EngineContext):ProposedAction{
     rows.unshift({label:"Target value",value:money(target),kind:"money"},{label:"Current value",value:money(stock),kind:"money"},
       {label:"Gap",value:money(gap),kind:"money"});
     const nextStateBase={...ctx.state,reviewContributionsSnapshot:contrib.toString(),sigReviewWithdrawalsSnapshot:withdrawals.toString(),
-      targetValue:target.toString(),sigReviewKind:kind,sigReviewReference:reviewRef,lastCalculatedAt:ctx.now.toISOString()};
+      targetValue:target.toString(),sigReviewKind:kind,sigReviewReference:reviewRef,lastCalculatedAt:ctx.now.toISOString(),
+      ...sheetStateUpdate};
     // A spike reset does not complete the quarter's signal review; it is recorded once per quarter.
     const closeRef=kind==="SPIKE"?null:kind==="INITIAL"?ref.referenceDate:reviewRef;
     const closeExtra=kind==="SPIKE"?{sigSpikeResetReference:reviewRef}:{};

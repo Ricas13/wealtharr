@@ -37,7 +37,13 @@ export function assertCuratedRules(strategyKey:string,engine:string,config:unkno
   const release=plugin?curatedRelease(plugin):null;
   if(!release||!release.config||!release.engine||release.engine==="RESEARCH_PENDING")
     throw new Error("CURATED_STRATEGY_NOT_VERIFIED");
-  if(engine!==release.engine||!sameRuleConfig(config,release.config)||
+  // The archived 9%-Nasdaq v1 strategy remains an accepted EXACT frozen release:
+  // publishing a distinct v2 profile must not invalidate active v1 customer ledgers.
+  // Only the ruleVersion field differs; no arbitrary legacy config is accepted.
+  const archivedNasdaqV1=strategyKey==="quarterly-target-nasdaq-3x"&&
+    release.config?.ruleVersion==="WEALTHARR_OWNER_2026_V2_SHEET105"&&
+    sameRuleConfig(config,{...release.config,ruleVersion:"WEALTHARR_OWNER_2026_V1"});
+  if(engine!==release.engine||!(sameRuleConfig(config,release.config)||archivedNasdaqV1)||
     !sameRuleConfig(inputSchema,release.inputSchema??[]))
     throw new Error("CURATED_STRATEGY_RULES_IMMUTABLE");
 }

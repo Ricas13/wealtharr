@@ -135,12 +135,46 @@ describe("quarterly-target-nasdaq-3x golden cases",()=>{
     expect([sell.actionType,amount(sell)]).toEqual(["SELL","1460.00"]);
   });
 
-  it("30 Down: after the two skips are used and the price is still down, normal selling resumes",()=>{
+  it("the archived v1 semantics still resume normal growth-line selling after two skips",()=>{
     const closes=[...Array(8).fill("100"),"60"];
     const sell=run(ctx(key,{closes,exposures:[stockOf(key,"8000"),bondOf("3000")],cash:D(0),
       state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
-        sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2}}}));
+        sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2}},
+      config:{...config(key),ruleVersion:"WEALTHARR_OWNER_2026_V1"}}));
     expect([sell.actionType,amount(sell)]).toEqual(["SELL","1460.00"]);
+  });
+
+  it("sheet105 v2: after two skipped sells the third sell targets 60% of actual account value",()=>{
+    const closes=[...Array(8).fill("100"),"60"];
+    const before={sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
+      sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2},
+      sigSheet105LastObservedQuarter:Q3_2026_INDEX-1,sigSheet105ConsecutiveDownQuarters:2};
+    const sell=run(ctx(key,{closes,exposures:[stockOf(key,"8000"),bondOf("3000")],cash:D(0),state:before}));
+    // Target = 60% * (8000 + 3000) = 6600, not v1's 6540 line.
+    expect([sell.actionType,amount(sell)]).toEqual(["SELL","1400.00"]);
+    expect(sell.nextState.targetValue).toBe("6600");
+    expect(sell.nextState.sigSheet105LastResetProtectionStartQuarter).toBe(Q3_2026_INDEX-2);
+    let state=postActionReviewState(sell,before,new Date("2026-10-01T15:00:00Z"));
+    expect(state.sigSheet105LastResetProtectionStartQuarter).toBe(Q3_2026_INDEX-2);
+    expect(state.sigSheet105ConsecutiveDownQuarters).toBe(0);
+    const closed=run(ctx(key,{closes,exposures:[stockOf(key,"6600"),bondOf("3000")],cash:D(1400),state}));
+    expect(closed.actionType).toBe("BUY"); // sweep proceeds to safe sleeve
+    state=postActionReviewState(closed,state,new Date("2026-10-01T15:00:00Z"));
+    const final=run(ctx(key,{closes,exposures:[stockOf(key,"6600"),bondOf("4400")],cash:D(0),state}));
+    expect(final.actionType).toBe("HOLD");
+    expect(final.nextState.sigConfirmedAnchor).toBe("6600");
+    expect(final.nextState.sigProtection).toEqual({startQuarter:Q3_2026_INDEX-2,skippedSellCount:2});
+  });
+
+  it("sheet105 v2: eight consecutive observed 30 Down quarters cause a 60/40 reset",()=>{
+    const closes=[...Array(8).fill("100"),"60"];
+    const c=ctx(key,{closes,exposures:[stockOf(key,"9000"),bondOf("1000")],cash:D(0),
+      state:{sigConfirmedAnchor:"7000",sigLastReviewedReference:"2026-06-30",
+        sigProtection:{startQuarter:Q3_2026_INDEX-7,skippedSellCount:1},
+        sigSheet105LastObservedQuarter:Q3_2026_INDEX-1,sigSheet105ConsecutiveDownQuarters:7}});
+    const action=run(c);
+    expect([action.actionType,amount(action)]).toEqual(["SELL","3000.00"]);
+    expect(action.nextState.sigSheet105ConsecutiveDownQuarters).toBe(0);
   });
 
   it("daily-close spike: quarter-end close 40, latest daily close 80 (2x), plan 12000 + 3000 = 15000 resets to 60% = 9000: sell 3000",()=>{
@@ -223,7 +257,8 @@ describe("quarterly-target-midcap-2x golden cases",()=>{
     expect(second.nextState.sigProtection).toEqual({startQuarter:Q3_2026_INDEX-1,skippedSellCount:2});
     // Both skips used and the price is still down: 6000 x 1.06 = 6360, sell 8000 - 6360 = 1640.
     const third=run(ctx(key,{closes:[...Array(8).fill("100"),"60"],exposures:[stockOf(key,"8000"),bondOf("3000")],cash:D(0),
-      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2}}}));
+      state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2}},
+      config:{...config(key),ruleVersion:"WEALTHARR_OWNER_2026_V1"}}));
     expect([third.actionType,amount(third)]).toEqual(["SELL","1640.00"]);
   });
 });
