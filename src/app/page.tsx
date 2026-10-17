@@ -9,6 +9,7 @@ import {canAdvertisePaidOffer} from "@/domain/public-offer-readiness";
 import {ensureSettings} from "@/lib/settings";
 import {LandingCurrencyProvider,PublicPricingCards,type PublicPlanCard} from "@/components/PublicLandingInteractivity";
 import {PublicStrategyComparison} from "@/components/PublicStrategyComparison";
+import {PublicHeroPerformance} from "@/components/PublicHeroPerformance";
 import {loadPublicComparison} from "@/lib/public-strategy-performance";
 import "./marketing-home.css";
 import "./marketing-simple.css";
@@ -96,15 +97,24 @@ export default async function HomePage(){
         <div><a href="#compare">Compare strategies</a><a href="#pricing">Plans</a><Link href="/login">Sign in</Link><Link href="/register">Get started</Link></div>
       </details>
     </nav></header>
-    <section className="wm-shell wm-simple-hero" aria-labelledby="wm-headline">
-      <span className="wm-kicker">YOUR MONEY · YOUR PLAN · CLEARER DECISIONS</span>
-      <h1 id="wm-headline">Invest your money, <em>guided by the most popular strategies.</em></h1>
-      <p>Explore widely followed investment approaches, compare documented model performance with SPY buy-and-hold, then track the strategy you choose. Your money stays with your broker.</p>
-      <div className="wm-simple-actions">
-        <a href="#compare" className="wm-button main">Compare strategies ↘</a>
-        <Link href="/register" className="wm-button outline">Start tracking ↗</Link>
+    <section className="wm-simple-hero-backdrop" aria-label="Investment strategy introduction">
+      <div className="wm-shell wm-simple-hero" aria-labelledby="wm-headline">
+        <div className="wm-simple-hero-copy">
+          <span className="wm-kicker">POPULAR STRATEGIES · REAL DATA · YOUR PORTFOLIO</span>
+          <h1 id="wm-headline">Invest your money, <em>guided by the most popular strategies.</em></h1>
+          <p>Compare published investment approaches, see their verified historical performance against SPY and track your own investments with clear, actionable guidance.</p>
+          <div className="wm-simple-actions">
+            <a href="#compare" className="wm-button main">Compare strategies ↘</a>
+            <Link href="/register" className="wm-button outline">Get started free ↗</Link>
+          </div>
+          <div className="wm-hero-value-points">
+            <span><strong>Popular strategies</strong><small>Research-backed approaches</small></span>
+            <span><strong>Real data</strong><small>Only verified historical models</small></span>
+            <span><strong>Clear guidance</strong><small>You keep control of trades</small></span>
+          </div>
+        </div>
+        <PublicHeroPerformance entries={comparison.entries} spy={comparison.spy} asOf={comparison.asOf}/>
       </div>
-      <p className="wm-simple-trust">Browse freely · No automatic trades · Historical models are not forecasts</p>
     </section>
     <section className="wm-section wm-shell wm-simple-comparison" id="compare" aria-labelledby="wm-compare-title">
       <span className="wm-kicker">DISCOVER &amp; COMPARE</span>

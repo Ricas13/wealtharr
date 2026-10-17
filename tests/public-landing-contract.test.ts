@@ -44,7 +44,7 @@ describe("three-section public homepage contract",()=>{
   expect(loader).toContain("isApprovedModelPoint(");
   expect(loader).toContain("version_id!==versions.get(row.key)?.version_id");
   expect(client).toContain("Not verified");
-  expect(client).toContain("Historical *model* results");
+  expect(client).toContain("Historical <em>model</em> results");
   expect(client).toContain("SPY · Buy &");
   expect(modelApi).toContain("publicComparison:");
   expect(modelApi).toContain("commercialLicenceConfirmed:z.literal(true)");
@@ -55,6 +55,13 @@ describe("three-section public homepage contract",()=>{
   expect(client).toContain("setSelected(");
   expect(client).toContain("setOnlyReady(");
   expect(client).toContain("chartRows(");
+  expect(client).toContain("PREVIEW_COUNT=7");
+  expect(client).toContain("aria-expanded={expanded}");
+  expect(client).toContain('aria-label="Show SPY buy and hold on chart"');
+  expect(client).toContain('aria-label="Overlapping strategy performance chart"');
+  expect(client.indexOf('wm-compare-table-top')).toBeLessThan(client.indexOf('wm-compare-chart-heading'));
+  expect(client).toContain('setPeriod(next)');
+  expect(client).toContain('"10Y"');
   expect(client).toContain('disabled={!comparable');
   expect(css).toContain("wm-compare-table");
   expect(css).toContain("@media(max-width:720px)");
