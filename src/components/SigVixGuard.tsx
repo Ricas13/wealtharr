@@ -38,10 +38,18 @@ export function SigVixGuard({id,riskLines,riskHoldingsComplete}:{id:string;riskL
     try{return {lines:sheet107HalfRiskPositions(riskLines),error:null};}
     catch{return {lines:[],error:"Your holdings need reconciliation before a half-position can be calculated."};}
   },[riskLines]);
-  return <section className="glass workspace-analytics" aria-label="Optional VIX risk overlay">
-    <div className="section-head"><div><div className="eyebrow">Simulation sheet v1.07 · optional</div><h2>VIX risk overlay</h2>
-      <p>VIX measures expected S&amp;P 500 volatility. This additional Wealtharr scenario is not part of the original 9Sig signal and never places an order automatically.</p>
-    </div></div>
+  const verifiedFear=!usingScenario&&observation?.available===true&&regime==="FEAR";
+  return <details className={"glass adaptive-vix-panel "+(verifiedFear?"fear":"")} aria-label="Optional VIX risk overlay">
+    <summary className="adaptive-vix-summary">
+      <span className="adaptive-vix-name"><strong>VIX risk indicator</strong><small>Optional · no automatic trades</small></span>
+      <span className={"adaptive-vix-regime "+(verifiedFear?"fear":"")}>
+        {verifiedFear?"● Fear · VIX "+value:usingScenario?"What-if scenario":regime?regime==="CALM"?"Calm":"Normal":observation?.available===false?"Data unavailable":"Checking…"}
+      </span>
+      <span aria-hidden="true" className="adaptive-vix-chevron">⌄</span>
+    </summary>
+    <div className="adaptive-vix-content">
+      {verifiedFear&&<p className="attention-message" role="status"><strong>VIX closed above 30.</strong> You have optional responses to review; no trade will be placed automatically.</p>}
+      <p className="help">VIX measures expected S&amp;P 500 volatility. This separately labelled scenario is not part of the original 9Sig signal and never places an order automatically.</p>
     <div className="inline">
       <button type="button" className="button" disabled={busy} onClick={async()=>{
         setBusy(true);setUsingScenario(false);setChoice("DO_NOTHING");
@@ -91,5 +99,6 @@ export function SigVixGuard({id,riskLines,riskHoldingsComplete}:{id:string;riskL
       <p className="help">An early reset scenario would target 60% risk and 40% safe value, requiring up-to-date valuations, fees and broker execution. No order or target-state change is created from this choice.</p>}
     {(!regime||regime!=="FEAR"||choice==="DO_NOTHING")&&
       <p className="help">Normal quarterly signals and 30 Down safeguards continue unchanged. VIX scenarios do not amend the investment ledger, the published rule version or the next quarterly target.</p>}
-  </section>;
+    </div>
+  </details>;
 }
