@@ -336,10 +336,12 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(await row()).toMatchObject({slug:before.slug,status:before.status,stripe_subscription_id:before.stripe_subscription_id});
   });
 
-  it("refuses a subscription from a customer that no local account owns",async()=>{
+  it("acknowledges an unrelated Stripe customer without linking or charging Wealtharr users",async()=>{
     const stranger="sub_lc_stranger_"+run;
+    const before=await row();
     const result=await deliver("customer.subscription.created",subscription(stranger,userId,{customer:"cus_stranger_"+run}));
-    expect(result).toMatchObject({status:500,errorCode:"SUBSCRIPTION_OWNER_NOT_VERIFIED"});
+    expect(result).toMatchObject({status:200});
+    expect(await row()).toMatchObject({slug:before.slug,status:before.status,stripe_subscription_id:before.stripe_subscription_id});
     expect(stripeState.cancelled).not.toContain(stranger);
   });
 
