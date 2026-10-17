@@ -49,6 +49,18 @@ export async function POST(request: Request) {
     if (!process.env.STRIPE_SECRET_KEY || !process.env.NEXT_PUBLIC_APP_URL) {
       return Response.json({ error: "Billing is not configured." }, { status: 503 });
     }
+    let appOrigin: string;
+    try {
+      const configured = new URL(process.env.NEXT_PUBLIC_APP_URL);
+      // A configured base path, query or credentials must never end up
+      // in a Stripe-hosted success/cancel URL.
+      if (configured.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("INVALID_APP_ORIGIN");
+      if (configured.pathname !== "/" || configured.search || configured.hash ||
+          configured.username || configured.password) throw new Error("INVALID_APP_ORIGIN");
+      appOrigin = configured.origin;
+    } catch {
+      return Response.json({ error: "Billing return URLs are not configured correctly." }, { status: 503 });
+    }
 
     const currency = (input.currency ?? user.baseCurrency).toUpperCase();
     const cadence = input.cadence.toUpperCase();
@@ -125,8 +137,8 @@ export async function POST(request: Request) {
         customer: customerId,
         client_reference_id: user.id,
         line_items: [{ price: String(price.stripe_price_id), quantity: 1 }],
-        success_url: process.env.NEXT_PUBLIC_APP_URL + "/app/settings?billing=success",
-        cancel_url: process.env.NEXT_PUBLIC_APP_URL + "/app/settings?billing=cancelled",
+        success_url: appOrigin + "/app/settings?billing=success",
+        cancel_url: appOrigin + "/app/settings?billing=cancelled",
         subscription_data: { metadata: { userId: user.id, planId: String(price.id) } },
         metadata: { userId: user.id, planId: String(price.id), cadence: input.cadence, currency }
       },
