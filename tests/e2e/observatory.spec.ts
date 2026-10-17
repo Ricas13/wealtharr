@@ -29,7 +29,9 @@ test("visitors can search and filter catalogue while toggling return periods",as
   await page.goto("/");
   const table=page.getByRole("region",{name:"Scrollable strategy performance table"});
   const before=await table.locator("tbody tr").count();
-  expect(before).toBeGreaterThan(8);
+  expect(before).toBe(8); // SPY plus seven collapsed catalogue strategies
+  await page.getByRole("button",{name:/Show more strategies/}).click();
+  await expect(table.locator("tbody tr").count()).resolves.toBeGreaterThan(8);
   await page.getByRole("searchbox",{name:"Search strategies"}).fill("Golden Butterfly");
   await expect(table.locator("tbody tr")).toHaveCount(2);
   await expect(table).toContainText("Golden Butterfly");
