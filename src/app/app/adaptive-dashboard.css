@@ -25,6 +25,12 @@
   font-size:clamp(18px,2vw,23px);font-weight:700;letter-spacing:-.6px;
   line-height:1.2;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;
 }
+.customer-workspace-shell .adaptive-strategy-return{
+  margin:8px 0 0;display:flex;gap:10px;align-items:baseline;justify-content:space-between;
+  flex-wrap:wrap;
+}
+.customer-workspace-shell .adaptive-strategy-return span{font-size:10px;color:var(--member-subtle)}
+.customer-workspace-shell .adaptive-strategy-return strong{font-size:11px;font-variant-numeric:tabular-nums}
 .customer-workspace-shell .adaptive-strategy-next{
   display:flex;flex-direction:column;gap:4px;margin-top:13px;
   border-top:1px solid var(--member-border);padding-top:12px;padding-right:20px
