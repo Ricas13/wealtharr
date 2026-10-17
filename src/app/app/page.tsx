@@ -7,18 +7,10 @@ import { sql } from "@/lib/db";
 import {isStoredActionCurrent,STALE_ACTION_DISPLAY} from "@/lib/action-service";
 import { plainEnglishActionReason } from "@/domain/action-copy";
 import { loadWorkspaceAnalytics, benchmarkComparison } from "@/lib/workspace-analytics";
-import { growthIndex } from "@/domain/portfolio-analytics";
+import { growthIndex,summarizeObservedPerformance } from "@/domain/portfolio-analytics";
 import { PerformanceChart } from "@/components/PerformanceChart";
 import { money as formatMoney, pct } from "@/lib/format";
-
-function strategyCardState(strategy:any){
-  const status=String(strategy.status);
-  if(status==="CLOSED")return {className:"attention",label:"Closed history"};
-  if(status==="PAUSED")return {className:"attention",label:"Paused"};
-  return strategy.health_status==="HEALTHY"
-    ?{className:"healthy",label:"On track"}
-    :{className:"attention",label:"Needs attention"};
-}
+import {strategyDashboardView,strategyDashboardContext} from "@/domain/strategy/customer-dashboard-view";
 
 function money(value:number,currency:string){
   return formatMoney(value,currency,{dp:0});
@@ -32,6 +24,38 @@ export default async function OverviewPage(){
     if(!(await isStoredActionCurrent(String(action.strategy_instance_id),String(action.id))))
       Object.assign(action,STALE_ACTION_DISPLAY);
   }
+  // Fetch the most recent current action for EVERY strategy, not just the
+  // first twelve in the global queue. Never label a stale or unhealthy instance
+  // as "on track" merely because it was omitted from that queue.
+  const actionByInstanceRows=await sql.unsafe(
+    "SELECT DISTINCT ON (a.strategy_instance_id) a.strategy_instance_id,a.id,a.action_type,a.status "+
+    "FROM actions a JOIN strategy_instances i ON i.id=a.strategy_instance_id "+
+    "WHERE i.user_id=$1 AND i.status='ACTIVE' AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") "+
+    "ORDER BY a.strategy_instance_id,a.created_at DESC,a.id DESC",[user.id]);
+  const currentActionById=new Map<string,{type:string;status:string;stale:boolean}>();
+  for(const item of actionByInstanceRows){
+    currentActionById.set(String(item.strategy_instance_id),{
+      type:String(item.action_type),status:String(item.status),
+      stale:!(await isStoredActionCurrent(String(item.strategy_instance_id),String(item.id)))
+    });
+  }
+  const configRows=await sql.unsafe(
+    "SELECT i.id,v.engine_key,v.config FROM strategy_instances i "+
+    "JOIN strategy_versions v ON v.id=i.strategy_version_id WHERE i.user_id=$1",[user.id]);
+  const configById=new Map(configRows.map(row=>[String(row.id),{
+    engine:String(row.engine_key),config:(row.config??{}) as Record<string,unknown>
+  }]));
+  const viewsById=new Map(strategies.map(strategy=>{
+    const action=currentActionById.get(String(strategy.id));
+    return [String(strategy.id),strategyDashboardView({
+      status:String(strategy.status),healthStatus:String(strategy.health_status),
+      actionType:action?.type,actionStatus:action?.status,actionStale:action?.stale
+    })] as const;
+  }));
+  const orderedStrategies=[...strategies].filter(strategy=>strategy.status!=="CLOSED")
+    .sort((a,b)=>(viewsById.get(String(a.id))?.priority??9)-(viewsById.get(String(b.id))?.priority??9));
+  const dataNeededCount=orderedStrategies.filter(strategy=>
+    viewsById.get(String(strategy.id))?.status==="DATA_NEEDED").length;
   const values=await sql.unsafe("SELECT ps.strategy_instance_id,ps.value,a.currency FROM performance_series ps JOIN strategy_instances i ON i.id=ps.strategy_instance_id JOIN accounts a ON a.id=i.account_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND ps.series_type='USER_VALUE' AND ps.date=(SELECT max(p2.date) FROM performance_series p2 WHERE p2.strategy_instance_id=ps.strategy_instance_id AND p2.series_type='USER_VALUE')",[user.id]);
   const contributions=await sql.unsafe("SELECT l.currency,COALESCE(sum(l.cash_amount),0) AS total FROM ledger_events l JOIN strategy_instances i ON i.id=l.strategy_instance_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND l.event_type='CONTRIBUTION' AND NOT EXISTS (SELECT 1 FROM ledger_events c WHERE c.correction_of_event_id=l.id) GROUP BY l.currency ORDER BY l.currency",[user.id]);
   const reviewRows=await sql.unsafe("SELECT i.id,i.name,x.due_at FROM strategy_instances i LEFT JOIN LATERAL (SELECT a.due_at FROM actions a WHERE a.strategy_instance_id=i.id AND a.due_at >= NOW() ORDER BY a.due_at ASC LIMIT 1) x ON true WHERE i.user_id=$1 AND i.status='ACTIVE'",[user.id]);
@@ -58,8 +82,9 @@ export default async function OverviewPage(){
   const contributionContext=contributions.length
     ?contributions.map((row:any)=>money(Number(row.total),String(row.currency))).join(" · ")
     :"No contributions recorded";
-  const primaryAction:any=actions[0];
-  const dueHeading=actions.length===0?"Everything is on track.":actions.length>=12?"12+ actions due":actions.length===1?"1 action due":actions.length+" actions due";
+  const primaryAction:any=actions.find((a:any)=>a.action_type==="DATA_REQUIRED")??actions[0];
+  const dueHeading=actions.length===0?(dataNeededCount?"Data needs attention":"No actions due"):
+    actions.length>=12?"12+ actions due":actions.length===1?"1 action due":actions.length+" actions due";
   const primaryReason=primaryAction?plainEnglishActionReason({actionType:primaryAction.action_type,instruction:primaryAction.instruction}):null;
   const plannedContributions=activeStrategies
     .map((s:any)=>({strategy:s,plan:s.contribution_plan as Record<string,unknown>|null}))
@@ -67,8 +92,11 @@ export default async function OverviewPage(){
     .sort((a,b)=>String(a.plan?.nextDate).localeCompare(String(b.plan?.nextDate)));
   const nextContribution=plannedContributions[0];
   const nextReview=reviewRows.filter((row:any)=>row.due_at).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
-  const healthyCount=activeStrategies.filter((strategy:any)=>strategy.health_status==="HEALTHY").length;
+  const onTrackCount=activeStrategies.filter((strategy:any)=>viewsById.get(String(strategy.id))?.status==="ON_TRACK").length;
   const analytics=await loadWorkspaceAnalytics(user.id);
+  const returnsById=new Map(analytics.strategies.map(entry=>[
+    entry.id,summarizeObservedPerformance(entry.valuations,entry.flows)
+  ] as const));
   const combined=analytics.aggregate;
   const combinedSummary=analytics.summary;
   const indexedCombined=combined?growthIndex(combined.valuations,combined.flows):[];
@@ -113,8 +141,8 @@ export default async function OverviewPage(){
     <header className="member-heading">
       <div>
         <div className="eyebrow">Your investment workspace</div>
-        <h1>Stay on <em>course.</em></h1>
-        <p>Know what matters next. Follow the established rules, not the market noise.</p>
+        <h1>My dashboard</h1>
+        <p>One clear view of your strategies, your portfolio and what needs attention.</p>
       </div>
       <div className="member-next-review">
         <span>Next scheduled review</span>
@@ -122,11 +150,11 @@ export default async function OverviewPage(){
       </div>
     </header>
 
-    <section className={"member-action-hero "+(primaryAction?"requires-review":"is-clear")} id="action-queue" aria-labelledby="member-action-title">
+    <section className={"member-action-hero "+(primaryAction||dataNeededCount?"requires-review":"is-clear")+(dataNeededCount||primaryAction?.action_type==="DATA_REQUIRED"?" has-data-issue":"")} id="action-queue" aria-labelledby="member-action-title">
       <div className="member-action-copy">
         <span className="member-action-kicker"><span aria-hidden="true" className="member-action-dot"/>{primaryAction?dueHeading:"No action due"}</span>
-        <h2 id="member-action-title">{primaryAction?primaryAction.title:"No action needed right now."}</h2>
-        <p>{primaryAction?primaryAction.instruction:healthyCount===activeStrategies.length?"Your active strategies have no outstanding actions. We will let you know when the next review needs your attention.":"There are no pending actions. Some strategies may still need checking; open a strategy to review its status."}</p>
+        <h2 id="member-action-title">{primaryAction?primaryAction.title:dataNeededCount?"Some strategies need a check.":"You're all caught up."}</h2>
+        <p>{primaryAction?primaryAction.instruction:dataNeededCount?"There are no pending trade actions, but "+dataNeededCount+" strategy "+(dataNeededCount===1?"needs":"need")+" a data or reconciliation review.":"No outstanding actions. Your strategies will highlight the next verified decision when it is due."}</p>
         {primaryAction&&primaryAction.account_name&&<p className="member-action-account">Account: <strong>{primaryAction.account_name}</strong>{primaryAction.account_wrapper?" · "+primaryAction.account_wrapper:""}</p>}
         {primaryReason&&<p className="member-action-reason"><Sparkles size={14}/>{primaryReason}</p>}
         <div className="member-action-buttons">
@@ -150,8 +178,8 @@ export default async function OverviewPage(){
       </div>
       <div className="member-metric">
         <div className="member-metric-top"><span>Strategy health</span><CheckCircle2 size={16}/></div>
-        <strong>{activeStrategies.length?healthyCount+" of "+activeStrategies.length:"—"}</strong>
-        <small>Active strategies marked on track</small>
+        <strong>{activeStrategies.length?onTrackCount+" of "+activeStrategies.length:"—"}</strong>
+        <small>No outstanding action or data blocker</small>
       </div>
       <div className="member-metric">
         <div className="member-metric-top"><span>Strategies following</span><Layers3 size={16}/></div>
@@ -162,6 +190,36 @@ export default async function OverviewPage(){
         <div className="member-metric-top"><span>Next contribution</span><Plus size={16}/></div>
         <strong>{nextContribution?money(Number(nextContribution.plan?.amount??0),String(nextContribution.strategy.currency)):"—"}</strong>
         <small>{nextContribution?new Date(String(nextContribution.plan?.nextDate)+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})+" · "+nextContribution.strategy.name:"No contribution scheduled"}</small>
+      </div>
+    </section>
+
+    <section className="member-strategies" aria-labelledby="member-strategies-title">
+      <div className="member-section-heading"><div><div className="eyebrow">Established frameworks</div><h2 id="member-strategies-title">Your strategies</h2><p>Each follows its own rules, schedule and recorded holdings.</p></div><Link className="text-link" href="/app/strategies">View all <ArrowRight size={15}/></Link></div>
+      <div className="strategy-grid adaptive-strategy-grid">
+        {orderedStrategies.map((strategy:any)=>{
+          const view=viewsById.get(String(strategy.id))!;
+          const config=configById.get(String(strategy.id));
+          const context=strategyDashboardContext(config?.engine??"",config?.config??{});
+          const latest=values.find((row:any)=>String(row.strategy_instance_id)===String(strategy.id));
+          return <Link href={"/app/strategies/"+strategy.id} className="card strategy-card premium-card adaptive-strategy-card" key={strategy.id}
+            aria-label={strategy.name+" — "+view.label}>
+            <div className="strategy-card-top"><span className={"status-light "+(view.tone==="good"?"healthy":"attention")}/><span className={"adaptive-state "+view.tone}>{view.label}</span></div>
+            <h3>{strategy.name}</h3>
+            <p className="adaptive-strategy-type">{strategy.strategy_name} · {context.label}</p>
+            <div className="adaptive-strategy-value"><span>Last recorded value</span><strong>{latest?money(Number(latest.value),String(strategy.currency)):"Not yet valued"}</strong></div>
+            <div className="adaptive-strategy-return">
+              <span>Flow-adjusted return (estimate)</span>
+              <strong>{returnsById.get(String(strategy.id))?.flowAdjustedReturnPct!=null
+                ?formatPct(returnsById.get(String(strategy.id))?.flowAdjustedReturnPct)
+                :"Not enough history"}</strong>
+            </div>
+            <div className="adaptive-strategy-next"><strong>{view.headline}</strong><span>{view.description}</span></div>
+            <p className="adaptive-strategy-rule">{context.detail}</p>
+            <div className="strategy-meta"><span className="pill">v{strategy.version}</span><span className="pill">{strategy.wrapper}</span></div>
+            <span className="card-arrow"><ArrowRight size={17}/></span>
+          </Link>;
+        })}
+        <Link href="/app/strategies/new" className="member-add-strategy"><Plus size={18}/><strong>Follow another strategy</strong><span>Browse available approaches</span></Link>
       </div>
     </section>
 
@@ -200,20 +258,6 @@ export default async function OverviewPage(){
       </Link>)}
       {actions.length===12&&<p className="help">Showing the first 12 actions. Open individual strategies to review additional pending items.</p>}
     </section>}
-
-    <section className="member-strategies" aria-labelledby="member-strategies-title">
-      <div className="member-section-heading"><div><div className="eyebrow">Established frameworks</div><h2 id="member-strategies-title">Your strategies</h2><p>Each follows its own rules, schedule and recorded holdings.</p></div><Link className="text-link" href="/app/strategies">View all <ArrowRight size={15}/></Link></div>
-      <div className="strategy-grid">
-        {trackedStrategies.map((s:any)=>{const cardState=strategyCardState(s);return <Link href={"/app/strategies/"+s.id} className="card strategy-card premium-card" key={s.id}>
-          <div className="strategy-card-top"><span className={"status-light "+cardState.className}/><span>{cardState.label}</span></div>
-          <h3>{s.name}</h3>
-          <p>{s.strategy_name} · {s.wrapper}</p>
-          <div className="strategy-meta"><span className="pill">v{s.version}</span><span className="pill">{s.currency}</span></div>
-          <span className="card-arrow"><ArrowRight size={17}/></span>
-        </Link>})}
-        <Link href="/app/strategies/new" className="member-add-strategy"><Plus size={18}/><strong>Follow another strategy</strong><span>Browse available approaches</span></Link>
-      </div>
-    </section>
 
     <details className="glass member-deep-dive" id="performance-details">
       <summary><span><strong>Performance details &amp; methodology</strong><small>See contributions, estimated returns, drawdowns and the fair-comparison leaderboard.</small></span><ArrowRight size={18}/></summary>

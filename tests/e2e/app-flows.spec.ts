@@ -89,12 +89,20 @@ test("new user can start a strategy through the three-step simple flow",async({p
     expect(detailButtons.filter((button)=>button.label).every((button)=>button.height>=40)).toBe(true);
   }
   await expect(page.getByText("What if?")).not.toBeVisible();
+  await expect(page.getByRole("navigation",{name:"Strategy shortcuts"})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"What this strategy follows"})).toBeVisible();
+  await page.getByRole("button",{name:/Strategy rules & settings/}).click();
+  await expect(page.locator("#strategy-settings")).toHaveAttribute("open","");
+  await page.getByRole("button",{name:/Performance history/}).click();
+  await expect(page.locator("#strategy-history")).toHaveAttribute("open","");
 
   await page.goto("/app/strategies/new");
   await expect(page.getByText(/using all 1 of your active strategy/i)).toBeVisible();
   await expect(page.getByRole("link",{name:/See plan options/})).toBeVisible();
 
   await page.goto("/app");
+  await expect(page.getByRole("heading",{name:"My dashboard"})).toBeVisible();
+  await expect(page.locator(".adaptive-strategy-card")).toHaveCount(1);
   await expect(page.locator("html")).toHaveAttribute("data-theme","dark");
   await page.getByRole("button",{name:"Toggle light or dark theme"}).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme","light");
