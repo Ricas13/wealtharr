@@ -58,7 +58,7 @@ export function strategyDashboardContext(engine:string,config:Record<string,unkn
       return typeof x.exposure==="string"&&Number.isFinite(weight)&&weight>=0&&weight<=1
         ?[(weight*100).toFixed(0)+"% "+x.exposure.replaceAll("_"," ").toLowerCase()]:[];
     });
-    return {kind:"allocation",label:"Fixed allocation",detail:weights.length? "Target weights: "+weights.slice(0,3).join(" · ")+(weights.length>3?" · +"+(weights.length-3)+" more"):"Target allocation and next rebalance"};
+    return {kind:"allocation",label:"Fixed allocation",detail:weights.length? "Target weights: "+weights.slice(0,3).join(" · ")+(weights.length>3?" · +"+(weights.length-3)+" more":""):"Target allocation and next rebalance"};
   }
   if(engine==="TACTICAL_ALLOCATION")
     return {kind:"momentum",label:"Rules-based selection",detail:"Latest verified momentum signals, selected exposure and defensive option"};
