@@ -12,20 +12,21 @@ for (const path of ["/", "/demo", "/login", "/register"]) {
   });
 }
 
-test("new observatory landing explains the interactive illustration and offers usable navigation", async ({ page }) => {
+test("simplified homepage shows a usable strategy comparison and pricing",async({page})=>{
   await page.goto("/");
-  await expect(page.getByRole("heading",{level:1,name:/Make the maths.*move/i})).toBeVisible();
-  await expect(page.getByRole("link",{name:"Explore your options"})).toBeVisible();
-  await expect(page.getByText("INTERACTIVE EXAMPLE / 01")).toBeVisible();
-  await expect(page.getByText(/No market prices, returns, trades or actual strategy schedules are implied/)).toBeVisible();
+  await expect(page.getByRole("heading",{level:1,name:/Invest your money/i})).toBeVisible();
+  await expect(page.getByRole("link",{name:/Compare strategies/}).first()).toBeVisible();
+  await expect(page.getByRole("region",{name:"Scrollable strategy performance table"})).toBeVisible();
+  await expect(page.locator(".wm-compare-table")).toContainText("SPY");
+  await expect(page.getByRole("heading",{name:/Choose how you want to track/i})).toBeVisible();
   if(page.viewportSize()&&page.viewportSize()!.width<=680){
     const menu=page.locator(".wm-mobile-menu > summary");
     await expect(menu).toBeVisible();
     await menu.click();
     await expect(page.locator(".wm-mobile-menu").getByRole("link",{name:"Get started"})).toBeVisible();
   }
-  await expect(page.getByRole("link",{name:"Explore the interactive demo"})).toBeVisible();
 });
+
 
 test("demo is unmistakably fictional", async ({ page }) => {
   await page.goto("/demo");

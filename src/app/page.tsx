@@ -2,24 +2,20 @@ import Link from "next/link";
 import type {Metadata} from "next";
 import {headers} from "next/headers";
 import {currencyForVisitorCountry,type LandingCurrency} from "@/domain/visitor-currency";
-import {AllocationObservatory} from "@/components/AllocationObservatory";
 import {sql} from "@/lib/db";
 import {safeJsonLd,siteOrigin} from "@/lib/public-seo";
 import {exactPriceString} from "@/domain/currency-money";
 import {canAdvertisePaidOffer} from "@/domain/public-offer-readiness";
 import {ensureSettings} from "@/lib/settings";
-import {STRATEGY_PLUGINS,curatedRelease} from "@/domain/strategy/catalog";
-import {assertCuratedRules} from "@/domain/strategy/curated-release";
-import {VERIFIED_MARKET_MAPPINGS_SQL,verifiedCandidates} from "@/lib/verified-market-mappings";
-import {cardDescription,isOfferableForUser,summariseRules} from "@/domain/explore-catalogue";
-import {LandingCurrencyProvider,PublicStrategyRail,PublicPricingCards,type PublicPlanCard,type PublicStrategyCard} from "@/components/PublicLandingInteractivity";
+import {LandingCurrencyProvider,PublicPricingCards,type PublicPlanCard} from "@/components/PublicLandingInteractivity";
+import {PublicStrategyComparison} from "@/components/PublicStrategyComparison";
+import {loadPublicComparison} from "@/lib/public-strategy-performance";
 import "./marketing-home.css";
-import "./marketing-observatory.css";
+import "./marketing-simple.css";
 
 export const dynamic="force-dynamic";
 export const metadata:Metadata={alternates:{canonical:"/"}};
 type PlanRow={slug:string;display_name:string;description:string|null;billing_currency:string;max_active_strategies:number|null;entitlements:unknown;homepage_highlights:unknown;monthly_price_minor:number|null;annual_price_minor:number|null;prices:unknown};
-type ReleaseRow={key:string;engine_key:string;config:Record<string,unknown>;input_schema:unknown;supported_regions:unknown;supported_wrappers:unknown};
 function decodeEntitlements(raw:unknown):{features:string[];notificationChannels:string[]}{
   let parsed=raw;
   if(typeof raw==="string"){try{parsed=JSON.parse(raw);}catch{return {features:[],notificationChannels:[]};}}
@@ -72,144 +68,64 @@ async function loadPublicPlans():Promise<PublicPlanCard[]>{
         prices:planCurrencyPrices(row.prices)};
     });
 }
-async function loadPublicStrategies():Promise<PublicStrategyCard[]>{
-  // Public discovery is deliberately GB/ISA-specific until a visitor selects their jurisdiction.
-  // Do not advertise partially implemented strategies, research records or unverified mappings.
-  try{
-    const [versions,marketRows]=await Promise.all([
-      sql.unsafe("SELECT DISTINCT ON (d.key) d.key,d.supported_regions,d.supported_wrappers,v.engine_key,v.config,v.input_schema FROM strategy_definitions d "+
-        "JOIN strategy_versions v ON v.strategy_definition_id=d.id "+
-        "WHERE d.enabled=true AND v.lifecycle_status='PUBLISHED' AND v.effective_from<=current_date "+
-        "AND (v.effective_to IS NULL OR v.effective_to>=current_date) "+
-        "ORDER BY d.key,v.effective_from DESC,v.published_at DESC NULLS LAST") as Promise<ReleaseRow[]>,
-      sql.unsafe(VERIFIED_MARKET_MAPPINGS_SQL)
-    ]);
-    const releaseByKey=new Map(versions.map(row=>[row.key,row]));
-    const candidates=verifiedCandidates(marketRows);
-    const asOf=new Date().toISOString().slice(0,10);
-    return STRATEGY_PLUGINS.flatMap((plugin):PublicStrategyCard[]=>{
-      // The product owner explicitly excludes 9Sig from public homepage marketing.
-      if(plugin.key.toLowerCase()==="9sig")return [];
-      const release=releaseByKey.get(plugin.key);
-      const canonical=curatedRelease(plugin);
-      if(!release||!canonical?.config||!["FIXED_ALLOCATION","QUARTERLY_SIGNAL_TARGET"].includes(release.engine_key))return [];
-      try{
-        assertCuratedRules(plugin.key,String(release.engine_key),release.config,release.input_schema);
-        // Public discovery targets a GB ISA account in GBP only (stated in the card category); no
-        // viewer market exists here. Same predicate as createStrategy, so the rail never advertises a
-        // strategy a GB/ISA/GBP user could not start.
-        const market=isOfferableForUser({
-          strategy:{engine:release.engine_key,config:release.config,
-            supportedRegions:Array.isArray(release.supported_regions)?release.supported_regions.map(String):[],
-            supportedWrappers:Array.isArray(release.supported_wrappers)?release.supported_wrappers.map(String):[]},
-          userMarket:{country:"GB",wrapper:"ISA",currency:"GBP"},mappings:candidates,asOf});
-        if(!market.offerable)return [];
-        const summary=summariseRules(plugin);
-        return [{key:plugin.key,name:String(plugin.seedDefinition?.name??plugin.profile?.name??plugin.key),
-          description:cardDescription(plugin),category:"Released UK ISA method",
-          allocations:summary.allocations.map(row=>({label:row.label,percent:row.percent}))}];
-      }catch{return [];}
-    }).slice(0,12);
-  }catch{return [];}
-}
-// These are explicitly educational cards, not executable strategy releases.
-// They never bypass the separately enforced registration/market eligibility gates.
-const EDUCATIONAL_EXAMPLES:PublicStrategyCard[]=[
- {key:"example-60-40",name:"Global 60/40",category:"Educational strategy example",description:"A familiar stock-and-bond mix, reviewed periodically to restore target weights.",allocations:[{label:"Equities",percent:"60"},{label:"Bonds",percent:"40"}]},
- {key:"example-all-weather",name:"All Weather",category:"Educational strategy example",description:"Diversification across assets intended to behave differently through economic cycles.",allocations:[]},
- {key:"example-golden-butterfly",name:"Golden Butterfly",category:"Educational strategy example",description:"A five-part reference mix spanning stocks, government bonds and gold.",allocations:[{label:"Large equities",percent:"20"},{label:"Small-cap value",percent:"20"},{label:"Long bonds",percent:"20"},{label:"Short bonds",percent:"20"},{label:"Gold",percent:"20"}]},
- {key:"example-permanent-portfolio",name:"Permanent Portfolio",category:"Educational strategy example",description:"Four equal allocations to stocks, long bonds, cash and gold.",allocations:[{label:"Stocks",percent:"25"},{label:"Long bonds",percent:"25"},{label:"Cash",percent:"25"},{label:"Gold",percent:"25"}]},
- {key:"example-three-fund",name:"Three-Fund Portfolio",category:"Educational strategy example",description:"A straightforward three-sleeve structure across domestic equity, international equity and bonds.",allocations:[]}
-];
 export default async function HomePage(){
-  await ensureSettings(); // Public schema launch state follows encrypted Admin Settings.
-  const [plans,strategies]=await Promise.all([loadPublicPlans(),loadPublicStrategies()]);
-  // Cloudflare injects the origin visitor country behind the existing public proxy.
-  // The country controls only the preferred display unit, never an FX conversion.
+  await ensureSettings();
+  const [plans,comparison]=await Promise.all([loadPublicPlans(),loadPublicComparison()]);
   const geoHeaders=await headers();
   const visitorCurrency=currencyForVisitorCountry(geoHeaders.get("cf-ipcountry")??geoHeaders.get("x-vercel-ip-country"));
-  const carouselCards=[...strategies,...EDUCATIONAL_EXAMPLES.filter(example=>!strategies.some(released=>"example-"+released.key===example.key))];
   const brand=process.env.NEXT_PUBLIC_BRAND_NAME?.trim()||"Wealtharr";
   const origin=siteOrigin(process.env.NEXT_PUBLIC_APP_URL).toString();
   const offered=canAdvertisePaidOffer(process.env)?plans.find(plan=>plan.monthlyMinor!==null&&plan.monthlyMinor>0):undefined;
   const offer=offered?{offers:{"@type":"Offer",price:exactPriceString(offered.monthlyMinor!,offered.currency),priceCurrency:offered.currency}}:{};
   const schema={"@context":"https://schema.org","@graph":[
     {"@type":"Organization","@id":origin+"#publisher",name:brand,url:origin,
-      description:"Self-directed portfolio calculation and research software."},
+      description:"Self-directed portfolio research and strategy-tracking software."},
     {"@type":"WebSite","@id":origin+"#website",name:brand,url:origin,
       publisher:{"@id":origin+"#publisher"},inLanguage:"en-GB"},
     {"@type":"SoftwareApplication","@id":origin+"#application",name:brand,applicationCategory:"FinanceApplication",
-      publisher:{"@id":origin+"#publisher"},
-      operatingSystem:"Web",url:origin,
-      description:"Track the allocations and review rules of published investment strategies. Wealtharr does not execute trades.",...offer}
+      operatingSystem:"Web",url:origin,publisher:{"@id":origin+"#publisher"},
+      description:"Compare evidence-backed historical strategy models and track your own portfolio reviews. No trades are placed.",...offer}
   ]};
-  return <LandingCurrencyProvider initialCurrency={visitorCurrency}><main className="wealtharr-marketing" id="top">
+  return <LandingCurrencyProvider initialCurrency={visitorCurrency}><main className="wealtharr-marketing wm-simple" id="top">
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:safeJsonLd(schema)}}/>
     <header className="wm-header"><nav className="wm-shell wm-nav" aria-label="Primary navigation">
       <Link href="/" className="wm-brand"><span className="wm-mark" aria-hidden="true">⌁</span>{brand.toLowerCase()}<span className="wm-brand-dot">.</span></Link>
-      <div className="wm-nav-links"><a href="#how">How it works</a><a href="#strategies">Strategies</a><a href="#preview">Live preview</a><a href="#pricing">Pricing</a></div>
+      <div className="wm-nav-links"><a href="#compare">Compare strategies</a><a href="#pricing">Plans</a></div>
       <div className="wm-nav-actions"><Link href="/login" className="wm-signin">Sign in</Link><Link href="/register" className="wm-button main">Get started ↗</Link></div>
       <details className="wm-mobile-menu"><summary aria-label="Open menu">☰</summary>
-        <div><a href="#how">How it works</a><a href="#strategies">Strategies</a><a href="#preview">Live preview</a><a href="#pricing">Pricing</a><Link href="/login">Sign in</Link><Link href="/register">Get started</Link></div>
+        <div><a href="#compare">Compare strategies</a><a href="#pricing">Plans</a><Link href="/login">Sign in</Link><Link href="/register">Get started</Link></div>
       </details>
     </nav></header>
-    <div className="wm-hero-glow">
-      <section className="wm-shell wm-hero wm-hero-observatory">
-        <div className="wm-hero-copy"><span className="wm-kicker wm-kicker-dot">PRECISION IS A PRACTICE / 001</span>
-          <h1>Make the maths <em>move.</em></h1>
-          <p>Drag the dial. Add cash. Change the target. Watch the calculation respond in real time. One transparent example of what it means to follow your own rules.</p>
-          <div className="wm-actions"><Link href="/register" className="wm-button main">Explore your options ↗</Link><a href="#preview" className="wm-button outline">See how it works ↗</a></div>
-          <div className="wm-benefits"><span>No brokerage link required</span><span>No trades placed</span><span>Every rule explained</span></div>
-          <div className="wm-hero-index"><b>01 / 03</b> A LIVING FINANCIAL INSTRUMENT — TRY THE DIAL ↗</div>
-        </div>
-        <AllocationObservatory/>
-      </section>
-    </div>
-    <div className="wm-strip"><div className="wm-shell"><span><b>Established methods.</b> Your choice.</span><span><b>Clear review calculations.</b> Not just charts.</span><span><b>Your broker stays yours.</b> No trading access.</span></div></div>
-    <section className="wm-section wm-strategy-section" id="strategies">
-      <div className="wm-shell"><span className="wm-kicker">EXPLORE THE METHODS</span>
-        <h2>Established approaches. <em>One place to follow them.</em></h2>
-        <p className="wm-section-intro">Explore recognised investment frameworks. Examples do not imply availability; only released methods with eligible instruments can be started after sign-in.</p>
+    <section className="wm-shell wm-simple-hero" aria-labelledby="wm-headline">
+      <span className="wm-kicker">YOUR MONEY · YOUR PLAN · CLEARER DECISIONS</span>
+      <h1 id="wm-headline">Invest your money, <em>guided by the most popular strategies.</em></h1>
+      <p>Explore widely followed investment approaches, compare documented model performance with SPY buy-and-hold, then track the strategy you choose. Your money stays with your broker.</p>
+      <div className="wm-simple-actions">
+        <a href="#compare" className="wm-button main">Compare strategies ↘</a>
+        <Link href="/register" className="wm-button outline">Start tracking ↗</Link>
       </div>
-      <PublicStrategyRail cards={carouselCards}/>
-      <div className="wm-shell wm-note"><Link href="/strategies">How strategy availability works ↗</Link></div>
+      <p className="wm-simple-trust">Browse freely · No automatic trades · Historical models are not forecasts</p>
     </section>
-    <section className="wm-section wm-shell" id="how">
-      <span className="wm-kicker">HOW IT WORKS</span><h2>From finding an approach to <em>staying on course.</em></h2>
-      <p className="wm-section-intro">No maze of spreadsheets. No disconnected reminders. Just a clear system for following a published investment method of your choice.</p>
-      <div className="wm-step-grid">{[
-        ["01 / DISCOVER","Choose your approach","Study a complete released methodology and understand its allocations, risks and schedule.","◇"],
-        ["02 / TRACK","Make it yours","Record holdings, cash and contributions against that framework's published rules.","◎"],
-        ["03 / ACT","Know your next step","Review drift and transparent calculations when an action is genuinely due.","↗"]
-      ].map(([n,title,desc,glyph])=><article className="wm-step" key={n}><span>{n}</span><i aria-hidden="true">{glyph}</i><h3>{title}</h3><p>{desc}</p></article>)}</div>
+    <section className="wm-section wm-shell wm-simple-comparison" id="compare" aria-labelledby="wm-compare-title">
+      <span className="wm-kicker">DISCOVER &amp; COMPARE</span>
+      <h2 id="wm-compare-title">See how the strategies <em>have performed.</em></h2>
+      <p className="wm-section-intro">Turn individual methods on or off and compare their historical model returns with SPY on matched dates. We show only properly documented, published return histories—never invented performance figures.</p>
+      <PublicStrategyComparison entries={comparison.entries} spy={comparison.spy} asOf={comparison.asOf} spySource={comparison.spySource}/>
     </section>
-    <section className="wm-section wm-shell wm-two-col" id="preview">
-      <div><span className="wm-kicker">THE MOMENT IT CLICKS</span><h2>Don&apos;t just see the drift. <em>Understand the fix.</em></h2>
-        <p className="wm-section-intro">Your dashboard is meant to tell you what matters next, not persuade you to stare at markets all day.</p>
-        <div className="wm-feature-list"><div><strong>Know your allocation</strong><span>Recorded versus target positions, clearly explained.</span></div>
-          <div><strong>Know when to act</strong><span>Scheduled reviews and plan-aware alerts, not noisy price notifications.</span></div>
-          <div><strong>Retain full control</strong><span>Wealtharr calculates; you confirm activity with your own broker.</span></div></div>
+    <section className="wm-section wm-pricing-section" id="pricing" aria-labelledby="wm-plans-heading">
+      <div className="wm-shell"><div className="wm-centered">
+        <span className="wm-kicker">SIMPLE PLANS</span>
+        <h2 id="wm-plans-heading">Choose how you want <em>to track.</em></h2>
+        <p className="wm-section-intro">Your strategy, your broker, your decisions. Prices and plan benefits come directly from published Wealtharr administrator settings.</p>
       </div>
-      <div className="wm-review"><div className="wm-review-heading">◈ &nbsp; Strategy review <span>ILLUSTRATIVE</span></div>
-        <h3>One clear action</h3><p>When a review is due, Wealtharr compares real recorded holdings with your published target and explains the calculation.</p>
-        <div className="wm-review-event"><span>✓</span><div><strong>Next review, simplified</strong><p>See the cash needed, the changes suggested and the exact calculation inputs. No order is placed for you.</p></div></div>
-        <Link href="/demo" className="wm-button outline">Explore the interactive demo ↗</Link>
+      <PublicPricingCards plans={plans}/>
+      <p className="wm-note wm-centered">Availability and final billing are confirmed at sign-up. Brokerage and fund costs are separate.</p>
       </div>
     </section>
-    <section className="wm-section wm-pricing-section" id="pricing"><div className="wm-shell"><div className="wm-centered">
-      <span className="wm-kicker">PRICING THAT MAKES SENSE</span><h2>Start simple. <em>Go deeper when you need to.</em></h2>
-      <p className="wm-section-intro">Every plan, price and included notification channel below comes from live administrator settings—not an invented subscription offer.</p>
-    </div><PublicPricingCards plans={plans}/>
-      <p className="wm-note wm-centered">Availability, eligibility and payment are verified at sign-up and checkout. External brokerage costs are separate.</p>
-    </div></section>
-    <section className="wm-section wm-end-cta"><div className="wm-shell wm-centered">
-      <span className="wm-kicker">YOUR STRATEGY. ONE CLEAR PLACE.</span><h2>Make the plan.<em>Then stay with it.</em></h2>
-      <p className="wm-section-intro">Focus on following the framework rather than maintaining a spreadsheet.</p>
-      <Link href="/register" className="wm-button main">Get started ↗</Link>
-    </div></section>
     <footer className="wm-footer"><div className="wm-shell">
-      <strong>{brand.toLowerCase()}.</strong><div><Link href="/features">Features</Link><Link href="/strategies">Strategies</Link><Link href="/pricing">Pricing</Link><Link href="/faq">FAQ</Link><Link href="/learn">Learning guides</Link><Link href="/research-disclaimer">Research disclaimer</Link></div>
-      <p>Research and portfolio tracking, not a brokerage or investment adviser. Capital is at risk; past performance is not a guide to future results. Illustrative charts do not represent actual performance.</p>
+      <strong>{brand.toLowerCase()}.</strong>
+      <div><Link href="/strategies">Methodology</Link><Link href="/learn">Learning guides</Link><Link href="/faq">FAQ</Link><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><Link href="/research-disclaimer">Risk &amp; research disclosures</Link></div>
+      <p>Independent rules-based research and portfolio tracking. Wealtharr is not a brokerage or personal investment adviser. Investing can result in loss of capital. Past performance is not a reliable indicator of future results. Availability of strategies and financial instruments depends on your account and region.</p>
     </div></footer>
   </main></LandingCurrencyProvider>;
 }
