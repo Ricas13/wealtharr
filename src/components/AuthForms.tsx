@@ -100,6 +100,7 @@ export function ResetPasswordForm({token,turnstileEnabled=false,turnstileSiteKey
 const OAUTH_ERRORS:Record<string,string>={
   oauth_EMAIL_NOT_VERIFIED:"That provider did not confirm your email address, so we could not sign you in with it. Use your email and password instead.",
   oauth_ACCOUNT_UNAVAILABLE:"This account is not available.",
+  oauth_INVITE_REQUIRED:"New accounts are currently available by invitation only.",
   oauth_USE_PASSWORD_SIGN_IN:"This account has extra protection turned on. Sign in with your email, password and authentication code.",
   oauth_INVALID_IDENTITY:"The provider did not return enough information to sign you in.",
   oauth_FAILED:"We could not complete sign-in with that provider. Please try again or use your email and password."
