@@ -34,6 +34,9 @@ const bool = (key: string, label: string, group: string, help: string): SettingD
 export const SETTINGS: readonly SettingDefinition[] = [
   { key: "NEXT_PUBLIC_APP_URL", label: "Public web address", group: "General", kind: "url", help: "The full https address customers use, for example https://app.example.com. Used for links in emails, sign-in redirects and request checks." },
   { key: "NEXT_PUBLIC_BRAND_NAME", label: "Product name", group: "General", kind: "text", help: "Shown across the site and in emails. Defaults to Wealtharr." },
+  { key: "WEALTHARR_LEGAL_TRADING_ENTITY", label: "Contracting legal business name", group: "General", kind: "text", help: "The true legal person or company selling subscriptions. Required for live paid checkout; this is public." },
+  { key: "WEALTHARR_LEGAL_BUSINESS_ADDRESS", label: "Business postal address", group: "General", kind: "text", help: "The actual business postal address shown to paying customers. Required for live paid checkout; this is public." },
+  { key: "WEALTHARR_SUPPORT_EMAIL", label: "Customer support and legal contact", group: "General", kind: "text", pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, patternMessage: "Enter a valid support email address.", help: "Published on your terms and privacy pages. Use an actively monitored business mailbox." },
   bool("PUBLIC_INDEXING_ENABLED", "Let search engines index public pages", "General", "Leave off on staging. Turn on only for the real public site."),
   { key: "GOOGLE_SITE_VERIFICATION", label: "Google Search Console token", group: "General", kind: "text", help: "The verification token from Search Console (optional)." },
   { key: "TRUSTED_PROXY_HOPS", label: "Proxies in front of the app", group: "General", kind: "number", min: 0, max: 5, integer: true, help: "How many reverse proxies sit in front of the app (for example 1 for Caddy or nginx). Rate limits use the address the nearest trusted proxy saw." },

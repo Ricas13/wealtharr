@@ -18,12 +18,16 @@ const complete:Record<string,string>={
  MARKET_DATA_PROVIDER:"http",
  MARKET_DATA_HTTP_BASE_URL:"https://market.example.org",
  MARKET_DATA_HTTP_TOKEN:"d".repeat(24),
+ WEALTHARR_LEGAL_TRADING_ENTITY:"Wealtharr Test Limited",
+ WEALTHARR_LEGAL_BUSINESS_ADDRESS:"123 Test Road, Test Town, UK",
+ WEALTHARR_SUPPORT_EMAIL:"help@wealtharr.example",
  TURNSTILE_ENABLED:"true",
  TURNSTILE_SITE_KEY:"real_turnstile_site_key_12345",
  TURNSTILE_SECRET_KEY:"real_turnstile_secret_key_12345",
  ADMIN_MFA_REQUIRED:"true",
  BACKUPS_RESTORE_VERIFIED:"true",
  UK_REGULATORY_SIGNOFF_VERIFIED:"true",
+ LEGAL_PUBLIC_PAGES_VERIFIED:"true",
  REGIONAL_INSTRUMENTS_VERIFIED:"true"
 };
 describe("public paid Offer preflight",()=>{
@@ -33,6 +37,7 @@ describe("public paid Offer preflight",()=>{
   expect(canAdvertisePaidOffer({...complete,STRIPE_SECRET_KEY:""})).toBe(false);
   expect(canAdvertisePaidOffer({...complete,UK_REGULATORY_SIGNOFF_VERIFIED:"false"})).toBe(false);
   expect(canAdvertisePaidOffer({...complete,MARKET_DATA_PROVIDER:"yahoo"})).toBe(false);
+  expect(canAdvertisePaidOffer({...complete,LEGAL_PUBLIC_PAGES_VERIFIED:"false"})).toBe(false);
  });
  it("only passes when all current launch configuration gates pass",()=>{
   expect(checkCommercialLaunch(complete).filter(x=>!x.passed)).toEqual([]);

@@ -36,6 +36,9 @@ export function checkCommercialLaunch(env:Environment):LaunchCheck[]{
  {key:"admin_mfa",passed:env.ADMIN_MFA_REQUIRED==="true",reason:"Require two-step sign-in for administrators (ADMIN_MFA_REQUIRED=true) once every admin has enrolled."},
  {key:"backup_operator_attestation",passed:env.BACKUPS_RESTORE_VERIFIED==="true",reason:"Operator must verify a successful backup restore."},
  {key:"regulatory_signoff",passed:env.UK_REGULATORY_SIGNOFF_VERIFIED==="true",reason:"Obtain documented UK legal/regulatory review before charging customers."},
+ {key:"legal_public_pages",passed:env.LEGAL_PUBLIC_PAGES_VERIFIED==="true",reason:"Review and publish accurate seller identification, privacy, subscription and customer-rights information before charging."},
+ {key:"seller_identity",passed:!!env.WEALTHARR_LEGAL_TRADING_ENTITY?.trim()&&!!env.WEALTHARR_LEGAL_BUSINESS_ADDRESS?.trim()&&
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env.WEALTHARR_SUPPORT_EMAIL??""),reason:"Identify the actual contracting business, its postal address and a real support email before charging."},
  {key:"instrument_review",passed:env.REGIONAL_INSTRUMENTS_VERIFIED==="true",reason:"Operator must approve eligible regional trading lines."}
  ];
 }
