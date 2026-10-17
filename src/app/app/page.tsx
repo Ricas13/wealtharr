@@ -201,7 +201,7 @@ export default async function OverviewPage(){
           const config=configById.get(String(strategy.id));
           const context=strategyDashboardContext(config?.engine??"",config?.config??{});
           const latest=values.find((row:any)=>String(row.strategy_instance_id)===String(strategy.id));
-          return <Link href={"/app/strategies/"+strategy.id} className="card strategy-card premium-card adaptive-strategy-card" key={strategy.id}
+          return <Link href={"/app/strategies/"+strategy.id} className={"card strategy-card premium-card adaptive-strategy-card kind-"+context.kind} data-status={view.status} key={strategy.id}
             aria-label={strategy.name+" — "+view.label}>
             <div className="strategy-card-top"><span className={"status-light "+(view.tone==="good"?"healthy":"attention")}/><span className={"adaptive-state "+view.tone}>{view.label}</span></div>
             <h3>{strategy.name}</h3>

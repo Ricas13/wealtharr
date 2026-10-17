@@ -1,6 +1,7 @@
 import "./customer-dashboard.css";
 import "./member-workspace.css";
 import "./adaptive-dashboard.css";
+import "./customer-light-palette.css";
 import { requirePageUser } from "@/lib/session";
 import { AppShell } from "@/components/AppShell";
 import { listUserStrategies } from "@/lib/strategy-service";

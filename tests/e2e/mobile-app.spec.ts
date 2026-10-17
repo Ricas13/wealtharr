@@ -133,7 +133,8 @@ test.describe("approved member command-centre visual contract",()=>{
     await page.evaluate(()=>document.documentElement.setAttribute("data-theme","dark"));
     expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#b7f5cc");
     await page.evaluate(()=>document.documentElement.setAttribute("data-theme","light"));
-    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#236e4d");
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--cw-mint").trim())).toBe("#087e68");
+    expect(await shell.evaluate(node=>getComputedStyle(node).getPropertyValue("--member-action-blue").trim())).toBe("#1769e9");
     await expect(sidebar.locator('.nav-link[aria-current="page"]')).toHaveText("Overview");
     await expect(page.getByRole("heading",{name:"Start with one simple decision."})).toBeVisible();
     await page.getByRole("link",{name:"My strategies",exact:true}).click();
