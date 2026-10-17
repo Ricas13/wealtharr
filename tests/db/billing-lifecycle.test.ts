@@ -107,6 +107,18 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     await sql.end();
   });
 
+
+  it("ignores unrelated customers safely when the same Stripe account serves another product",async()=>{
+    const other=subscription("sub_fin_fusion_"+run,userId,{customer:"cus_fin_fusion_"+run,metadataUserId:"other-product"});
+    const before=await row();
+    const result=await deliver("customer.subscription.created",other);
+    expect(result.status).toBe(200);
+    expect(await row()).toMatchObject({
+      slug:before.slug,status:before.status,stripe_subscription_id:before.stripe_subscription_id
+    });
+    expect(stripeState.cancelled).not.toContain("sub_fin_fusion_"+run);
+  });
+
   it("activates a paid plan when the first subscription is created",async()=>{
     const periodEnd=now()+30*DAY;
     const result=await deliver("customer.subscription.created",subscription(subA,userId,{periodEnd}));
@@ -115,6 +127,26 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(current).toMatchObject({status:"ACTIVE",cadence:"MONTHLY",slug:"investor",stripe_subscription_id:subA});
     expect(Math.floor(new Date(current.current_period_end).getTime()/1000)).toBe(periodEnd);
     expect((await activeStrategies()).every((s)=>s.status==="ACTIVE")).toBe(true);
+  });
+
+  it("recovers a renewed subscription from invoice.paid using Stripe current state",async()=>{
+    const id=subA;
+    const periodEnd=now()+100*DAY;
+    const current=subscription(id,userId,{status:"active",periodEnd});
+    stripeState.subscriptions.set(id,current);
+    const {POST}=await import("@/app/api/stripe/webhook/route");
+    const payload=JSON.stringify({
+      id:"evt_lc_"+run+"_invoice_paid",object:"event",type:"invoice.paid",created:now(),
+      data:{object:{id:"in_lc_"+run,customer:"cus_lc_"+run,
+       parent:{subscription_details:{subscription:id}}}}
+    });
+    const header=Stripe.webhooks.generateTestHeaderString({payload,secret:WEBHOOK_SECRET});
+    const response=await POST(new Request("http://localhost/api/stripe/webhook",{
+      method:"POST",headers:{"stripe-signature":header},body:payload
+    }));
+    expect(response.status).toBe(200);
+    expect(await row()).toMatchObject({slug:"investor",status:"ACTIVE",stripe_subscription_id:id});
+    expect(Math.floor(new Date((await row()).current_period_end).getTime()/1000)).toBe(periodEnd);
   });
 
   it("moves the period end forward on renewal",async()=>{
@@ -304,10 +336,12 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(await row()).toMatchObject({slug:before.slug,status:before.status,stripe_subscription_id:before.stripe_subscription_id});
   });
 
-  it("refuses a subscription from a customer that no local account owns",async()=>{
+  it("acknowledges an unrelated Stripe customer without linking or charging Wealtharr users",async()=>{
     const stranger="sub_lc_stranger_"+run;
+    const before=await row();
     const result=await deliver("customer.subscription.created",subscription(stranger,userId,{customer:"cus_stranger_"+run}));
-    expect(result).toMatchObject({status:500,errorCode:"SUBSCRIPTION_OWNER_NOT_VERIFIED"});
+    expect(result).toMatchObject({status:200});
+    expect(await row()).toMatchObject({slug:before.slug,status:before.status,stripe_subscription_id:before.stripe_subscription_id});
     expect(stripeState.cancelled).not.toContain(stranger);
   });
 

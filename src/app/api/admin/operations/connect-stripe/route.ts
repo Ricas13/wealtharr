@@ -12,7 +12,14 @@ const SUBSCRIPTION_EVENTS=[
   "customer.subscription.updated",
   "customer.subscription.deleted",
   "customer.subscription.paused",
-  "customer.subscription.resumed"
+  "customer.subscription.resumed",
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
+  "invoice.paid",
+  "invoice.payment_failed",
+  "invoice.payment_action_required",
+  "invoice.marked_uncollectible"
 ] as const;
 
 /** No arbitrary webhook address from the browser. Uses only the validated public origin. */

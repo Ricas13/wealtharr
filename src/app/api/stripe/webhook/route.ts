@@ -3,6 +3,7 @@ import { ensureSettings } from "@/lib/settings";
 import { sql } from "@/lib/db";
 import { enforceStrategyEntitlements } from "@/lib/entitlement-service";
 import {applyCurrentStripeSubscription} from "@/lib/stripe-subscription-state";
+import {subscriptionReferenceFromEvent} from "@/domain/stripe-webhook-routing";
 
 async function claimWebhookEvent(event: Stripe.Event) {
   // Claim and stale-claim recovery must be ONE atomic statement. A separate SELECT followed
@@ -51,13 +52,23 @@ export async function POST(request:Request){
     let affectedUserId:string|null=null;
     let duplicateSubscriptionId:string|null=null;
 
-    if(event.type.startsWith("customer.subscription.")){
-      const incoming=event.data.object as Stripe.Subscription;
-      // Serialize each subscription before fetching canonical Stripe state.
-      // Replayed or out-of-order events can only ever apply the current state.
-      const outcome=await applyCurrentStripeSubscription(stripe,incoming,event.type);
-      affectedUserId=outcome.userId;
-      duplicateSubscriptionId=outcome.duplicate;
+    const linked=subscriptionReferenceFromEvent(event);
+    if(linked){
+      // A Stripe account can legitimately serve several products. Do not
+      // interpret Fin-Fusion or any other product's billing as Wealtharr billing.
+      // Checkout writes our canonical Stripe customer ID before creating a session.
+      const owners=await sql.unsafe(
+        "SELECT DISTINCT user_id FROM subscriptions WHERE stripe_subscription_id=$1 OR stripe_customer_id=$2 LIMIT 2",
+        [linked.id,String(linked.customer)]
+      );
+      if(owners.length>1)throw new Error("STRIPE_WEBHOOK_MULTIPLE_LOCAL_OWNERS");
+      if(owners.length===1){
+        // Re-fetch Stripe's current subscription: neither an invoice nor a
+        // checkout completion is permission to grant entitlements from metadata.
+        const outcome=await applyCurrentStripeSubscription(stripe,linked,event.type);
+        affectedUserId=outcome.userId;
+        duplicateSubscriptionId=outcome.duplicate;
+      }
     }
 
     if(duplicateSubscriptionId){
