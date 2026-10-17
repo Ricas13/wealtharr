@@ -119,8 +119,18 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(stripeState.cancelled).not.toContain("sub_fin_fusion_"+run);
   });
 
+  it("activates a paid plan when the first subscription is created",async()=>{
+    const periodEnd=now()+30*DAY;
+    const result=await deliver("customer.subscription.created",subscription(subA,userId,{periodEnd}));
+    expect(result,JSON.stringify(result)).toMatchObject({status:200});
+    const current=await row();
+    expect(current).toMatchObject({status:"ACTIVE",cadence:"MONTHLY",slug:"investor",stripe_subscription_id:subA});
+    expect(Math.floor(new Date(current.current_period_end).getTime()/1000)).toBe(periodEnd);
+    expect((await activeStrategies()).every((s)=>s.status==="ACTIVE")).toBe(true);
+  });
+
   it("recovers a renewed subscription from invoice.paid using Stripe current state",async()=>{
-    const id="sub_lc_invoice_"+run;
+    const id=subA;
     const periodEnd=now()+100*DAY;
     const current=subscription(id,userId,{status:"active",periodEnd});
     stripeState.subscriptions.set(id,current);
@@ -137,16 +147,6 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(response.status).toBe(200);
     expect(await row()).toMatchObject({slug:"investor",status:"ACTIVE",stripe_subscription_id:id});
     expect(Math.floor(new Date((await row()).current_period_end).getTime()/1000)).toBe(periodEnd);
-  });
-
-  it("activates a paid plan when the first subscription is created",async()=>{
-    const periodEnd=now()+30*DAY;
-    const result=await deliver("customer.subscription.created",subscription(subA,userId,{periodEnd}));
-    expect(result,JSON.stringify(result)).toMatchObject({status:200});
-    const current=await row();
-    expect(current).toMatchObject({status:"ACTIVE",cadence:"MONTHLY",slug:"investor",stripe_subscription_id:subA});
-    expect(Math.floor(new Date(current.current_period_end).getTime()/1000)).toBe(periodEnd);
-    expect((await activeStrategies()).every((s)=>s.status==="ACTIVE")).toBe(true);
   });
 
   it("moves the period end forward on renewal",async()=>{
