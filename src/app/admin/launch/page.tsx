@@ -22,6 +22,7 @@ const descriptions:Record<string,{title:string;where:string}>={
  backup_operator_attestation:{title:"Backup restoration evidence",where:"Perform a real point-in-time restore drill. Only then tick the backup sign-off in Admin › Settings › Launch sign-offs."},
  regulatory_signoff:{title:"UK legal and regulatory review",where:"Get written UK regulatory/financial-promotion and privacy advice. Do not self-certify legal approval."},
  legal_public_pages:{title:"Published legal and consumer disclosures",where:"Verify real seller identity, contact details, subscription and cancellation terms, privacy notice and customer rights are published and reviewed before signing off in Admin › Settings › Launch sign-offs."},
+ seller_identity:{title:"Identified subscription seller",where:"Set actual legal entity name, business postal address and monitored support email in Admin › Settings › General. The public terms/privacy pages must show accurate values."},
  instrument_review:{title:"UK ISA and regional instruments",where:"Use Instruments to map actual eligible trading lines and verify broker/ISA tradability before ticking the instruments sign-off in Admin › Settings › Launch sign-offs."},
  admin_mfa:{title:"Administrator two-step sign-in",where:"Every admin turns on two-step sign-in under Settings, then switch on the admin requirement in Admin › Settings › Security."}
 };

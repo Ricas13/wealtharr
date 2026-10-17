@@ -41,6 +41,8 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   const client=readFileSync("src/components/SettingsForms.tsx","utf8");
   expect(client).toContain("recurringBillingAcknowledged");
   expect(client).toContain("renews automatically");
+  expect(client).toContain('href="/terms"');
+  expect(client).toContain('href="/privacy"');
   expect(client).toContain('type="checkbox"');
   expect(client).toContain("!recurringBillingAcknowledged");
  });

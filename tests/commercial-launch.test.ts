@@ -8,6 +8,7 @@ const baseline={
  EMAIL_PROVIDER:"http",EMAIL_HTTP_ENDPOINT:"https://email.example.org",EMAIL_HTTP_TOKEN:"f".repeat(20),EMAIL_FROM:"support@invest.example.org",
  MARKET_DATA_PROVIDER:"http",MARKET_DATA_HTTP_BASE_URL:"https://quotes.example.org",MARKET_DATA_HTTP_TOKEN:"g".repeat(20),
  BACKUPS_RESTORE_VERIFIED:"true",UK_REGULATORY_SIGNOFF_VERIFIED:"true",LEGAL_PUBLIC_PAGES_VERIFIED:"true",REGIONAL_INSTRUMENTS_VERIFIED:"true",ADMIN_MFA_REQUIRED:"true",
+ WEALTHARR_LEGAL_TRADING_ENTITY:"Wealtharr Test Limited",WEALTHARR_LEGAL_BUSINESS_ADDRESS:"123 Test Road, Test Town, UK",WEALTHARR_SUPPORT_EMAIL:"help@invest.example.org",
  TURNSTILE_ENABLED:"true",TURNSTILE_SITE_KEY:"s".repeat(25),TURNSTILE_SECRET_KEY:"t".repeat(36)
 };
 describe("commercial launch preflight",()=>{
@@ -30,6 +31,11 @@ describe("commercial launch preflight",()=>{
  it("blocks unverified legal, backup and instrument attestations",()=>{
   const r=checkCommercialLaunch({...baseline,UK_REGULATORY_SIGNOFF_VERIFIED:"false",BACKUPS_RESTORE_VERIFIED:"false",REGIONAL_INSTRUMENTS_VERIFIED:"false"});
   expect(r.filter(x=>!x.passed).map(x=>x.key)).toEqual(["backup_operator_attestation","regulatory_signoff","instrument_review"]);
+ });
+ it("refuses charging without a real identified business and contact",()=>{
+   const checks=checkCommercialLaunch({...baseline,WEALTHARR_LEGAL_TRADING_ENTITY:""});
+   expect(checks.find(c=>c.key==="seller_identity")?.passed).toBe(false);
+   expect(checkCommercialLaunch({...baseline,WEALTHARR_SUPPORT_EMAIL:"not-an-email"}).find(c=>c.key==="seller_identity")?.passed).toBe(false);
  });
  it("requires published and reviewed legal pages before taking real payments",()=>{
    const blockers=checkCommercialLaunch({...baseline,LEGAL_PUBLIC_PAGES_VERIFIED:"false"});

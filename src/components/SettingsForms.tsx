@@ -109,7 +109,7 @@ export function BillingButtons({
           onChange={e=>setRecurringBillingAcknowledged(e.target.checked)}/>
         {" "}I understand that my selected monthly or annual plan renews automatically at the displayed price until I cancel.
         I can manage or cancel future renewals from the billing portal in Settings.
-        I have read the <a href="/faq">billing FAQ</a> and <a href="/research-disclaimer">investment risk disclosure</a>.
+        I have read the <a href="/terms">subscription terms</a>, <a href="/privacy">privacy notice</a> and <a href="/research-disclaimer">investment risk disclosure</a>.
       </label>
       <p className="help">Cancel before your next renewal to avoid the next charge. Cancelling a renewal does not automatically refund a payment already made. Your statutory rights remain unaffected.</p>
     </div>
