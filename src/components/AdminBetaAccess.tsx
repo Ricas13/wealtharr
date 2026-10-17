@@ -43,6 +43,6 @@ export function AdminBetaAccess({userId,current}:{
     onClick={()=>void change("revoke")}>Revoke</button>}
   </div>
   {message&&<p role="status">{message}</p>}
-  <p className="admin-data-caveat">An actual paid subscription always takes precedence. This does not bypass global strategy publication, instrument eligibility or market-data accuracy requirements. Revocation and expiry pause features beyond the real plan limits without deleting the customer's ledger.</p>
+  <p className="admin-data-caveat">An actual paid subscription always takes precedence. This does not bypass global strategy publication, instrument eligibility or market-data accuracy requirements. Revocation and expiry pause features beyond the real plan limits without deleting the customer&apos;s ledger.</p>
  </section>;
 }
