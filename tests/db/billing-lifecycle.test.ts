@@ -327,6 +327,26 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     await sql!.unsafe("UPDATE subscriptions SET source='STRIPE',store_original_transaction_id=NULL WHERE user_id=$1",[userId]);
   });
 
+  it("clears a canceled App Store subscription when a new Stripe subscription starts",async()=>{
+    const newId="sub_lc_store_to_web_"+run;
+    await sql!.unsafe(
+      "UPDATE subscriptions SET source='APPLE',status='CANCELED',stripe_subscription_id=NULL,"+
+      "store_product_id='old-product',store_original_transaction_id=$2,store_event_at=now() WHERE user_id=$1",
+      [userId,"old-store-"+run]
+    );
+    const result=await deliver("customer.subscription.created",subscription(newId,userId,{price:PRICES.proAnnual,interval:"year"}));
+    expect(result).toMatchObject({status:200});
+    const after=(await sql!.unsafe(
+      "SELECT s.source,s.status,s.stripe_subscription_id,s.store_product_id,"+
+      "s.store_original_transaction_id,s.store_event_at,p.slug FROM subscriptions s "+
+      "JOIN plans p ON p.id=s.plan_id WHERE s.user_id=$1",[userId]))[0];
+    expect(after).toMatchObject({
+      source:"STRIPE",status:"ACTIVE",slug:"pro",stripe_subscription_id:newId,
+      store_product_id:null,store_original_transaction_id:null,store_event_at:null
+    });
+    expect(stripeState.cancelled).not.toContain(newId);
+  });
+
   async function prepareRecovery(){
     await sql!.unsafe(
       "UPDATE subscriptions SET source='STRIPE',status='ACTIVE',stripe_subscription_id=$2,billing_checked_at=NULL,billing_check_error=NULL,"+
