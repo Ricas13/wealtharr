@@ -108,6 +108,34 @@ test("new user can start a strategy through the three-step simple flow",async({p
   await expect(page.locator("html")).toHaveAttribute("data-theme","light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme","light");
+  // The new light palette must actually render through CSS cascade, while
+  // respecting the user's persisted theme choice.
+  const palette=await page.evaluate(()=>{
+    const shell=document.querySelector(".customer-workspace-shell");
+    const primary=document.querySelector(".app-topbar .button.primary");
+    const card=document.querySelector(".adaptive-strategy-card");
+    if(!shell||!primary||!card)throw new Error("CUSTOMER_PALETTE_ELEMENT_MISSING");
+    const theme=getComputedStyle(shell);
+    return {
+      background:theme.getPropertyValue("--member-bg").trim(),
+      action:theme.getPropertyValue("--member-action-blue").trim(),
+      primaryBackground:getComputedStyle(primary).backgroundColor,
+      cardBackground:getComputedStyle(card).backgroundColor,
+      categoryClass:card.className
+    };
+  });
+  expect(palette.background).toBe("#f4f7fc");
+  expect(palette.action).toBe("#1769e9");
+  expect(palette.primaryBackground).toBe("rgb(23, 105, 233)");
+  expect(palette.cardBackground).toBe("rgb(255, 255, 255)");
+  expect(palette.categoryClass).toContain("kind-");
+  await page.getByRole("button",{name:"Toggle light or dark theme"}).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme","dark");
+  const darkSurface=await page.locator(".customer-workspace-shell").evaluate(
+    element=>getComputedStyle(element).getPropertyValue("--member-bg").trim());
+  expect(darkSurface).toBe("#080d11");
+  await page.getByRole("button",{name:"Toggle light or dark theme"}).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme","light");
 
   const dimensions=await page.evaluate(()=>({
     scrollWidth:document.documentElement.scrollWidth,
