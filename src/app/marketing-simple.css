@@ -1,0 +1,240 @@
+/* Wealtharr's three-part homepage: statement → proof → plans.
+   Only the public home imports this file. Member, admin and other public pages
+   continue using their existing style systems. */
+.wealtharr-marketing.wm-simple{
+  --wm-bg:#f4f7fc;--wm-text:#16253c;--wm-muted:#51647c;
+  --wm-mint:#1769e9;--wm-blue:#1769e9;--wm-border:#dce5f1;
+  background:#f4f7fc;color:#16253c;
+}
+.wm-simple .wm-header{
+  background:rgba(250,252,255,.96);
+  border-bottom:1px solid #dce5f1;
+}
+.wm-simple .wm-mark{background:#e9f1ff;border-color:#c3d7ff;color:#1765ce}
+.wm-simple .wm-brand-dot{color:#1769e9}
+.wm-simple .wm-nav-links{color:#455775}
+.wm-simple .wm-nav-links a:hover,.wm-simple .wm-signin:hover{color:#1155b9}
+.wm-simple .wm-signin{color:#334d6c;font-size:13px}
+.wm-simple .wm-button.main{
+  background:#1769e9;border-color:#1769e9;color:#fff;
+  box-shadow:0 12px 26px rgba(23,105,233,.16);
+}
+.wm-simple .wm-button.main:hover{background:#1058c6;border-color:#1058c6}
+.wm-simple .wm-button.outline{
+  background:#fff;border-color:#cedbf0;color:#1c426c;
+}
+.wm-simple .wm-button.outline:hover{background:#f4f8ff}
+.wm-simple :is(a,button,input,select,summary):focus-visible{
+  outline:3px solid #1769e9;outline-offset:3px;
+}
+.wm-simple .wm-simple-hero{
+  padding:116px 0 107px;
+  text-align:center;
+  max-width:1100px;
+  position:relative;
+}
+.wm-simple .wm-simple-hero:before{
+  content:"";position:absolute;z-index:0;pointer-events:none;
+  top:-55px;left:5%;right:5%;height:420px;
+  background:radial-gradient(ellipse at 50% 25%,#dceaff 0%,transparent 68%);
+}
+.wm-simple .wm-simple-hero>*{position:relative;z-index:1}
+.wm-simple .wm-kicker{
+  color:#2768b4;letter-spacing:2.1px;font-size:10px;font-weight:800;
+}
+.wm-simple .wm-simple-hero h1{
+  font-size:clamp(44px,6.5vw,88px);
+  line-height:1.06;
+  font-weight:650;
+  letter-spacing:-.068em;
+  max-width:1050px;
+  margin:22px auto 25px;
+}
+.wm-simple .wm-simple-hero h1 em{
+  display:block;color:#1769e9;
+  font-weight:540;font-style:normal;
+}
+.wm-simple .wm-simple-hero>p:not(.wm-simple-trust){
+  max-width:670px;margin:0 auto;color:#52647e;
+  font-size:clamp(15px,1.6vw,18px);line-height:1.8;
+}
+.wm-simple .wm-simple-actions{
+  display:flex;justify-content:center;gap:11px;flex-wrap:wrap;margin:31px 0 19px;
+}
+.wm-simple .wm-simple-actions .wm-button{font-size:14px;padding:16px 25px}
+.wm-simple .wm-simple-trust{
+  margin:0 auto;color:#62738b;font-size:11px;letter-spacing:.1px;
+}
+.wm-simple .wm-section{padding-top:88px;padding-bottom:98px}
+.wm-simple .wm-section h2{
+  font-size:clamp(38px,4.5vw,62px);letter-spacing:-.052em;
+  color:#172943;max-width:970px;line-height:1.13;
+}
+.wm-simple .wm-section h2 em{
+  color:#1769e9;font-family:inherit;font-style:normal;font-weight:600;
+}
+.wm-simple .wm-section-intro{color:#52647e;line-height:1.75;max-width:790px}
+.wm-simple .wm-simple-comparison{
+  padding-top:54px;
+  border-top:1px solid #dfe7f3;
+}
+.wm-simple .wm-simple-comparison .wm-section-intro{margin-bottom:32px}
+.wm-simple .wm-compare{
+  border:1px solid #dce5f1;background:#fff;
+  border-radius:22px;overflow:hidden;
+  box-shadow:0 28px 60px rgba(43,71,112,.06);
+}
+.wm-simple .wm-compare-top{
+  display:flex;align-items:end;justify-content:space-between;
+  flex-wrap:wrap;gap:22px;padding:27px 29px 23px;
+  background:#111e2b;color:#f1f7ff;
+}
+.wm-simple .wm-compare-eyebrow{
+  color:#95b9e8;font-size:10px;font-weight:800;letter-spacing:1.7px;
+}
+.wm-simple .wm-compare-top h3{
+  margin:7px 0 5px;font-size:clamp(23px,2.4vw,31px);
+  font-weight:650;letter-spacing:-.8px;
+}
+.wm-simple .wm-compare-top p{
+  margin:0;color:#a9bcce;font-size:12px;line-height:1.65;max-width:610px;
+}
+.wm-simple .wm-compare-periods{
+  display:flex;align-items:center;gap:3px;flex-wrap:wrap;
+  padding:4px;border:1px solid #3d4e62;border-radius:10px;
+  background:#192b3c;
+}
+.wm-simple .wm-compare-periods button{
+  border:0;background:transparent;color:#b8c9dd;
+  font-size:11px;font-weight:700;padding:8px 11px;border-radius:7px;white-space:nowrap;
+}
+.wm-simple .wm-compare-periods button.active,
+.wm-simple .wm-compare-periods button[aria-pressed="true"]{
+  background:#e7f0ff;color:#154fa8;
+}
+.wm-simple .wm-compare-plot{background:#111e2b;color:#f3f8ff;padding:0 29px 23px}
+.wm-simple .wm-compare-legend{display:flex;gap:9px;align-items:center;flex-wrap:wrap;min-height:48px}
+.wm-simple .wm-compare-legend>span,
+.wm-simple .wm-compare-legend-item{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;padding:7px 10px;border-radius:8px;
+  border:1px solid #384e62;color:#dbe7f6;background:#1b2c3a;
+}
+.wm-simple .wm-compare-legend i{
+  display:inline-block;width:11px;height:3px;border-radius:3px;flex-shrink:0;
+}
+.wm-simple .wm-compare-spy i{background:#eaf3fc}
+.wm-simple .wm-compare-legend-item:hover{border-color:#86afda;background:#223950}
+.wm-simple .wm-compare-legend-item span[aria-hidden]{margin-left:6px;opacity:.7;font-size:16px}
+.wm-simple .wm-compare-chart{height:295px;width:100%;margin:10px 0 15px}
+.wm-simple .wm-compare-no-chart{
+  min-height:275px;border:1px dashed #466078;
+  background:#18293b;border-radius:14px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;gap:10px;padding:24px;
+}
+.wm-simple .wm-compare-no-chart strong{font-size:17px;font-weight:680}
+.wm-simple .wm-compare-no-chart span{font-size:12px;color:#a8bfd3;line-height:1.7;max-width:570px}
+.wm-simple .wm-compare-caption{
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  color:#90a7ba;font-size:10px;line-height:1.5;
+}
+.wm-simple .wm-compare-table-top{
+  display:flex;justify-content:space-between;align-items:end;
+  gap:17px;flex-wrap:wrap;padding:24px 27px 14px;
+}
+.wm-simple .wm-compare-table-top>div:first-child{display:flex;flex-direction:column;gap:5px}
+.wm-simple .wm-compare-table-top strong{font-size:18px;letter-spacing:-.4px}
+.wm-simple .wm-compare-table-top>div>span{font-size:11px;color:#65758d}
+.wm-simple .wm-compare-controls{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+}
+.wm-simple .wm-compare-controls :is(input[type="search"],select){
+  background:#f9fbfe;border:1px solid #ccd9eb;color:#213955;border-radius:9px;
+  padding:9px 11px;font-size:12px;max-width:205px;
+}
+.wm-simple .wm-compare-filter,
+.wm-simple .wm-compare-sort{display:flex;gap:6px;align-items:center;color:#50627e;font-size:12px}
+.wm-simple .wm-compare-filter input[type="checkbox"],
+.wm-simple .wm-compare-table input[type="checkbox"]{accent-color:#1769e9;width:17px;height:17px;cursor:pointer}
+.wm-simple .wm-compare-table input:disabled{cursor:not-allowed;opacity:.45}
+.wm-simple .wm-compare-scroll{
+  overflow-x:auto;scrollbar-color:#c6d4e7 transparent;outline-offset:-3px;
+}
+.wm-simple .wm-compare-table{border-collapse:collapse;min-width:810px;width:100%}
+.wm-simple .wm-compare-table :is(td,th){
+  text-align:left;padding:13px 17px;vertical-align:middle;border-bottom:1px solid #e9eef5;
+  line-height:1.5;
+}
+.wm-simple .wm-compare-table thead th{
+  background:#f4f8fe;color:#587089;font-size:10px;font-weight:800;
+  text-transform:uppercase;letter-spacing:.65px;white-space:nowrap;
+}
+.wm-simple .wm-compare-table tbody th{color:#233853;font-size:12.5px;font-weight:720}
+.wm-simple .wm-compare-table td{color:#5c6d83;font-size:11.5px}
+.wm-simple .wm-compare-table .number{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.wm-simple .wm-compare-table tbody tr:hover{background:#f4f8ff}
+.wm-simple .wm-compare-table tbody tr.wm-compare-active{background:#f1f6ff}
+.wm-simple .wm-compare-benchmark{background:#edf4ff}
+.wm-simple .wm-compare-benchmark th{color:#174f9e}
+.wm-simple .wm-compare-pinned{font-weight:750;color:#1558b7;background:#dbeaff;border-radius:5px;padding:4px 6px;font-size:10px}
+.wm-simple .wm-compare-table .wm-negative{color:#a5223d}
+.wm-simple .wm-compare-unavailable{font-size:10.5px;color:#6d7c91}
+.wm-simple .wm-compare-empty{padding:20px 25px;font-size:12px;color:#536780}
+.wm-simple .wm-compare-disclosure{
+  margin:0;padding:18px 27px;background:#f7faff;
+  color:#5a6c83;font-size:11px;line-height:1.8;
+}
+.wm-simple .wm-pricing-section{
+  background:linear-gradient(180deg,#f4f7fc,#ecf3fd);border-top:1px solid #dce5f1;
+}
+.wm-simple .wm-pricing-section .wm-section-intro{margin-bottom:20px}
+.wm-simple .wm-billing{background:#e8f0fc;border-color:#ccdaee}
+.wm-simple .wm-billing button{color:#435c77}
+.wm-simple .wm-billing button.selected{background:#1769e9;color:#fff}
+.wm-simple .wm-currency-choice button{border-color:#cbd9eb;color:#445c7a}
+.wm-simple .wm-currency-choice button.selected{border-color:#1769e9;background:#dfeeff;color:#1457b9}
+.wm-simple .wm-plan{
+  background:#fff;border:1px solid #dce5f1;color:#1d3250;
+  box-shadow:0 10px 30px rgba(34,67,107,.05);
+}
+.wm-simple .wm-plan.featured{
+  background:linear-gradient(160deg,#eef5ff,#fff 58%);border-color:#a6c7ff;
+}
+.wm-simple .wm-plan>p,
+.wm-simple .wm-plan ul{color:#536680}
+.wm-simple .wm-plan-price small,
+.wm-simple .wm-plan-billed{color:#64758b}
+.wm-simple .wm-plan li::marker{color:#1769e9}
+.wm-simple .wm-marketing-notes span{
+  background:#e8f1ff;border-color:#cddfff;color:#315785;
+}
+.wm-simple .wm-plan-currency-note{color:#94520d}
+.wm-simple .wm-note{color:#5d708a}
+.wm-simple .wm-footer{background:#142133;border-color:#24374d}
+.wm-simple .wm-footer strong{color:#fff}
+.wm-simple .wm-footer p,.wm-simple .wm-footer .wm-shell>div{color:#b4c5d9}
+@media(max-width:900px){
+  .wm-simple .wm-simple-hero{padding:83px 0 70px}
+  .wm-simple .wm-section{padding-top:65px;padding-bottom:67px}
+  .wm-simple .wm-compare-top{align-items:start}
+}
+@media(max-width:720px){
+  .wm-simple .wm-mobile-menu summary{color:#223955}
+  .wm-simple .wm-mobile-menu>div{background:#fff;border-color:#d0deee;box-shadow:0 13px 35px #263e5d22}
+  .wm-simple .wm-mobile-menu a{color:#254261}
+  .wm-simple .wm-simple-hero{padding:72px 0 62px}
+  .wm-simple .wm-simple-hero h1{font-size:clamp(40px,10vw,64px);letter-spacing:-.059em}
+  .wm-simple .wm-simple-actions .wm-button{width:100%}
+  .wm-simple .wm-simple-trust{line-height:1.7}
+  .wm-simple .wm-compare-top,.wm-simple .wm-compare-plot{padding-left:16px;padding-right:16px}
+  .wm-simple .wm-compare-plot{padding-bottom:20px}
+  .wm-simple .wm-compare-no-chart{min-height:240px}
+  .wm-simple .wm-compare-table-top{padding:18px 16px 12px}
+  .wm-simple .wm-compare-controls{width:100%}
+  .wm-simple .wm-compare-search,.wm-simple .wm-compare-search input{width:100%;max-width:none!important}
+  .wm-simple .wm-compare-table :is(td,th){padding:12px 13px}
+}
+@media(prefers-reduced-motion:reduce){
+  .wm-simple :is(.wm-button,.wm-plan,.wm-compare-table){transition:none;animation:none}
+}
