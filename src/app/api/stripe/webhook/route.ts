@@ -59,7 +59,7 @@ export async function POST(request:Request){
       // Checkout writes our canonical Stripe customer ID before creating a session.
       const owners=await sql.unsafe(
         "SELECT DISTINCT user_id FROM subscriptions WHERE stripe_subscription_id=$1 OR stripe_customer_id=$2 LIMIT 2",
-        [linked.id,linked.customer]
+        [linked.id,String(linked.customer)]
       );
       if(owners.length>1)throw new Error("STRIPE_WEBHOOK_MULTIPLE_LOCAL_OWNERS");
       if(owners.length===1){
