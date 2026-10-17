@@ -11,6 +11,15 @@ const valid:PortalOwnership={
   remoteSubscriptionCustomerId:"cus_correct",
   remoteSubscriptionMetadataUserId:"00000000-0000-4000-8000-000000000001"
 };
+describe("Stripe billing portal canonical return URL",()=>{
+ it("builds billing portal URLs from a validated origin only",()=>{
+  const source=readFileSync("src/app/api/billing/portal/route.ts","utf8");
+  expect(source).toContain('origin.pathname!=="/"');
+  expect(source).toContain("origin.username||origin.password||origin.search||origin.hash");
+  expect(source).toContain('returnUrl=origin.origin+"/app/settings"');
+  expect(source).toContain("return_url:returnUrl");
+ });
+});
 describe("Stripe billing portal ownership",()=>{
  it("allows exact customer and subscription ownership",()=>{
   expect(mayOpenStripeBillingPortal(valid)).toBe(true);
