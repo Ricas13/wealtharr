@@ -41,9 +41,12 @@ export function assertCuratedRules(strategyKey:string,engine:string,config:unkno
   // publishing a distinct v2 profile must not invalidate active v1 customer ledgers.
   // Only the ruleVersion field differs; no arbitrary legacy config is accepted.
   const archivedNasdaqV1=strategyKey==="quarterly-target-nasdaq-3x"&&
-    release.config?.ruleVersion==="WEALTHARR_OWNER_2026_V2_SHEET105"&&
+    ["WEALTHARR_OWNER_2026_V2_SHEET105","WEALTHARR_OWNER_2026_V3_SHEET107"].includes(String(release.config?.ruleVersion))&&
     sameRuleConfig(config,{...release.config,ruleVersion:"WEALTHARR_OWNER_2026_V1"});
-  if(engine!==release.engine||!(sameRuleConfig(config,release.config)||archivedNasdaqV1)||
+  const archivedNasdaqV2=strategyKey==="quarterly-target-nasdaq-3x"&&
+    release.config?.ruleVersion==="WEALTHARR_OWNER_2026_V3_SHEET107"&&
+    sameRuleConfig(config,{...release.config,ruleVersion:"WEALTHARR_OWNER_2026_V2_SHEET105"});
+  if(engine!==release.engine||!(sameRuleConfig(config,release.config)||archivedNasdaqV1||archivedNasdaqV2)||
     !sameRuleConfig(inputSchema,release.inputSchema??[]))
     throw new Error("CURATED_STRATEGY_RULES_IMMUTABLE");
 }
