@@ -3,7 +3,7 @@ import {STRATEGY_PLUGINS} from "@/domain/strategy/catalog";
 import {isApprovedModelPoint,isApprovedSpyPoint,validatedObservations,type DatedValue,type PublicComparisonEntry} from "@/domain/public-strategy-comparison";
 
 type VersionRow={key:string;version_id:string;enabled:boolean;engine_key:string};
-type HistoricalRow={key:string;date:string;value:string;source:string;metadata:unknown};
+type HistoricalRow={key:string;version_id:string;date:string;value:string;source:string;metadata:unknown};
 type SpyRow={date:string;value:string;source:string;economic_exposure:string;metadata:unknown};
 
 export type PublicHistoryResult={entries:PublicComparisonEntry[];spy:DatedValue[];asOf:string;
@@ -30,7 +30,7 @@ export async function loadPublicComparison():Promise<PublicHistoryResult>{
         "ORDER BY d.key,v.effective_from DESC,v.published_at DESC NULLS LAST"
       ) as Promise<VersionRow[]>,
       sql.unsafe(
-        "SELECT d.key,m.date::text,m.value::text,m.source,m.metadata "+
+        "SELECT d.key,v.id::text AS version_id,m.date::text,m.value::text,m.source,m.metadata "+
         "FROM canonical_model_performance m "+
         "JOIN strategy_versions v ON v.id=m.strategy_version_id "+
         "JOIN strategy_definitions d ON d.id=v.strategy_definition_id "+
@@ -59,6 +59,7 @@ export async function loadPublicComparison():Promise<PublicHistoryResult>{
     if(historical.length<=100000){
       const grouped=new Map<string,HistoricalRow[]>();
       for(const row of historical){
+        if(row.version_id!==versions.get(row.key)?.version_id)continue;
         const group=grouped.get(row.key)??[];
         group.push(row);grouped.set(row.key,group);
       }
