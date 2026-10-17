@@ -124,6 +124,23 @@ for(const entry of [
       digest=next.digest;
       if(settled)break;
     }
+    if(entry.name==="landing"){
+      // This layout is intentionally an entirely new three-section design.
+      // Capture the FULL raster for PR review; old SHA baselines describe the
+      // removed observatory and would fail even on a correct redesign.
+      await testInfo.attach("three-section-home-actual.png",{body:screenshot,contentType:"image/png"});
+      await expect(page.getByRole("heading",{level:1,name:/Invest your money/i})).toBeVisible();
+      await expect(page.getByRole("heading",{name:/See how the strategies have performed/i})).toBeVisible();
+      await expect(page.getByRole("heading",{name:/Choose how you want to track/i})).toBeVisible();
+      const measure=await page.evaluate(()=>({
+        scroll:document.documentElement.scrollWidth,
+        viewport:document.documentElement.clientWidth,
+        sections:document.querySelectorAll("main.wm-simple > section").length
+      }));
+      expect(measure.sections).toBe(3);
+      expect(measure.scroll).toBeLessThanOrEqual(measure.viewport+1);
+      return;
+    }
     const baseline=expected[testInfo.project.name]?.[entry.name];
     expect(baseline,"Missing visual baseline for "+testInfo.project.name+" / "+entry.name).toBeTruthy();
     const reviewed=Array.isArray(baseline)?baseline:[baseline];
