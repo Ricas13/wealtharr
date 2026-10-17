@@ -5,13 +5,10 @@ import {listUserStrategies} from "@/lib/strategy-service";
 import {sql} from "@/lib/db";
 import {PortfolioAllocationChart} from "@/components/PortfolioAllocationChart";
 import {portfolioAllocationBreakdown} from "@/domain/portfolio-allocation-view";
+import {strategyDashboardView} from "@/domain/strategy/customer-dashboard-view";
+import {EXECUTABLE_ACTION_STATUS_SQL} from "@/domain/actions";
+import {isStoredActionCurrent} from "@/lib/action-service";
 
-function state(strategy:any){
- if(strategy.status==="CLOSED")return {className:"is-attention",label:"Closed"};
- if(strategy.status==="PAUSED")return {className:"is-attention",label:"Paused"};
- return strategy.health_status==="HEALTHY"
-   ?{className:"is-healthy",label:"On track"}:{className:"is-attention",label:"Needs attention"};
-}
 
 export default async function StrategiesPage(){
  const user=await requirePageUser();
@@ -19,6 +16,26 @@ export default async function StrategiesPage(){
  const active=rows.filter((s:any)=>s.status==="ACTIVE").length;
  const paused=rows.filter((s:any)=>s.status==="PAUSED").length;
  const closed=rows.filter((s:any)=>s.status==="CLOSED").length;
+ // Use the same confirmed action/status contract as the main dashboard.
+ const activeActions=await sql.unsafe(
+  "SELECT DISTINCT ON (a.strategy_instance_id) a.strategy_instance_id,a.id,a.action_type,a.status "+
+  "FROM actions a JOIN strategy_instances i ON i.id=a.strategy_instance_id "+
+  "WHERE i.user_id=$1 AND i.status='ACTIVE' AND a.status IN ("+EXECUTABLE_ACTION_STATUS_SQL+") "+
+  "ORDER BY a.strategy_instance_id,a.created_at DESC,a.id DESC",[user.id]);
+ const current=new Map<string,{type:string;status:string;stale:boolean}>();
+ for(const action of activeActions)current.set(String(action.strategy_instance_id),{
+  type:String(action.action_type),status:String(action.status),
+  stale:!(await isStoredActionCurrent(String(action.strategy_instance_id),String(action.id)))
+ });
+ const views=new Map(rows.map((strategy:any)=>{
+  const action=current.get(String(strategy.id));
+  return [String(strategy.id),strategyDashboardView({
+   status:String(strategy.status),healthStatus:String(strategy.health_status),
+   actionType:action?.type,actionStatus:action?.status,actionStale:action?.stale
+  })] as const;
+ }));
+ const orderedRows=[...rows].sort((a:any,b:any)=>
+  (views.get(String(a.id))?.priority??9)-(views.get(String(b.id))?.priority??9));
  const valuationRows=await sql.unsafe("SELECT ps.strategy_instance_id,ps.value,a.currency FROM performance_series ps JOIN strategy_instances i ON i.id=ps.strategy_instance_id JOIN accounts a ON a.id=i.account_id WHERE i.user_id=$1 AND i.status<>'CLOSED' AND ps.series_type='USER_VALUE' AND ps.date=(SELECT max(p2.date) FROM performance_series p2 WHERE p2.strategy_instance_id=ps.strategy_instance_id AND p2.series_type='USER_VALUE')",[user.id]);
  const tracked=rows.filter((s:any)=>s.status!=="CLOSED");
  const allocation=portfolioAllocationBreakdown(
@@ -48,7 +65,7 @@ export default async function StrategiesPage(){
    {rows.length?<div className="portfolio-table-wrap" role="region" tabIndex={0} aria-label="All tracked strategies">
      <table className="portfolio-data-table"><thead><tr><th scope="col">Strategy</th><th scope="col">Investment method</th>
      <th scope="col">Account</th><th scope="col">Version</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Open</span></th></tr></thead>
-     <tbody>{rows.map((s:any)=>{const indicator=state(s);return <tr key={String(s.id)}>
+     <tbody>{orderedRows.map((s:any)=>{const view=views.get(String(s.id))!;const indicator={label:view.label,className:view.tone==="good"?"is-healthy":"is-attention"};return <tr key={String(s.id)}>
       <td><Link className="portfolio-row-title" href={"/app/strategies/"+s.id}>{s.name}</Link><small>{s.currency}</small></td>
       <td>{s.strategy_name}</td>
       <td>{s.wrapper}<small>{s.broker_name??"Broker not specified"}</small></td>
