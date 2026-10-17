@@ -92,7 +92,7 @@ export default async function OverviewPage(){
     .sort((a,b)=>String(a.plan?.nextDate).localeCompare(String(b.plan?.nextDate)));
   const nextContribution=plannedContributions[0];
   const nextReview=reviewRows.filter((row:any)=>row.due_at).sort((a:any,b:any)=>new Date(a.due_at).getTime()-new Date(b.due_at).getTime())[0];
-  const healthyCount=activeStrategies.filter((strategy:any)=>strategy.health_status==="HEALTHY").length;
+  const onTrackCount=activeStrategies.filter((strategy:any)=>viewsById.get(String(strategy.id))?.status==="ON_TRACK").length;
   const analytics=await loadWorkspaceAnalytics(user.id);
   const returnsById=new Map(analytics.strategies.map(entry=>[
     entry.id,summarizeObservedPerformance(entry.valuations,entry.flows)
@@ -150,7 +150,7 @@ export default async function OverviewPage(){
       </div>
     </header>
 
-    <section className={"member-action-hero "+(primaryAction?"requires-review":"is-clear")} id="action-queue" aria-labelledby="member-action-title">
+    <section className={"member-action-hero "+(primaryAction||dataNeededCount?"requires-review":"is-clear")+(dataNeededCount||primaryAction?.action_type==="DATA_REQUIRED"?" has-data-issue":"")} id="action-queue" aria-labelledby="member-action-title">
       <div className="member-action-copy">
         <span className="member-action-kicker"><span aria-hidden="true" className="member-action-dot"/>{primaryAction?dueHeading:"No action due"}</span>
         <h2 id="member-action-title">{primaryAction?primaryAction.title:dataNeededCount?"Some strategies need a check.":"You're all caught up."}</h2>
@@ -178,8 +178,8 @@ export default async function OverviewPage(){
       </div>
       <div className="member-metric">
         <div className="member-metric-top"><span>Strategy health</span><CheckCircle2 size={16}/></div>
-        <strong>{activeStrategies.length?healthyCount+" of "+activeStrategies.length:"—"}</strong>
-        <small>Active strategies marked on track</small>
+        <strong>{activeStrategies.length?onTrackCount+" of "+activeStrategies.length:"—"}</strong>
+        <small>No outstanding action or data blocker</small>
       </div>
       <div className="member-metric">
         <div className="member-metric-top"><span>Strategies following</span><Layers3 size={16}/></div>
