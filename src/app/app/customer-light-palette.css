@@ -1,0 +1,343 @@
+/*
+ * Wealtharr customer light palette — sketch-aligned visual refresh.
+ * Only enabled under the existing light-mode choice. Dark mode, the public
+ * marketing site and the administrator interface are intentionally untouched.
+ *
+ * Meaning: blue = interactive action, teal = verified positive / performance,
+ * amber = pending decision, red = adverse / risk. Colour never conveys status
+ * alone: the existing visible textual labels remain the source of truth.
+ */
+html[data-theme="light"] .customer-workspace-shell{
+  --member-bg:#f4f7fc;
+  --member-sidebar:#f9fbff;
+  --member-panel:#ffffff;
+  --member-panel-soft:#f5f9ff;
+  --member-border:#dce5f1;
+  --member-text:#16253c;
+  --member-muted:#52647e;
+  --member-subtle:#596c85;
+  --member-accent:#087e68;
+  --member-blue:#1765ce;
+  --member-amber:#94520d;
+  --member-danger:#b32942;
+  --member-action-blue:#1769e9;
+  --member-action-blue-hover:#0d54c3;
+  --member-sky:#eaf2ff;
+  --member-green-wash:#e5f8ee;
+  --member-amber-wash:#fff3e4;
+  --member-risk-wash:#fff0f2;
+  --cw-bg:#f4f7fc;
+  --cw-sidebar:#f9fbff;
+  --cw-panel:#ffffff;
+  --cw-card:#ffffff;
+  --cw-border:#dce5f1;
+  --cw-line:#dce5f1;
+  --cw-text:#16253c;
+  --cw-muted:#52647e;
+  --cw-subtle:#596c85;
+  --cw-mint:#087e68;
+  --cw-blue:#1769e9;
+  --cw-loss:#b32942;
+  --bg:#f4f7fc;
+  --bg2:#ffffff;
+  --panel:#ffffff;
+  --panel-solid:#ffffff;
+  --text:#16253c;
+  --muted:#52647e;
+  --line:#dce5f1;
+  --accent:#1769e9;
+  --accent2:#1765ce;
+  --warning:#94520d;
+  --danger:#b32942;
+  --shadow:0 9px 30px rgba(36,65,109,.055);
+  color:var(--member-text);
+  background:var(--member-bg);
+  color-scheme:light;
+}
+
+/* True light surfaces throughout the signed-in workspace, not just the home. */
+html[data-theme="light"] .customer-workspace-shell .app-main{
+  background:
+    radial-gradient(ellipse at 82% -16%,rgba(226,238,255,.76),transparent 44%),
+    var(--member-bg);
+}
+html[data-theme="light"] .customer-workspace-shell :is(.glass,.card,.form-card),
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .glass{
+  background:#ffffff;
+  border-color:var(--member-border);
+  box-shadow:0 6px 25px rgba(32,65,109,.035);
+}
+html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar{
+  background:var(--member-sidebar);
+  border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .app-topbar{
+  background:rgba(249,251,255,.97);
+  border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .member-topbar-breadcrumb strong,
+html[data-theme="light"] .customer-workspace-shell .member-heading h1,
+html[data-theme="light"] .customer-workspace-shell .strategy-heading h1{
+  color:var(--member-text);
+}
+html[data-theme="light"] .customer-workspace-shell .member-brand-dot{color:#1769e9}
+html[data-theme="light"] .customer-workspace-shell .member-sidebar .brand-mark{
+  background:#e9f1ff;
+  border-color:#c5d8ff;
+  color:#1769e9;
+  box-shadow:none;
+}
+html[data-theme="light"] .customer-workspace-shell .member-sidebar .nav-label{color:#64748b}
+html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar .nav-link:not(.current){
+  color:#425573;
+}
+html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar .nav-link:hover{
+  background:#e9f1ff;color:#1455b8;
+}
+html[data-theme="light"] .customer-workspace-shell > .sidebar.member-sidebar .nav-link.current{
+  color:#1155b9;
+  background:#e5efff;
+  border-color:#cbdcff;
+}
+html[data-theme="light"] .customer-workspace-shell .nav-badge{
+  color:#0f4aa8;
+  background:#e5efff;
+}
+html[data-theme="light"] .customer-workspace-shell .member-plan-card{
+  background:linear-gradient(135deg,#eaf2ff,#eefaf6);
+  border-color:#d4e3f5;
+}
+html[data-theme="light"] .customer-workspace-shell .member-plan-card strong{color:#16253c}
+html[data-theme="light"] .customer-workspace-shell .member-plan-card .member-plan-link{color:#145cbf}
+html[data-theme="light"] .customer-workspace-shell .member-account-mark{background:#e4eeff;color:#1254b9}
+html[data-theme="light"] .customer-workspace-shell .strategy-tab-link{
+  background:#fff;color:#52647e;border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .strategy-tab-link.current{
+  color:#145cbf;background:#e9f2ff;border-color:#adc9f7;
+}
+
+/* Blue means "you can act": consistent buttons and keyboard focus across routes. */
+html[data-theme="light"] .customer-workspace-shell :is(.button.primary,.member-action-buttons .button.primary){
+  background:var(--member-action-blue);
+  color:#fff;
+  border:1px solid var(--member-action-blue);
+  border-radius:10px;
+  box-shadow:0 6px 14px rgba(23,105,233,.15);
+}
+html[data-theme="light"] .customer-workspace-shell :is(.button.primary,.member-action-buttons .button.primary):hover:not(:disabled){
+  background:var(--member-action-blue-hover);
+  border-color:var(--member-action-blue-hover);
+}
+html[data-theme="light"] .customer-workspace-shell :is(.button.primary,.member-action-buttons .button.primary):disabled{
+  opacity:.56;
+  cursor:not-allowed;
+}
+html[data-theme="light"] .customer-workspace-shell :is(.button,.adaptive-quick-links button,.nav-link,.adaptive-vix-summary,.quick-drawer>summary,.strategy-tab-link):focus-visible{
+  outline:3px solid #186ce6;
+  outline-offset:3px;
+}
+html[data-theme="light"] .customer-workspace-shell :is(.field input,.field select,.field textarea,.quick-drawer-content form input,.quick-drawer-content form select,.quick-drawer-content form textarea){
+  background:#ffffff;
+  color:#16253c;
+  border-color:#bacce2;
+}
+html[data-theme="light"] .customer-workspace-shell :is(.field input,.field select,.field textarea):focus-visible{
+  border-color:#1769e9;
+  outline:2px solid rgba(23,105,233,.32);
+  outline-offset:1px;
+}
+html[data-theme="light"] .customer-workspace-shell :is(input,textarea)::placeholder{color:#687a94}
+
+/* Dashboard remains calm. Verified positive and risky states get their
+   own pastel surfaces; ordinary cards stay white, not a rainbow of tiles. */
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .member-action-hero.is-clear{
+  background:linear-gradient(112deg,#e8f9f0,#eff7fd);
+  border-color:#c6e9d7;
+  box-shadow:none;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .member-action-hero.requires-review{
+  background:linear-gradient(112deg,#edf4ff,#f0f5ff);
+  border-color:#c5d9fa;
+  box-shadow:none;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .member-action-hero.has-data-issue{
+  background:linear-gradient(112deg,#fff4e7,#f9f5f3);
+  border-color:#f1d4ab;
+}
+html[data-theme="light"] .customer-workspace-shell .member-action-hero h2{color:#182941}
+html[data-theme="light"] .customer-workspace-shell .member-action-hero :is(p,.member-action-account strong,.member-trust strong){
+  color:#435771;
+}
+html[data-theme="light"] .customer-workspace-shell .member-action-kicker,
+html[data-theme="light"] .customer-workspace-shell .member-action-reason{
+  color:#225b67;
+}
+html[data-theme="light"] .customer-workspace-shell .member-action-buttons>span{
+  color:#52647e;
+}
+html[data-theme="light"] .customer-workspace-shell .member-orbit{
+  border-color:#c6dedc;
+  box-shadow:0 0 0 18px rgba(17,127,115,.035);
+}
+html[data-theme="light"] .customer-workspace-shell .member-orbit-inner,
+html[data-theme="light"] .customer-workspace-shell .member-orbit-inner span{color:#147f70}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .eyebrow,
+html[data-theme="light"] .customer-workspace-shell .member-section-heading .text-link,
+html[data-theme="light"] .customer-workspace-shell .member-upcoming-footer a{color:#145cbf}
+html[data-theme="light"] .customer-workspace-shell .member-metric{
+  background:#fff;border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .member-metric-top svg{color:#1769e9}
+html[data-theme="light"] .customer-workspace-shell .member-upcoming-icon{background:#e4f7ee;color:#087e68}
+html[data-theme="light"] .customer-workspace-shell .member-upcoming-icon.secondary{background:#e7f0ff;color:#1765ce}
+html[data-theme="light"] .customer-workspace-shell .member-upcoming-item span{color:#425e78}
+
+/* Strategy cards: subtle family accents are decorative, not a proxy for
+   real performance, action urgency or an unsupported current trade signal. */
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card,
+html[data-theme="light"] .customer-workspace-shell .member-add-strategy{
+  background:#fff;
+  border-color:var(--member-border);
+  box-shadow:0 5px 20px rgba(26,57,104,.04);
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card:hover{
+  border-color:#b4cdf2;
+  box-shadow:0 10px 27px rgba(26,57,104,.09);
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card{
+  border-top:3px solid #cde4ff;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card.kind-allocation{
+  border-top-color:#efd68b;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card.kind-momentum{
+  border-top-color:#adcaff;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card.kind-hybrid{
+  border-top-color:#d6c5f9;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .adaptive-strategy-card.kind-target{
+  border-top-color:#9edbcb;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-state{
+  display:inline-flex;align-items:center;justify-content:center;
+  border-radius:100px;
+  padding:6px 10px;
+  font-weight:760;
+  line-height:1.2;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-state.good{
+  color:#086749;background:#e1f7eb;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-state.attention{
+  color:#94520d;background:#fff0db;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-state.muted{
+  color:#435873;background:#eaf0f8;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-strategy-card[data-status="DATA_NEEDED"] .adaptive-state{
+  color:#405a81;background:#e9f0fc;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-strategy-card[data-status="AWAITING_CONFIRMATION"] .adaptive-state{
+  color:#94520d;background:#fff0db;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .status-light.healthy{
+  background:#118469;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .status-light.attention{
+  background:#bd7a24;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-strategy-card[data-status="DATA_NEEDED"] .status-light{
+  background:#567bae;
+}
+html[data-theme="light"] .customer-workspace-shell .member-dashboard .strategy-meta .pill{
+  border-color:#d7e3f1;color:#52647e;background:#f7faff;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-strategy-next{border-top-color:#e5edf6}
+html[data-theme="light"] .customer-workspace-shell .adaptive-strategy-value strong{color:#16253c}
+
+/* Chart readability: green = portfolio, blue = comparison, including the
+   expanded chart and small benchmark controls. No fixed value is implied. */
+html[data-theme="light"] .customer-workspace-shell .performance-chart,
+html[data-theme="light"] .customer-workspace-shell .member-journey .performance-chart{
+  --chart-actual:#109b80;
+  --chart-model:#1769e9;
+  --chart-comparison-1:#7e9abf;
+  --chart-comparison-2:#bf852e;
+  --chart-grid:rgba(67,95,132,.13);
+  --chart-axis:#52647e;
+  --chart-tooltip-bg:#fff;
+}
+html[data-theme="light"] .customer-workspace-shell .member-journey .timeframes{
+  background:#f1f5fc;border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .member-journey .timeframe.active{
+  background:#e1edff;color:#1453b6;
+}
+html[data-theme="light"] .customer-workspace-shell .member-chart-empty{
+  border-color:#c9d9ed;
+}
+html[data-theme="light"] .customer-workspace-shell .member-deep-dive .portfolio-positive{
+  color:#086749;
+}
+html[data-theme="light"] .customer-workspace-shell .member-deep-dive .portfolio-negative{
+  color:#b32942;
+}
+html[data-theme="light"] .customer-workspace-shell .member-deep-dive .leaderboard-row,
+html[data-theme="light"] .customer-workspace-shell .member-deep-dive .analytics-stats .kpi{
+  background:#f7faff;
+}
+
+/* Keep strategy detail features equally polished and legible. */
+html[data-theme="light"] .customer-workspace-shell .strategy-focus,
+html[data-theme="light"] .customer-workspace-shell .adaptive-context-panel{
+  border-color:var(--member-border);
+  background:#fff;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-quick-links button{
+  background:#fff;color:#16253c;border-color:var(--member-border);
+  box-shadow:0 4px 15px rgba(26,57,104,.04);
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-quick-links button:hover{
+  background:#f3f8ff;border-color:#aac9fb;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-quick-links button>svg:first-child{
+  color:#1769e9;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-context-tags>div{
+  background:#f7faff;border-color:#e1eaf4;
+}
+html[data-theme="light"] .customer-workspace-shell .quick-drawer-content,
+html[data-theme="light"] .customer-workspace-shell .drawer-section{
+  background:#f8faff;
+  border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-vix-panel{
+  background:#fff;border-color:var(--member-border);
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-vix-panel.fear{
+  border-color:#e9a4af;background:#fff9fa;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-vix-regime.fear{
+  color:#a31d31;background:#fee9ed;border-color:#edb2bb;
+}
+html[data-theme="light"] .customer-workspace-shell .adaptive-vix-regime:not(.fear){
+  color:#3b536f;background:#f3f7ff;
+}
+html[data-theme="light"] .customer-workspace-shell .portfolio-strategies-workspace{
+  --pf-surface:#ffffff;
+  --pf-surface-hover:#f4f8ff;
+  --pf-text:#16253c;
+  --pf-muted:#52647e;
+  --pf-soft:#596c85;
+  --pf-border:#dce5f1;
+  --pf-primary:#1769e9;
+}
+
+/* Keep status and charts legible on mobile and when user asks for less motion.
+   Responsive layout remains owned by the existing customer stylesheets. */
+@media (prefers-reduced-motion:reduce){
+  html[data-theme="light"] .customer-workspace-shell .adaptive-strategy-card,
+  html[data-theme="light"] .customer-workspace-shell .button.primary{transition:none}
+}
