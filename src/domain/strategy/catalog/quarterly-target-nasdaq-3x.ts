@@ -12,7 +12,7 @@ export const plugin:StrategyPlugin={
     key:"quarterly-target-nasdaq-3x",name:"Nasdaq-100 3x Quarterly Target",engine:"QUARTERLY_SIGNAL_TARGET",launchState:"DRAFT_REQUIRES_VERIFICATION",
     disclosure:LEVERAGE_DISCLOSURE,
     config:{
-      ruleVersion:"WEALTHARR_OWNER_2026_V1",variant:"SIG_9",
+      ruleVersion:"WEALTHARR_OWNER_2026_V2_SHEET105",variant:"SIG_9",
       targetExposure:"NASDAQ_100_3X_LONG",safeExposure:"US_AGGREGATE_BONDS",targetLeverage:"3",
       quarterlyGrowth:"0.09",initialTargetRatio:"0.60",contributionTargetRatio:"0.50",buyBudgetRatio:"0.90",withdrawalTargetRatio:"0.50",
       protection:{triggerRatio:"0.70",lookbackQuarters:8,skippedSells:2},
@@ -21,7 +21,7 @@ export const plugin:StrategyPlugin={
       reviewFrequency:"QUARTERLY",reviewSchedule:"CALENDAR_QUARTER_END",
       reviewTimezone:"America/New_York",reviewCutoffLocal:"16:00",businessDayConvention:"PREVIOUS"
     },
-    rules:"Wealtharr owner-selected quarterly target model: the nasdaq 100 3x long exposure is steered along a target line that grows 9% per quarter, funded from a US aggregate bond exposure. Starts 60/40. Sources and labelled assumptions are on the specification card.",
+    rules:"Wealtharr v2 spreadsheet v1.05-derived reset conventions (third sell, eight consecutive down quarters); owner-selected quarterly target model: the nasdaq 100 3x long exposure is steered along a target line that grows 9% per quarter, funded from a US aggregate bond exposure. Starts 60/40. Sources and labelled assumptions are on the specification card.",
     research:["https://jasonkelly.com/2017/01/how-my-signal-system-works/","https://jasonkelly.com/resources/strategies/"],
     risks:["Daily-reset leverage: returns over longer periods can differ sharply from the stated multiple","The risk exposure can fall a great deal, and the bond fund can fall at the same time","Orders are only proposed: you place them with your own broker within the act window","Fund fees, tracking differences and availability depend on the listed products verified for your account type"]
   },
