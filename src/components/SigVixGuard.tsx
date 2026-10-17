@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useMemo,useState} from "react";
+import {useEffect,useMemo,useRef,useState} from "react";
 import {classifySheet107Vix,sheet107HalfRiskPositions,sheet107VixChoices,type HeldRiskLine,type VixChoice} from "@/domain/strategy/sig-sheet-107";
 
 type Observation={available:boolean;value?:string;closeDate?:string;source?:string;reason?:string};
@@ -16,6 +16,7 @@ export function SigVixGuard({id,riskLines,riskHoldingsComplete}:{id:string;riskL
   const [usingScenario,setUsingScenario]=useState(false);
   const [busy,setBusy]=useState(false);
   const [choice,setChoice]=useState<VixChoice>("DO_NOTHING");
+  const vixDisclosure=useRef<HTMLDetailsElement>(null);
   // Load a completed-close indicator on entry; a red warning is displayed
   // automatically when a rights-cleared feed exists. Never place any order.
   useEffect(()=>{
@@ -39,7 +40,13 @@ export function SigVixGuard({id,riskLines,riskHoldingsComplete}:{id:string;riskL
     catch{return {lines:[],error:"Your holdings need reconciliation before a half-position can be calculated."};}
   },[riskLines]);
   const verifiedFear=!usingScenario&&observation?.available===true&&regime==="FEAR";
-  return <details className={"glass adaptive-vix-panel "+(verifiedFear?"fear":"")} aria-label="Optional VIX risk overlay">
+  // An authenticated completed-close Fear observation is the one condition
+  // that brings this optional panel to the user's attention automatically.
+  // A manually entered what-if value must never auto-open a live risk alert.
+  useEffect(()=>{
+    if(verifiedFear&&vixDisclosure.current)vixDisclosure.current.open=true;
+  },[verifiedFear]);
+  return <details ref={vixDisclosure} className={"glass adaptive-vix-panel "+(verifiedFear?"fear":"")} aria-label="Optional VIX risk overlay">
     <summary className="adaptive-vix-summary">
       <span className="adaptive-vix-name"><strong>VIX risk indicator</strong><small>Optional · no automatic trades</small></span>
       <span className={"adaptive-vix-regime "+(verifiedFear?"fear":"")}>
