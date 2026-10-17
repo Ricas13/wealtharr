@@ -57,10 +57,26 @@ describe("public strategy performance evidence",()=>{
     expect(validatedObservations([{date:"2025-10-15",value:"-1"}])).toEqual([]);
     expect(validatedObservations([{date:"2025-02-30",value:"100"}])).toEqual([]);
   });
+  it("allows SPY-only charts when no strategy is selected",()=>{
+    const rows=chartRows([],spy,"1Y","2026-10-17");
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toMatchObject({date:"2025-10-15",SPY:100});
+    expect(rows.at(-1)).toMatchObject({date:"2026-10-15",SPY:120});
+  });
+  it("supports exactly ten calendar years when verified data covers the horizon",()=>{
+    const tenYear=[{date:"2016-10-15",value:"100"},{date:"2021-10-15",value:"130"},{date:"2026-10-15",value:"210"}];
+    expect(alignedWindow(tenYear,tenYear,"10Y","2026-10-17")?.model.percent).toBeCloseTo(110,6);
+    expect(chartRows([{key:"historic",points:tenYear}],tenYear,"10Y","2026-10-17")).toHaveLength(3);
+    expect(alignedWindow(model,spy,"10Y","2026-10-17")).toBeNull();
+  });
   it("requires selected strategies to overlap on precise dates with SPY",()=>{
     const other=[{date:"2025-10-15",value:"100"},{date:"2026-10-15",value:"80"}];
     const rows=chartRows([{key:"a",points:model},{key:"b",points:other}],spy,"1Y","2026-10-17");
-    expect(rows).toHaveLength(2);
+    // Intermediate SPY closes are preserved, with model values only on
+    // actual recorded observation dates. No invented daily model prices.
+    expect(rows).toHaveLength(5);
+    expect(rows[1]).toMatchObject({date:"2026-01-15",SPY:105,a:110});
+    expect(rows[1]).not.toHaveProperty("b");
     expect(rows[0]).toMatchObject({a:100,b:100,SPY:100});
     expect(rows.at(-1)).toMatchObject({a:140,b:80,SPY:120});
     expect(chartRows([{key:"a",points:model},{key:"b",points:[{date:"2026-09-01",value:"100"},{date:"2026-09-02",value:"101"}]}],spy,"ALL","2026-10-17")).toEqual([]);
