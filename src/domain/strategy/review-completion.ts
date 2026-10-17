@@ -19,8 +19,12 @@ export function postActionReviewState(
     const contributions=proposed.nextState.reviewContributionsSnapshot;
     // In-review markers of the quarterly signal family (sigReview*) persist until the review closes.
     const sigReview=Object.fromEntries(Object.entries(proposed.nextState).filter(([k])=>k.startsWith("sigReview")));
+    // Spreadsheet v1.05 V2 counters must survive confirmed multi-leg trades.
+    // They are calculated ONCE at the opening of a new quarterly review, then
+    // carried unchanged while selling shares / moving proceeds into bonds.
+    const sigSheet105=Object.fromEntries(Object.entries(proposed.nextState).filter(([k])=>k.startsWith("sigSheet105")));
     return {...current,
-      ...sigReview,
+      ...sigReview,...sigSheet105,
       ...(target!=null?{reviewTargetValue:target}:{}),
       ...(contributions!=null?{reviewContributionsSnapshot:contributions}:{}),
       forceReview:true};
