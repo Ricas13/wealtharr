@@ -10,7 +10,7 @@ const CHOICES:ReadonlyArray<{value:VixChoice;label:string}>= [
   {value:"SELL_HALF",label:"Preview selling half of held risk shares"}
 ];
 
-export function SigVixGuard({id,riskLines}:{id:string;riskLines:HeldRiskLine[]}){
+export function SigVixGuard({id,riskLines,riskHoldingsComplete}:{id:string;riskLines:HeldRiskLine[];riskHoldingsComplete:boolean}){
   const [observation,setObservation]=useState<Observation|null>(null);
   const [scenarioValue,setScenarioValue]=useState("");
   const [usingScenario,setUsingScenario]=useState(false);
@@ -64,7 +64,7 @@ export function SigVixGuard({id,riskLines}:{id:string;riskLines:HeldRiskLine[]})
     </div>
     {regime==="FEAR"&&choice==="SELL_HALF"&&<div className="stack">
       <strong>Half-position scenario (not a trade)</strong>
-      {half.error?<p className="attention-message">{half.error}</p>:!half.lines.length?
+      {!riskHoldingsComplete?<p className="attention-message">Some held instruments do not have a unique current trading line. Resolve the mapping before sizing a half-position.</p>:half.error?<p className="attention-message">{half.error}</p>:!half.lines.length?
         <p className="help">No uniquely identified risk positions with positive broker-recorded shares were found. Reconcile your holdings first.</p>:
         half.lines.map(line=><div className="why-row" key={line.accountId+"|"+line.instrumentId}>
           <span>{line.ticker} · {line.exchange} · account {line.accountId.slice(0,8)}</span>
