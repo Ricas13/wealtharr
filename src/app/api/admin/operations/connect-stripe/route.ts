@@ -59,8 +59,8 @@ export async function POST(request:Request){
      const endpoint=matching[0];
      const originalEvents=endpoint.enabled_events;
      // Keep any operator-defined event types; '*' already covers everything.
-     const desired=originalEvents.includes("*")?originalEvents:
-       [...new Set([...originalEvents,...SUBSCRIPTION_EVENTS])];
+     const desired:typeof originalEvents=originalEvents.includes("*")?originalEvents:
+       [...new Set([...originalEvents,...SUBSCRIPTION_EVENTS])] as typeof originalEvents;
      const changed=desired.length!==originalEvents.length;
      if(changed)await stripe.webhookEndpoints.update(endpoint.id,{enabled_events:desired});
      await sql.unsafe(
