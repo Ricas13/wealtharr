@@ -21,6 +21,8 @@ import { BrokerTradeForm } from "@/components/BrokerTradeForm";
 import {StrategyTrading212Connection} from "@/components/StrategyTrading212Connection";
 import {StrategyBrokerEvidence} from "@/components/StrategyBrokerEvidence";
 import {SigVixGuard} from "@/components/SigVixGuard";
+import {StrategyQuickLinks} from "@/components/StrategyQuickLinks";
+import {strategyDashboardView,strategyDashboardContext} from "@/domain/strategy/customer-dashboard-view";
 import type {HeldRiskLine} from "@/domain/strategy/sig-sheet-107";
 import { ManualPriceForm } from "@/components/ManualPriceForm";
 import { actionRecoveryGuidance, plainEnglishActionReason } from "@/domain/action-copy";
@@ -277,6 +279,13 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
   const plainReason=action?plainEnglishActionReason({actionType:String(action.action_type),instruction:String(action.instruction??"")}):null;
   const recovery=action?actionRecoveryGuidance({actionType:String(action.action_type),instruction:String(action.instruction??"")}):null;
   const ruleRows=strategyRuleRows(String(s.engine),(s.config??{}) as Record<string,unknown>);
+  const contextual=strategyDashboardContext(String(s.engine),(s.config??{}) as Record<string,unknown>);
+  const dashboardState=strategyDashboardView({
+    status:String(s.status),healthStatus:String(s.health_status),
+    actionType:action?.action_type?String(action.action_type):null,
+    actionStatus:action?.status?String(action.status):null,
+    actionStale:storedAction!=null&&action?.action_type===STALE_ACTION_DISPLAY.action_type
+  });
   let firstAllocation:ReturnType<typeof initialAllocationPlan>=null;
   if(String(s.onboarding_mode)==="START_NEW"&&accountOptions.length===1&&isActive){
     const cashRows=await sql.unsafe("SELECT COALESCE(sum(l.cash_amount-l.fee_amount),0) AS cash, "+
@@ -323,16 +332,16 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
   const canSeeTechnicalConfig=user.role==="ADMIN"||!Boolean(s.proprietary);
 
   return <>
-    <Link href="/app/strategies" className="back-link"><ArrowLeft size={14}/>Portfolio</Link>
+    <Link href="/app" className="back-link"><ArrowLeft size={14}/>My dashboard</Link>
 
-    <div className="strategy-heading">
+    <div className="strategy-heading adaptive-strategy-heading">
       <div>
-        <div className="eyebrow">{s.strategy_name} · v{s.version}</div>
+        <div className="eyebrow">{s.strategy_name} · v{s.version} · {contextual.label}</div>
         <h1>{s.name}</h1>
-        <p>{s.description}</p>
+        <p>{contextual.detail}</p>
       </div>
       <div className="strategy-heading-actions">
-        <span className={"pill "+(isHealthy?"good":"warn")}>{isHealthy?"On track":"Needs attention"}</span>
+        <span className={"pill "+(dashboardState.tone==="good"?"good":"warn")}>{dashboardState.label}</span>
         {isActive&&<RecalculateButton id={id}/>}
       </div>
     </div>
@@ -353,14 +362,14 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         <p className="help">If this strategy already spans another account, link it now and then enter that account’s current holdings too.</p>
         <AddLinkedAccountForm id={id} currency={String(s.currency)} wrappers={supportedWrappers}/>
       </details>}
-    </section>:<section className={"glass strategy-focus "+(isHealthy?"healthy":"attention")}>
+    </section>:<section id="your-next-action" className={"glass strategy-focus adaptive-strategy-focus "+(dashboardState.tone==="good"?"healthy":"attention")}>
       <div className="strategy-focus-main">
         <div className="focus-topline">
-          <span className="soft-label">{isActive?"Your rule-based calculation":"Strategy status"}</span>
+          <span className="soft-label">{dashboardState.label} · {isActive?"Next step":"Strategy status"}</span>
           {action?.confidence&&<span className={"pill "+(action.confidence==="HIGH"?"good":"warn")}>{action.confidence} confidence</span>}
         </div>
-        <h2>{actionReady?action.title:isActive?"Nothing to do right now.":"Strategy "+String(s.status).toLowerCase()}</h2>
-        <p>{actionReady?action.instruction:isActive?"We will show your next action here as soon as the strategy needs you.":"Resume this strategy when you want new actions to be calculated."}</p>
+        <h2>{actionReady&&action.action_type!=="NO_ACTION"?action.title:dashboardState.headline}</h2>
+        <p>{actionReady&&action.action_type!=="NO_ACTION"?action.instruction:dashboardState.description}</p>
         {actionReady&&<p className="help"><strong>Research calculation only — not personal financial advice.</strong> Verify prices, account eligibility and the methodology before deciding whether to trade. <Link href="/research-disclaimer">Read the risks and limitations.</Link></p>}
         {actionReady&&accountOptions.length>1&&action.account_name&&<div className="action-account-hint"><WalletCards size={14}/><span>Use <strong>{String(action.account_name)}</strong>{action.account_wrapper?" · "+String(action.account_wrapper):""}</span></div>}
         {actionReady&&plainReason&&<div className="plain-reason"><Sparkles size={14}/><span>{plainReason}</span></div>}
@@ -397,19 +406,34 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
       {recovery&&<a className="button compact" href={recovery.href}>{recovery.label}<ArrowRight size={14}/></a>}
     </div>}
 
+    <StrategyQuickLinks/>
+    <section className="glass adaptive-context-panel" aria-label="Strategy-specific information">
+      <div className="eyebrow">{contextual.label}</div>
+      <h2>What this strategy follows</h2>
+      <p>{contextual.detail}</p>
+      <div className="adaptive-context-tags">
+        {ruleRows.slice(0,String(s.engine)==="FIXED_ALLOCATION"?5:3).map((row)=><div key={row.label}>
+          <span>{row.label}</span><strong>{row.value}</strong>
+        </div>)}
+      </div>
+      <p className="help">These are published target settings for this version, not independently verified current portfolio weights or trades. Current signals appear in the action area only after market and account checks.</p>
+    </section>
     {isSig107&&<SigVixGuard id={id} riskLines={riskHoldingsComplete?riskLines:[]}
       riskHoldingsComplete={riskHoldingsComplete}/>}
     {hasVersionUpdate&&<div id="strategy-update"><StrategyVersionUpgrade id={id} currentVersion={String(s.version)} targetVersionId={String(s.latest_version_id)} targetVersion={String(s.latest_version)} releaseNotes={s.latest_release_notes?String(s.latest_release_notes):null} upgradePolicy={String(s.latest_upgrade_policy??"OPTIONAL")} inputSchema={Array.isArray(s.latest_input_schema)?s.latest_input_schema:[]} currentSettings={(s.settings??{}) as Record<string,unknown>} currentConfig={(s.config??{}) as Record<string,unknown>} targetConfig={(s.latest_config??{}) as Record<string,unknown>}/></div>}
 
-    <section className="glass workspace-analytics" aria-label="Strategy performance comparison">
+    <section className="glass workspace-analytics adaptive-performance" aria-label="Strategy performance comparison">
       <div className="section-head"><div><div className="eyebrow">Your investment performance</div><h2>Progress and benchmarks</h2>
         <p>Measured since the first recorded portfolio value. Contributions and withdrawals are not counted as profit.</p></div></div>
-      <div className="analytics-stats">
+      <details className="adaptive-metric-details">
+        <summary>Performance breakdown &amp; risk metrics <ChevronRight size={15}/></summary>
+        <div className="analytics-stats">
         <div className="kpi"><span>Profit / loss since tracking began</span><strong>{trackSummary?formatMoney(Number(trackSummary.profitSinceStart),String(s.currency),{signed:true}):"—"}</strong></div>
         <div className="kpi"><span>Flow-adjusted return (estimate)</span><strong>{signedPct(trackSummary?.flowAdjustedReturnPct)}</strong></div>
         <div className="kpi"><span>Observed maximum drawdown</span><strong>{signedPct(trackSummary?.observedMaxDrawdownPct)}</strong></div>
         <div className="kpi"><span>Last observed session P/L</span><strong>{trackSummary?.lastObservedSessionPnl!=null?formatMoney(Number(trackSummary.lastObservedSessionPnl),String(s.currency),{signed:true}):"—"}</strong></div>
-      </div>
+        </div>
+      </details>
       {performanceOverview.length>=2?<div className="chart-card">
         <PerformanceChart data={performanceOverview} comparisons={benchmark.comparisons} indexed fullControls actualLabel={String(s.strategy_name)}/>
         {benchmark.missing.length>0&&<p className="help comparison-warning">VTI / SPY / QQQ still missing verified, same-currency total-return history for: {benchmark.missing.join(", ")}. Unavailable benchmarks are not estimated.</p>}
@@ -433,7 +457,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
     </section>}
 
     <div className="strategy-shortcuts">
-      <details className="glass quick-drawer" id="portfolio-update">
+      <details className="glass quick-drawer" id="portfolio-update" tabIndex={-1}>
         <summary><span><WalletCards size={18}/>Update portfolio</span><ChevronRight size={16}/></summary>
         <div className="quick-drawer-content">
           <div className="detail-grid">
@@ -452,7 +476,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         </div>
       </details>
 
-      <details className="glass quick-drawer">
+      <details className="glass quick-drawer" id="strategy-history" tabIndex={-1}>
         <summary><span><BarChart3 size={18}/>Explore performance & history</span><ChevronRight size={16}/></summary>
         <div className="quick-drawer-content">
           <section className="chart-card explore-chart">
@@ -479,7 +503,7 @@ export default async function StrategyPage({params}:{params:Promise<{id:string}>
         </div>
       </details>}
 
-      <details className="glass quick-drawer">
+      <details className="glass quick-drawer" id="strategy-settings" tabIndex={-1}>
         <summary><span><CalendarClock size={18}/>Strategy settings & rules</span><ChevronRight size={16}/></summary>
         <div className="quick-drawer-content">
           <div className="detail-grid">
