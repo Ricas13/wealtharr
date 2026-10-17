@@ -247,6 +247,22 @@ describe.skipIf(!url)("subscription payment lifecycle",()=>{
     expect(await row()).toMatchObject({slug:before.slug,status:before.status});
   });
 
+  it("rejects conflicting legacy and current Stripe price mappings without changing entitlements",async()=>{
+    const previous=(await sql!.unsafe("SELECT stripe_monthly_price_id FROM plans WHERE slug='pro'"))[0].stripe_monthly_price_id;
+    const before=await row();
+    await sql!.unsafe("UPDATE plans SET stripe_monthly_price_id=$1 WHERE slug='pro'",[PRICES.investorMonthly]);
+    try{
+      const result=await deliver("customer.subscription.updated",subscription("sub_lc_b_"+run,userId,{price:PRICES.investorMonthly}));
+      expect(result).toMatchObject({status:500,errorCode:"AMBIGUOUS_STRIPE_PRICE"});
+      expect(await row()).toMatchObject({
+        slug:before.slug,status:before.status,
+        cadence:before.cadence,stripe_subscription_id:before.stripe_subscription_id
+      });
+    }finally{
+      await sql!.unsafe("UPDATE plans SET stripe_monthly_price_id=$1 WHERE slug='pro'",[previous]);
+    }
+  });
+
   it("never assigns an entitlement from one item of an ambiguous or unsupported Stripe subscription",async()=>{
     const subB="sub_lc_b_"+run;
     const before=await row();
