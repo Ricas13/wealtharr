@@ -42,6 +42,12 @@
 }
 .customer-workspace-shell .member-dashboard .adaptive-strategy-card .strategy-meta{padding-top:13px}
 .customer-workspace-shell .member-dashboard .member-strategies{margin:26px 0 28px}
+.customer-workspace-shell .member-dashboard .member-action-hero.has-data-issue{
+  border-color:#806c45;background:linear-gradient(115deg,#29291f,#1d292b);
+}
+.customer-workspace-shell .member-dashboard .member-action-hero.has-data-issue .member-action-dot{
+  background:var(--member-amber);
+}
 .customer-workspace-shell .member-dashboard .member-action-hero{
   min-height:190px;grid-template-columns:minmax(0,1fr) 150px;padding:24px 28px
 }
