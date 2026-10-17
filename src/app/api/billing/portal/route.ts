@@ -47,8 +47,21 @@ export async function POST(request:Request){
     if(!verified)return Response.json({error:"Stripe billing ownership could not be verified."},
       {status:409,headers:noStore});
 
+    // Canonicalise the return origin exactly as checkout does. Never put
+    // credentials, a fragment, query, or an alternate path into Stripe redirects.
+    let returnUrl:string;
+    try{
+      const origin=new URL(process.env.NEXT_PUBLIC_APP_URL);
+      if(origin.protocol!=="https:"&&process.env.NODE_ENV==="production")throw new Error("INVALID_PORTAL_ORIGIN");
+      if(origin.username||origin.password||origin.search||origin.hash||origin.pathname!=="/")
+        throw new Error("INVALID_PORTAL_ORIGIN");
+      returnUrl=origin.origin+"/app/settings";
+    }catch{
+      return Response.json({error:"The billing portal return address is not configured correctly."},
+        {status:503,headers:noStore});
+    }
     const session=await stripe.billingPortal.sessions.create({
-      customer:localCustomerId,return_url:process.env.NEXT_PUBLIC_APP_URL+"/app/settings"
+      customer:localCustomerId,return_url:returnUrl
     });
     if(!session.url||new URL(session.url).protocol!=="https:")
       return Response.json({error:"Stripe returned an invalid billing portal address."},
