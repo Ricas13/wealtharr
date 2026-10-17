@@ -12,7 +12,7 @@ describe("Admin Stripe connector invariants",()=>{
   expect(source).toContain("endpoint.url===target.href");
   expect(source).toContain("matching.length>1");
   expect(source).toContain("if(!process.env.STRIPE_WEBHOOK_SECRET?.startsWith");
-  expect(source).toContain("stripe.webhookEndpoints.update(endpoint.id,{enabled_events:desired as Parameters");
+  expect(source).toContain("stripe.webhookEndpoints.update(endpoint.id,{enabled_events:desired as NonNullable<Parameters");
   expect(source).toContain("new Set([...originalEvents,...SUBSCRIPTION_EVENTS])");
   expect(source).toContain("originalEvents.includes");
   expect(source).toContain("existing:true");
