@@ -24,6 +24,7 @@ const complete:Record<string,string>={
  ADMIN_MFA_REQUIRED:"true",
  BACKUPS_RESTORE_VERIFIED:"true",
  UK_REGULATORY_SIGNOFF_VERIFIED:"true",
+ LEGAL_PUBLIC_PAGES_VERIFIED:"true",
  REGIONAL_INSTRUMENTS_VERIFIED:"true"
 };
 describe("public paid Offer preflight",()=>{
@@ -33,6 +34,7 @@ describe("public paid Offer preflight",()=>{
   expect(canAdvertisePaidOffer({...complete,STRIPE_SECRET_KEY:""})).toBe(false);
   expect(canAdvertisePaidOffer({...complete,UK_REGULATORY_SIGNOFF_VERIFIED:"false"})).toBe(false);
   expect(canAdvertisePaidOffer({...complete,MARKET_DATA_PROVIDER:"yahoo"})).toBe(false);
+  expect(canAdvertisePaidOffer({...complete,LEGAL_PUBLIC_PAGES_VERIFIED:"false"})).toBe(false);
  });
  it("only passes when all current launch configuration gates pass",()=>{
   expect(checkCommercialLaunch(complete).filter(x=>!x.passed)).toEqual([]);

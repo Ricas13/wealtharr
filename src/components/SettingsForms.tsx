@@ -43,6 +43,7 @@ export function BillingButtons({
   const[currency,setCurrency]=useState(currencies.includes(defaultCurrency)?defaultCurrency:(currencies[0]??defaultCurrency));
   const[busy,setBusy]=useState("");
   const[error,setError]=useState("");
+  const[recurringBillingAcknowledged,setRecurringBillingAcknowledged]=useState(false);
 
   async function redirectTo(path:string,body:unknown,busyKey:string,fallbackError:string){
     setBusy(busyKey);setError("");
@@ -56,7 +57,11 @@ export function BillingButtons({
     }
   }
   function checkout(planSlug:string,cadence:"monthly"|"annual"){
-    return redirectTo("/api/billing/checkout",{planSlug,cadence,currency},planSlug+cadence,"Could not open checkout. Please try again.");
+    if(!recurringBillingAcknowledged){
+      setError("Confirm the recurring subscription details before checkout.");
+      return;
+    }
+    return redirectTo("/api/billing/checkout",{planSlug,cadence,currency,recurringBillingAcknowledged},planSlug+cadence,"Could not open checkout. Please try again.");
   }
   function portal(){
     return redirectTo("/api/billing/portal",undefined,"portal","Could not open the billing portal. Please try again.");
@@ -91,11 +96,22 @@ export function BillingButtons({
           <strong>{plan.monthly?invoiceAmountMinor(plan.monthly.amountMinor,currency)+"/mo":"Paid plan"}</strong>
           <p>{limit}{channels.length?" · "+channels.map((channel)=>channel[0]+channel.slice(1).toLowerCase()).join(" + ")+" alerts":""}</p>
           <div className="billing-plan-actions">
-            {plan.monthly&&<button className="button primary" disabled={Boolean(busy)} onClick={()=>checkout(slug,"monthly")}>{busy===slug+"monthly"?"Opening…":"Choose monthly"}</button>}
-            {plan.annual&&<button className="button" disabled={Boolean(busy)} onClick={()=>checkout(slug,"annual")}>{busy===slug+"annual"?"Opening…":"Annual · "+invoiceAmountMinor(plan.annual.amountMinor,currency)}</button>}
+            {plan.monthly&&<button className="button primary" disabled={Boolean(busy)||!recurringBillingAcknowledged} onClick={()=>checkout(slug,"monthly")}>{busy===slug+"monthly"?"Opening…":"Choose monthly"}</button>}
+            {plan.annual&&<button className="button" disabled={Boolean(busy)||!recurringBillingAcknowledged} onClick={()=>checkout(slug,"annual")}>{busy===slug+"annual"?"Opening…":"Annual · "+invoiceAmountMinor(plan.annual.amountMinor,currency)}</button>}
           </div>
         </div>;
       })}
+    </div>
+    <div className="billing-impact-note">
+      <label htmlFor="recurring-billing-acknowledgement">
+        <input id="recurring-billing-acknowledgement" type="checkbox"
+          checked={recurringBillingAcknowledged}
+          onChange={e=>setRecurringBillingAcknowledged(e.target.checked)}/>
+        {" "}I understand that my selected monthly or annual plan renews automatically at the displayed price until I cancel.
+        I can manage or cancel future renewals from the billing portal in Settings.
+        I have read the <a href="/faq">billing FAQ</a> and <a href="/research-disclaimer">investment risk disclosure</a>.
+      </label>
+      <p className="help">Cancel before your next renewal to avoid the next charge. Cancelling a renewal does not automatically refund a payment already made. Your statutory rights remain unaffected.</p>
     </div>
     {currentPlanSlug==="free"&&<p className="help">Your Free plan keeps working if you do nothing. Upgrading only changes the limits and features available to your account. Nothing changes until checkout completes successfully.</p>}
     {error&&<div className="error">{error}</div>}

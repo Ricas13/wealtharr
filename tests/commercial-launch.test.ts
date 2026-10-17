@@ -7,7 +7,7 @@ const baseline={
  CRON_SECRET:"c".repeat(40),STRIPE_SECRET_KEY:"sk_live_"+"d".repeat(30),STRIPE_WEBHOOK_SECRET:"whsec_"+"e".repeat(30),
  EMAIL_PROVIDER:"http",EMAIL_HTTP_ENDPOINT:"https://email.example.org",EMAIL_HTTP_TOKEN:"f".repeat(20),EMAIL_FROM:"support@invest.example.org",
  MARKET_DATA_PROVIDER:"http",MARKET_DATA_HTTP_BASE_URL:"https://quotes.example.org",MARKET_DATA_HTTP_TOKEN:"g".repeat(20),
- BACKUPS_RESTORE_VERIFIED:"true",UK_REGULATORY_SIGNOFF_VERIFIED:"true",REGIONAL_INSTRUMENTS_VERIFIED:"true",ADMIN_MFA_REQUIRED:"true",
+ BACKUPS_RESTORE_VERIFIED:"true",UK_REGULATORY_SIGNOFF_VERIFIED:"true",LEGAL_PUBLIC_PAGES_VERIFIED:"true",REGIONAL_INSTRUMENTS_VERIFIED:"true",ADMIN_MFA_REQUIRED:"true",
  TURNSTILE_ENABLED:"true",TURNSTILE_SITE_KEY:"s".repeat(25),TURNSTILE_SECRET_KEY:"t".repeat(36)
 };
 describe("commercial launch preflight",()=>{
@@ -30,6 +30,10 @@ describe("commercial launch preflight",()=>{
  it("blocks unverified legal, backup and instrument attestations",()=>{
   const r=checkCommercialLaunch({...baseline,UK_REGULATORY_SIGNOFF_VERIFIED:"false",BACKUPS_RESTORE_VERIFIED:"false",REGIONAL_INSTRUMENTS_VERIFIED:"false"});
   expect(r.filter(x=>!x.passed).map(x=>x.key)).toEqual(["backup_operator_attestation","regulatory_signoff","instrument_review"]);
+ });
+ it("requires published and reviewed legal pages before taking real payments",()=>{
+   const blockers=checkCommercialLaunch({...baseline,LEGAL_PUBLIC_PAGES_VERIFIED:"false"});
+   expect(blockers.find(check=>check.key==="legal_public_pages")?.passed).toBe(false);
  });
  it("blocks live commercial checkout for disabled or dummy Turnstile credentials",()=>{
   const missing=checkCommercialLaunch({...baseline,TURNSTILE_ENABLED:"false"});

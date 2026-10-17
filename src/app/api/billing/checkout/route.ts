@@ -14,6 +14,8 @@ import { isSinglePeriodPrice } from "@/domain/billing-price";
 const schema = z.object({
   planSlug: z.string().regex(/^[a-z][a-z0-9-]{0,59}$/).refine(slug=>slug!=="free"),
   cadence: z.enum(["monthly", "annual"]),
+  // Consent must be explicit for each checkout initiation, not assumed by a CTA.
+  recurringBillingAcknowledged: z.literal(true),
   currency: z.string().length(3).optional()
 });
 
@@ -152,7 +154,7 @@ export async function POST(request: Request) {
     return Response.json({ url: session.url });
   } catch(error){const denied=authFailure(error);if(denied)return denied;
     if (error instanceof z.ZodError) {
-      return Response.json({ error: "Choose a valid plan, billing cycle and currency." }, { status: 400 });
+      return Response.json({ error: "Select a valid plan and confirm the recurring subscription terms." }, { status: 400 });
     }
     return Response.json({ error: "Could not start checkout." }, { status: 500 });
   }

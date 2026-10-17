@@ -36,6 +36,14 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   expect(source).toContain("newAccountIsInvited(user.email,process.env)");
   expect(source).toContain("Paid beta subscriptions are invitation-only.");
  });
+ it("requires explicit recurring payment consent in the checkout API and the client",()=>{
+  expect(source).toContain("recurringBillingAcknowledged: z.literal(true)");
+  const client=readFileSync("src/components/SettingsForms.tsx","utf8");
+  expect(client).toContain("recurringBillingAcknowledged");
+  expect(client).toContain("renews automatically");
+  expect(client).toContain('type="checkbox"');
+  expect(client).toContain("!recurringBillingAcknowledged");
+ });
  it("billing does not rely on an unrelated manual strategy-signoff flag",()=>{
   expect(source).not.toContain("unattestedCustomerStrategies()");
   expect(source).toContain("paidCheckoutBlockers(process.env)");
