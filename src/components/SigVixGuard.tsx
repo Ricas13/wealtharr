@@ -1,5 +1,5 @@
 "use client";
-import {useMemo,useState} from "react";
+import {useEffect,useMemo,useState} from "react";
 import {classifySheet107Vix,sheet107HalfRiskPositions,sheet107VixChoices,type HeldRiskLine,type VixChoice} from "@/domain/strategy/sig-sheet-107";
 
 type Observation={available:boolean;value?:string;closeDate?:string;source?:string;reason?:string};
@@ -16,6 +16,18 @@ export function SigVixGuard({id,riskLines,riskHoldingsComplete}:{id:string;riskL
   const [usingScenario,setUsingScenario]=useState(false);
   const [busy,setBusy]=useState(false);
   const [choice,setChoice]=useState<VixChoice>("DO_NOTHING");
+  // Load a completed-close indicator on entry; a red warning is displayed
+  // automatically when a rights-cleared feed exists. Never place any order.
+  useEffect(()=>{
+    let active=true;
+    void fetch("/api/strategies/"+id+"/vix",{cache:"no-store"})
+      .then(async response=>{
+        const body=await response.json().catch(()=>({}));
+        return response.ok?body:{available:false,reason:body.error??"VIX feed unavailable."};
+      }).then(body=>{if(active)setObservation(body);})
+      .catch(()=>{if(active)setObservation({available:false,reason:"VIX feed unavailable."});});
+    return ()=>{active=false;};
+  },[id]);
   const value=usingScenario?scenarioValue:observation?.available?observation.value??"":"";
   const regime=useMemo(()=>{
     if(!value)return null;
