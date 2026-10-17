@@ -17,6 +17,11 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   expect(source).toContain("stripe.prices.retrieve");
   expect(source).toContain("stripePrice.unit_amount!==Number(price.amount_minor)");
  });
+ it("fails closed when Stripe subscription history is paginated",()=>{
+  expect(source).toContain("existing.has_more");
+  expect(source).toContain('status: "all", limit: 100');
+  expect(source).toContain("hasLiveStripeSubscription(existing.data.map");
+ });
  it("billing does not rely on an unrelated manual strategy-signoff flag",()=>{
   expect(source).not.toContain("unattestedCustomerStrategies()");
   expect(source).toContain("paidCheckoutBlockers(process.env)");
