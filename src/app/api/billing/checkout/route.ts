@@ -91,7 +91,12 @@ export async function POST(request: Request) {
       [user.id]
     );
     const local = subRows[0];
-    if (local && String(local.source ?? "STRIPE") !== "STRIPE" && !isTerminalLocalStatus(local.status)) {
+    // No canonical local subscription means Stripe cannot safely attribute a
+    // future signed webhook to this user. Do not take a payment first.
+    if (!local) {
+      return Response.json({ error: "Billing account needs repair before checkout." }, { status: 503 });
+    }
+    if (String(local.source ?? "STRIPE") !== "STRIPE" && !isTerminalLocalStatus(local.status)) {
       return Response.json({ error: "Your subscription is billed through the " + (local.source === "APPLE" ? "App Store" : "Google Play") + ". Manage or change it there." }, { status: 409 });
     }
     if (local?.stripe_subscription_id && !isTerminalLocalStatus(local.status)) {
