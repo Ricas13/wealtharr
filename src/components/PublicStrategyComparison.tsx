@@ -157,7 +157,7 @@ export function PublicStrategyComparison({entries,spy,asOf,spySource}:Props){
       <div className="wm-compare-chart-heading">
         <div><span className="wm-compare-eyebrow">HISTORICAL PERFORMANCE</span><h3>One chart. Your selected strategies.</h3>
           <p>{period==="ALL"?"All available comparable history":period+" return window"} · rebased to 100 at the same date</p></div>
-        <div className="wm-compare-legend" aria-label="Selected chart lines">
+        <div className="wm-compare-legend" role="group" aria-label="Selected chart lines">
           {showSpy&&spy.length>1&&<button type="button" className="wm-compare-legend-item" onClick={()=>setShowSpy(false)}
             aria-label="Hide SPY buy and hold on chart"><i style={{background:"#8fa6c8"}}/>SPY (Buy &amp; Hold) <span aria-hidden="true">×</span></button>}
           {active.map(entry=><button key={entry.key} type="button" className="wm-compare-legend-item"
