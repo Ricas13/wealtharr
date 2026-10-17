@@ -36,10 +36,10 @@ async function main(){
     // owner's 2026-10-16 rules (daily-close spike, 6% two skips, withdrawals lower the line) as a NEW
     // immutable v1.1; existing instances stay pinned to v1.0. Nasdaq sheet v1.05 resets are a further v1.2. A fresh install seeds the current rules as v1.0.
     const quarterlyReleaseKeys=new Set(["quarterly-target-nasdaq-3x","quarterly-target-midcap-2x","quarterly-target-smallcap"]);
-    // Sheet v1.05 is a NEW release. Never overwrite the older Nasdaq 1.0 / 1.1
+    // Sheet v1.07 is a NEW release. Never overwrite older Nasdaq 1.0 / 1.1 / 1.2
     // immutable versions, whose stored ruleVersion still selects the v1 engine.
     const upgradeVersionOf=(key:string)=>group2ReleaseKeys.has(key)?"2.0":
-      key==="quarterly-target-nasdaq-3x"?"1.2":quarterlyReleaseKeys.has(key)?"1.1":null;
+      key==="quarterly-target-nasdaq-3x"?"1.3":quarterlyReleaseKeys.has(key)?"1.1":null;
     // Strategy definitions and their first versions come from the plugin registry
     // (src/domain/strategy/catalog); there is no second list here. Insert-only: an existing
     // definition or version is never modified (except the guarded research-only realignment below).
