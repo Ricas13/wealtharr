@@ -1,0 +1,149 @@
+/* Adaptive customer experience: overview first, progressive strategy depth second.
+   Respects the workspace's existing palette, light theme, mobile breakpoints and
+   published execution controls. No visual representation invents portfolio data. */
+
+.customer-workspace-shell .member-dashboard .adaptive-strategy-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  margin-bottom:20px;
+}
+.customer-workspace-shell .member-dashboard .adaptive-strategy-card{
+  min-height:265px;padding:23px;gap:0;
+}
+.customer-workspace-shell .member-dashboard .adaptive-strategy-card h3{margin:14px 0 4px;font-size:clamp(17px,2vw,22px)}
+.customer-workspace-shell .member-dashboard .adaptive-strategy-card p.adaptive-strategy-type{font-size:11px;line-height:1.5}
+.customer-workspace-shell .adaptive-state{font-size:11px;font-weight:750}
+.customer-workspace-shell .adaptive-state.good{color:var(--member-accent)}
+.customer-workspace-shell .adaptive-state.attention{color:var(--member-amber)}
+.customer-workspace-shell .adaptive-state.muted{color:var(--member-subtle)}
+.customer-workspace-shell .adaptive-strategy-value{
+  display:flex;flex-direction:column;gap:5px;margin-top:19px;align-items:flex-start;
+}
+.customer-workspace-shell .adaptive-strategy-value>span{
+  color:var(--member-subtle);font-size:10px;
+}
+.customer-workspace-shell .adaptive-strategy-value strong{
+  font-size:clamp(18px,2vw,23px);font-weight:700;letter-spacing:-.6px;
+  line-height:1.2;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;
+}
+.customer-workspace-shell .adaptive-strategy-next{
+  display:flex;flex-direction:column;gap:4px;margin-top:13px;
+  border-top:1px solid var(--member-border);padding-top:12px;padding-right:20px
+}
+.customer-workspace-shell .adaptive-strategy-next strong{font-size:12px;font-weight:750;color:var(--member-text)}
+.customer-workspace-shell .adaptive-strategy-next span{font-size:11px;color:var(--member-muted);line-height:1.5}
+.customer-workspace-shell .member-dashboard .adaptive-strategy-card p.adaptive-strategy-rule{
+  margin-top:12px;font-size:10px;line-height:1.5;color:var(--member-subtle)
+}
+.customer-workspace-shell .member-dashboard .adaptive-strategy-card .strategy-meta{padding-top:13px}
+.customer-workspace-shell .member-dashboard .member-strategies{margin:26px 0 28px}
+.customer-workspace-shell .member-dashboard .member-action-hero{
+  min-height:190px;grid-template-columns:minmax(0,1fr) 150px;padding:24px 28px
+}
+.customer-workspace-shell .member-dashboard .member-orbit{
+  height:116px;width:116px;box-shadow:0 0 0 17px rgba(152,209,175,.03);
+}
+.customer-workspace-shell .member-dashboard .member-metrics{margin:15px 0 23px}
+.customer-workspace-shell .member-dashboard .member-metric{min-height:106px;padding:14px 16px}
+.customer-workspace-shell .member-dashboard .member-metric strong{margin:11px 0 4px}
+.customer-workspace-shell .adaptive-strategy-heading{margin-bottom:18px}
+.customer-workspace-shell .adaptive-strategy-heading h1{letter-spacing:-.8px}
+.customer-workspace-shell .adaptive-strategy-heading p{max-width:700px}
+.customer-workspace-shell .adaptive-strategy-focus{margin-bottom:16px}
+.customer-workspace-shell .adaptive-quick-links{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;margin:18px 0;
+}
+.customer-workspace-shell .adaptive-quick-links button{
+  color:var(--member-text);text-align:left;
+  display:flex;align-items:center;gap:12px;
+  min-width:0;padding:15px;border:1px solid var(--member-border);
+  border-radius:12px;background:var(--member-panel);cursor:pointer;
+  font:inherit;
+}
+.customer-workspace-shell .adaptive-quick-links button>svg:first-child{color:var(--member-accent);flex-shrink:0}
+.customer-workspace-shell .adaptive-quick-links button>svg:last-child{margin-left:auto;opacity:.5;flex-shrink:0}
+.customer-workspace-shell .adaptive-quick-links button span{min-width:0;display:flex;flex-direction:column;gap:3px}
+.customer-workspace-shell .adaptive-quick-links button strong{font-size:12px}
+.customer-workspace-shell .adaptive-quick-links button small{font-size:10px;color:var(--member-subtle);line-height:1.4}
+.customer-workspace-shell .adaptive-quick-links button:hover,
+.customer-workspace-shell .adaptive-quick-links button:focus-visible{border-color:var(--member-accent);outline-offset:3px}
+.customer-workspace-shell .adaptive-context-panel{
+  padding:21px 22px;margin:16px 0;
+  border:1px solid var(--member-border);border-radius:13px;
+}
+.customer-workspace-shell .adaptive-context-panel h2{
+  margin:5px 0 7px;font-size:18px;letter-spacing:-.4px;
+}
+.customer-workspace-shell .adaptive-context-panel>p:not(.help){font-size:12px;color:var(--member-muted);line-height:1.6}
+.customer-workspace-shell .adaptive-context-tags{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;margin:14px 0 9px;
+}
+.customer-workspace-shell .adaptive-context-tags>div{
+  display:flex;flex-direction:column;gap:6px;
+  padding:12px;border:1px solid var(--member-border);border-radius:9px;
+  min-width:0;
+}
+.customer-workspace-shell .adaptive-context-tags span{font-size:10px;color:var(--member-subtle)}
+.customer-workspace-shell .adaptive-context-tags strong{
+  font-size:12px;font-weight:650;overflow-wrap:anywhere;
+}
+.customer-workspace-shell .adaptive-context-panel .help{color:var(--member-subtle);font-size:10px;line-height:1.6}
+.customer-workspace-shell .adaptive-metric-details{margin:8px 0 13px}
+.customer-workspace-shell .adaptive-metric-details summary{
+  cursor:pointer;display:flex;align-items:center;gap:8px;
+  color:var(--member-muted);font-size:12px;font-weight:650;padding:10px 0;
+}
+.customer-workspace-shell .adaptive-metric-details[open] summary{margin-bottom:10px}
+.customer-workspace-shell .adaptive-performance .section-head{margin-bottom:8px}
+.customer-workspace-shell .adaptive-vix-panel{
+  border:1px solid var(--member-border);
+  border-radius:13px;overflow:hidden;margin:15px 0;
+  background:var(--member-panel);
+}
+.customer-workspace-shell .adaptive-vix-panel.fear{border-color:#9b565a}
+.customer-workspace-shell .adaptive-vix-summary{
+  list-style:none;cursor:pointer;display:flex;
+  align-items:center;gap:12px;padding:16px 19px;
+}
+.customer-workspace-shell .adaptive-vix-summary::-webkit-details-marker{display:none}
+.customer-workspace-shell .adaptive-vix-name{
+  display:flex;flex:1;flex-direction:column;gap:4px;
+}
+.customer-workspace-shell .adaptive-vix-name strong{font-size:13px}
+.customer-workspace-shell .adaptive-vix-name small{font-size:10px;color:var(--member-subtle)}
+.customer-workspace-shell .adaptive-vix-regime{
+  border-radius:99px;border:1px solid var(--member-border);
+  font-size:11px;font-weight:750;padding:6px 10px;white-space:nowrap;
+  color:var(--member-text);
+}
+.customer-workspace-shell .adaptive-vix-regime.fear{border-color:#c65c65;background:#48262b;color:#ffd5d8}
+.customer-workspace-shell .adaptive-vix-chevron{color:var(--member-subtle);font-size:19px}
+.customer-workspace-shell .adaptive-vix-panel[open] .adaptive-vix-chevron{transform:rotate(180deg)}
+.customer-workspace-shell .adaptive-vix-content{
+  padding:16px 20px 21px;border-top:1px solid var(--member-border);
+  display:grid;gap:13px;
+}
+.customer-workspace-shell .adaptive-vix-content .inline{flex-wrap:wrap}
+.customer-workspace-shell .adaptive-vix-content .field{max-width:100%}
+.customer-workspace-shell #portfolio-update,
+.customer-workspace-shell #strategy-history,
+.customer-workspace-shell #strategy-settings{scroll-margin-top:105px}
+
+html[data-theme="light"] .customer-workspace-shell .adaptive-vix-regime.fear{
+  border-color:#f9b2b9;background:#fff0f1;color:#9b202c
+}
+@media(max-width:960px){
+  .customer-workspace-shell .adaptive-context-tags{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:720px){
+  .customer-workspace-shell .member-dashboard .adaptive-strategy-grid{grid-template-columns:1fr}
+  .customer-workspace-shell .member-dashboard .member-action-hero{grid-template-columns:1fr}
+  .customer-workspace-shell .member-dashboard .member-action-visual{display:none}
+  .customer-workspace-shell .adaptive-quick-links{grid-template-columns:1fr}
+  .customer-workspace-shell .adaptive-context-tags{grid-template-columns:1fr}
+  .customer-workspace-shell .adaptive-strategy-value strong{font-size:22px}
+}
+@media(prefers-reduced-motion:reduce){
+  .customer-workspace-shell .adaptive-quick-links button{scroll-behavior:auto}
+}
