@@ -128,7 +128,7 @@ export function ContributionForm({ id, accounts=[], sigBaseline }: { id: string;
   const status = useMessage();
   const [busy,setBusy]=useState(false);
   const requestKey=useRef<string|null>(null);
-  const [contributionAmount,setContributionAmount]=useState(sigBaseline??"");
+  const [contributionAmount,setContributionAmount]=useState(sigBaseline==="0"?"":sigBaseline??"");
   const baseline=Number(sigBaseline??"0");
   const proposed=Number(contributionAmount);
   const sigImpact=sigBaseline!==undefined&&contributionAmount.trim()!==""&&Number.isFinite(proposed)&&proposed>=0&&Number.isFinite(baseline)
@@ -154,7 +154,7 @@ export function ContributionForm({ id, accounts=[], sigBaseline }: { id: string;
       else status.success("Contribution recorded as cash.");
       requestKey.current=null;
       form.reset();
-      setContributionAmount(sigBaseline??"");
+      setContributionAmount(sigBaseline==="0"?"":sigBaseline??"");
       router.refresh();
     }catch{
       status.error("Connection interrupted. Try again — the same request will be reused safely.");
