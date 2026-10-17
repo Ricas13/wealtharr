@@ -101,7 +101,12 @@ export async function POST(request: Request) {
     // Local state can lag behind Stripe if a webhook was missed, so confirm with Stripe
     // that this customer is not still billed before taking a second payment.
     if (local?.stripe_customer_id) {
-      const existing = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+      const existing = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 });
+      // The full account history might be paginated. Never treat the first
+      // page alone as proof that a customer has no pending/live subscription.
+      if (existing.has_more) {
+        return Response.json({ error: "Billing history needs review before you can start another subscription." }, { status: 409 });
+      }
       if (hasLiveStripeSubscription(existing.data.map((subscription) => subscription.status))) {
         return Response.json({ error: "You already have a Stripe subscription. Use Manage billing to change the plan or billing cycle." }, { status: 409 });
       }
