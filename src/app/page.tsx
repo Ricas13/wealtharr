@@ -124,7 +124,7 @@ export default async function HomePage(){
     </section>
     <footer className="wm-footer"><div className="wm-shell">
       <strong>{brand.toLowerCase()}.</strong>
-      <div><Link href="/strategies">Methodology</Link><Link href="/faq">FAQ</Link><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><Link href="/research-disclaimer">Risk &amp; research disclosures</Link></div>
+      <div><Link href="/strategies">Methodology</Link><Link href="/learn">Learning guides</Link><Link href="/faq">FAQ</Link><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><Link href="/research-disclaimer">Risk &amp; research disclosures</Link></div>
       <p>Independent rules-based research and portfolio tracking. Wealtharr is not a brokerage or personal investment adviser. Investing can result in loss of capital. Past performance is not a reliable indicator of future results. Availability of strategies and financial instruments depends on your account and region.</p>
     </div></footer>
   </main></LandingCurrencyProvider>;
