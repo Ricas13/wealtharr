@@ -22,6 +22,10 @@ describe("customer checkout respects Master Admin configured paid plans",()=>{
   expect(source).toContain('status: "all", limit: 100');
   expect(source).toContain("hasLiveStripeSubscription(existing.data.map");
  });
+ it("restricts paid beta checkout to invited customers, including existing free accounts",()=>{
+  expect(source).toContain("newAccountIsInvited(user.email,process.env)");
+  expect(source).toContain("Paid beta subscriptions are invitation-only.");
+ });
  it("billing does not rely on an unrelated manual strategy-signoff flag",()=>{
   expect(source).not.toContain("unattestedCustomerStrategies()");
   expect(source).toContain("paidCheckoutBlockers(process.env)");
