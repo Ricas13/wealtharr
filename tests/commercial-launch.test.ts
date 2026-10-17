@@ -37,6 +37,20 @@ describe("commercial launch preflight",()=>{
   const dummy=checkCommercialLaunch({...baseline,TURNSTILE_SITE_KEY:"1x00000000000000000000AA",TURNSTILE_SECRET_KEY:"1x0000000000000000000000000000000AA"});
   expect(dummy.find(x=>x.key==="turnstile")?.passed).toBe(false);
  });
+ it("rejects malformed production HTTPS destinations and embedded credentials",()=>{
+  for (const invalid of [
+   "https://user:password@invest.example.org",
+   "https://localhost",
+   "https://127.0.0.1",
+   "https://[::1]",
+   "https://invest.example.org/#fragment",
+   "javascript:alert(1)"
+  ]) {
+   expect(checkCommercialLaunch({...baseline,NEXT_PUBLIC_APP_URL:invalid}).find(x=>x.key==="application_url")?.passed).toBe(false);
+   expect(checkCommercialLaunch({...baseline,EMAIL_HTTP_ENDPOINT:invalid}).find(x=>x.key==="email")?.passed).toBe(false);
+   expect(checkCommercialLaunch({...baseline,MARKET_DATA_HTTP_BASE_URL:invalid}).find(x=>x.key==="market_data_mode")?.passed).toBe(false);
+  }
+ });
  it("blocks HTTP provider origin and local database",()=>{
   const r=checkCommercialLaunch({...baseline,MARKET_DATA_HTTP_BASE_URL:"http://quotes.example.org",DATABASE_URL:"postgresql://localhost/db"});
   expect(r.find(x=>x.key==="market_data_mode")?.passed).toBe(false);
