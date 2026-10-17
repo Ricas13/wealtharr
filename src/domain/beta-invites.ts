@@ -3,7 +3,7 @@
  * even if the operator later removes their address from the invite list.
  * Never infer an invitation from the email's domain.
  */
-type BetaEnvironment={WEALTHARR_PRIVATE_BETA_INVITE_ONLY?:string;WEALTHARR_BETA_INVITE_EMAILS?:string};
+type BetaEnvironment=Record<string,string|undefined>;
 
 export function newAccountIsInvited(email:string,env:BetaEnvironment):boolean{
   if(env.WEALTHARR_PRIVATE_BETA_INVITE_ONLY!=="true")return true;
