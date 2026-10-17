@@ -124,6 +124,7 @@ export async function applyCurrentStripeSubscription(stripe:Stripe,incoming:Subs
     const periodEnd=item.current_period_end??(canonical as unknown as {current_period_end?:number}).current_period_end??null;
     await tx.unsafe(
       "UPDATE subscriptions SET plan_id=$1,status=$2,cadence=$3,stripe_subscription_id=$4,"+
+      "source='STRIPE',store_product_id=NULL,store_original_transaction_id=NULL,store_event_at=NULL,"+
       "current_period_end=$5,cancel_at_period_end=$6,updated_at=now() WHERE user_id=$7",
       [planId,status,item.price.recurring.interval==="year"?"ANNUAL":"MONTHLY",
         canonical.id,periodEnd?new Date(periodEnd*1000):null,
