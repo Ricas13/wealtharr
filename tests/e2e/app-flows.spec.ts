@@ -127,7 +127,10 @@ test("new user can start a strategy through the three-step simple flow",async({p
   expect(palette.background).toBe("#f4f7fc");
   expect(palette.action).toBe("#1769e9");
   expect(palette.primaryBackground).toBe("rgb(23, 105, 233)");
-  expect(palette.cardBackground).toBe("rgb(255, 255, 255)");
+  // Background colours transition on theme changes. Assert the settled value,
+  // not an intermediate alpha-blended animation frame after reload.
+  await expect.poll(async()=>page.locator(".adaptive-strategy-card").evaluate(
+    element=>getComputedStyle(element).backgroundColor)).toBe("rgb(255, 255, 255)");
   expect(palette.categoryClass).toContain("kind-");
   await page.getByRole("button",{name:"Toggle light or dark theme"}).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme","dark");
