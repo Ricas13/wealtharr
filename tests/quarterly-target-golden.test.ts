@@ -154,6 +154,8 @@ describe("quarterly-target-nasdaq-3x golden cases",()=>{
     expect(sell.nextState.targetValue).toBe("6600");
     expect(sell.nextState.sigSheet105LastResetProtectionStartQuarter).toBe(Q3_2026_INDEX-2);
     let state=postActionReviewState(sell,before,new Date("2026-10-01T15:00:00Z"));
+    expect(state.sigSheet105LastResetProtectionStartQuarter).toBe(Q3_2026_INDEX-2);
+    expect(state.sigSheet105ConsecutiveDownQuarters).toBe(0);
     const closed=run(ctx(key,{closes,exposures:[stockOf(key,"6600"),bondOf("3000")],cash:D(1400),state}));
     expect(closed.actionType).toBe("BUY"); // sweep proceeds to safe sleeve
     state=postActionReviewState(closed,state,new Date("2026-10-01T15:00:00Z"));
