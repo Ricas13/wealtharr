@@ -1,5 +1,4 @@
 "use client";
-import {useMemo} from "react";
 import {Line,LineChart,ResponsiveContainer,Tooltip,XAxis} from "recharts";
 import {alignedWindow,chartRows,type PublicComparisonEntry,type DatedValue} from "@/domain/public-strategy-comparison";
 type Props={entries:PublicComparisonEntry[];spy:DatedValue[];asOf:string};
@@ -8,8 +7,7 @@ function signed(v:number){return (v>=0?"+":"")+v.toFixed(1)+"%";}
 export function PublicHeroPerformance({entries,spy,asOf}:Props){
   const featured=entries.find(entry=>entry.available&&Boolean(alignedWindow(entry.observations,spy,"ALL",asOf)));
   const pair=featured?alignedWindow(featured.observations,spy,"ALL",asOf):null;
-  const raw=useMemo(()=>featured?chartRows([{key:featured.key,points:featured.observations}],spy,"ALL",asOf):[],
-    [featured,spy,asOf]);
+  const raw=featured?chartRows([{key:featured.key,points:featured.observations}],spy,"ALL",asOf):[];
   const chart=raw.length>100?raw.filter((row,i)=>i===0||i===raw.length-1||i%Math.ceil(raw.length/100)===0||typeof row[featured!.key]==="number"):raw;
   return <div className="wm-hero-evidence" aria-label="Verified historical model comparison preview">
     <div className="wm-hero-evidence-head"><strong>Strategy performance</strong><span>Historical model vs SPY</span></div>
