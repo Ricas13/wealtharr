@@ -5,7 +5,7 @@ import Decimal from "decimal.js";
  * account or a recommendation. The administrator must explicitly attest to the
  * source, rights and calculation basis. Missing evidence is not a zero return.
  */
-export type PublicPeriod="1Y"|"3Y"|"5Y"|"ALL";
+export type PublicPeriod="1Y"|"3Y"|"5Y"|"10Y"|"ALL";
 export type DatedValue={date:string;value:string};
 export type ReturnWindow={start:string;end:string;percent:number;points:Array<{date:string;index:number}>};
 export type PublicComparisonEntry={key:string;name:string;family:string;available:boolean;reason:string;
@@ -77,7 +77,7 @@ function utcDays(a:string,b:string){return Math.round((Date.parse(b+"T00:00:00Z"
 export function periodStart(end:string,period:PublicPeriod){
   if(period==="ALL")return null;
   const d=new Date(end+"T00:00:00Z");
-  d.setUTCFullYear(d.getUTCFullYear()-(period==="1Y"?1:period==="3Y"?3:5));
+  d.setUTCFullYear(d.getUTCFullYear()-(period==="1Y"?1:period==="3Y"?3:period==="5Y"?5:10));
   return d.toISOString().slice(0,10);
 }
 /**
@@ -115,21 +115,39 @@ export function alignedWindow(model:readonly DatedValue[],benchmark:readonly Dat
   };
   return {model:normalise("model"),spy:normalise("spy")};
 }
-/** Common dates across all toggled series; comparisons must share start/end. */
+/**
+ * All plotted strategies share the SAME verified starting and ending closes,
+ * but their intermediate observations may be weekly, monthly or daily.
+ *
+ * Rebase from exact common anchor dates, then preserve each strategy's ACTUAL
+ * intermediate closes as sparse points in the union of observation dates.
+ * This avoids the previous bug where adding a second strategy with different
+ * review dates erased both lines. No prices or tooltip values are interpolated.
+ * The chart UI may visually connect two confirmed points, as standard for a
+ * historical line chart, with that convention disclosed to viewers.
+ */
 export function chartRows(selected:readonly {key:string;points:DatedValue[]}[],spy:readonly DatedValue[],
  period:PublicPeriod,asOf:string):Array<{date:string;[key:string]:string|number}>{
-  if(selected.length===0)return [];
   const spyMap=new Map(validatedObservations(spy).map(p=>[p.date,p.value]));
   const models=selected.map(s=>({key:s.key,values:new Map(validatedObservations(s.points).map(p=>[p.date,p.value]))}));
+  if(!validDate(asOf)||spyMap.size<2||models.some(m=>m.values.size<2))return [];
   const common=[...spyMap.keys()].filter(date=>date<=asOf&&models.every(s=>s.values.has(date))).sort();
   if(common.length<2||utcDays(common[common.length-1],asOf)>55)return [];
   const end=common[common.length-1],cutoff=periodStart(end,period);
   const eligible=cutoff?common.filter(d=>d>=cutoff):common;
   if(eligible.length<2||(cutoff&&utcDays(cutoff,eligible[0])>35))return [];
   const baseline=eligible[0];
-  return eligible.map(date=>{
-    const row:{date:string;[key:string]:string|number}={date,SPY:new Decimal(spyMap.get(date)!).div(spyMap.get(baseline)!).mul(100).toNumber()};
-    for(const s of models)row[s.key]=new Decimal(s.values.get(date)!).div(s.values.get(baseline)!).mul(100).toNumber();
+  const baselineSpy=new Decimal(spyMap.get(baseline)!);
+  const baselineModels=models.map(s=>({key:s.key,values:s.values,baseline:new Decimal(s.values.get(baseline)!)}));
+  const visibleDates=[...spyMap.keys()].filter(date=>date>=baseline&&date<=end).sort();
+  return visibleDates.map(date=>{
+    const row:{date:string;[key:string]:string|number}={
+      date,SPY:new Decimal(spyMap.get(date)!).div(baselineSpy).mul(100).toNumber()
+    };
+    for(const model of baselineModels){
+      const observed=model.values.get(date);
+      if(observed!==undefined)row[model.key]=new Decimal(observed).div(model.baseline).mul(100).toNumber();
+    }
     return row;
   });
 }
