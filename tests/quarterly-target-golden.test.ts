@@ -139,7 +139,8 @@ describe("quarterly-target-nasdaq-3x golden cases",()=>{
     const closes=[...Array(8).fill("100"),"60"];
     const sell=run(ctx(key,{closes,exposures:[stockOf(key,"8000"),bondOf("3000")],cash:D(0),
       state:{sigConfirmedAnchor:"6000",sigLastReviewedReference:"2026-06-30",
-        sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2}}}));
+        sigProtection:{startQuarter:Q3_2026_INDEX-2,skippedSellCount:2}},
+      config:{...config(key),ruleVersion:"WEALTHARR_OWNER_2026_V1"}}));
     expect([sell.actionType,amount(sell)]).toEqual(["SELL","1460.00"]);
   });
 
